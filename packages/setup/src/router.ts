@@ -12,21 +12,32 @@ export async function checkRouter(baseUrl: string, apiKey: string, fetchFn: type
   }
   const results: CheckResult[] = [{ name: 'router-reachable', ok: authed.ok, detail: `GET ${url} -> ${authed.status}` }];
   if (authed.ok) {
-    const body = (await authed.json()) as { data?: Array<{ id: string }> };
-    const ids = new Set((body.data ?? []).map((m) => m.id));
-    for (const combo of REQUIRED_COMBOS) {
-      results.push({
-        name: `combo:${combo}`,
-        ok: ids.has(combo),
-        detail: ids.has(combo) ? 'listed by /v1/models' : 'not listed - create it in 9Router dashboard -> Combos',
-      });
+    let body: { data?: Array<{ id: string }> } | undefined;
+    try {
+      body = (await authed.json()) as { data?: Array<{ id: string }> };
+    } catch {
+      results.push({ name: 'router-models-json', ok: false, detail: `non-JSON response from ${url} - does AOS_ROUTER_URL end in /v1?` });
+    }
+    if (body) {
+      const ids = new Set((body.data ?? []).map((m) => m.id));
+      for (const combo of REQUIRED_COMBOS) {
+        results.push({
+          name: `combo:${combo}`,
+          ok: ids.has(combo),
+          detail: ids.has(combo) ? 'listed by /v1/models' : 'not listed - create it in 9Router dashboard -> Combos',
+        });
+      }
     }
   }
-  const anon = await fetchFn(url);
-  results.push({
-    name: 'router-auth-required',
-    ok: anon.status === 401 || anon.status === 403,
-    detail: `anonymous GET -> ${anon.status} (expected 401/403; set REQUIRE_API_KEY=true)`,
-  });
+  try {
+    const anon = await fetchFn(url);
+    results.push({
+      name: 'router-auth-required',
+      ok: anon.status === 401 || anon.status === 403,
+      detail: `anonymous GET -> ${anon.status} (expected 401/403; set REQUIRE_API_KEY=true)`,
+    });
+  } catch (err) {
+    results.push({ name: 'router-auth-required', ok: false, detail: `anonymous GET failed: ${(err as Error).message}` });
+  }
   return results;
 }

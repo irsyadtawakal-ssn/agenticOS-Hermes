@@ -49,12 +49,14 @@ describe('applyProfiles', () => {
     const dir = profileDir(home, 'chief');
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, '.env'), 'TELEGRAM_BOT_TOKEN=tg\nOPENAI_API_KEY=old\n');
+    writeFileSync(join(dir, 'SOUL.md'), 'OLD\n');
 
     await applyProfiles(opts);
 
     expect(calls).toEqual([]);
     expect(readFileSync(join(dir, '.env'), 'utf8')).toBe('TELEGRAM_BOT_TOKEN=tg\nOPENAI_API_KEY=rk-123\nHERMES_TIMEZONE=Asia/Jakarta\n');
     expect(existsSync(join(dir, '.env.bak-20260930'))).toBe(true);
+    expect(readFileSync(join(dir, 'SOUL.md.bak-20260930'), 'utf8')).toBe('OLD\n');
   });
 
   it('throws when hermes profile create fails', async () => {

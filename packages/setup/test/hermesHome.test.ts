@@ -31,6 +31,26 @@ describe('resolveHermesHome', () => {
   });
 });
 
+describe('resolveHermesHome overrides', () => {
+  it('returns AOS_HERMES_HOME as-is without checking existence', () => {
+    const env = { AOS_HERMES_HOME: 'D:\\custom\\hermes', LOCALAPPDATA: LOCAL };
+    expect(resolveHermesHome({ env, exists: () => false })).toBe('D:\\custom\\hermes');
+  });
+
+  it('returns HERMES_HOME when AOS_HERMES_HOME is absent', () => {
+    const env = { HERMES_HOME: 'E:\\other', LOCALAPPDATA: LOCAL };
+    expect(resolveHermesHome({ env, exists: () => false })).toBe('E:\\other');
+  });
+
+  it('rejects an unexpanded variable in an override', () => {
+    const env = { AOS_HERMES_HOME: '%LOCALAPPDATA%\\hermes' };
+    expect(() => resolveHermesHome({ env, exists: () => true })).toThrow(/unexpanded variable/);
+    expect(() => resolveHermesHome({ env: { HERMES_HOME: '%X%\\h' }, exists: () => true })).toThrow(
+      /HERMES_HOME contains an unexpanded variable/,
+    );
+  });
+});
+
 describe('hermesSourceDir', () => {
   it('points at the installer checkout', () => {
     expect(hermesSourceDir('X')).toBe(join('X', 'hermes-agent'));

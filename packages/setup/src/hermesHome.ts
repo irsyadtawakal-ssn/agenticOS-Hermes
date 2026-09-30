@@ -15,7 +15,19 @@ export function hermesHomeCandidates(env: NodeJS.ProcessEnv): string[] {
   return [...new Set(candidates)];
 }
 
+function explicitOverride(env: NodeJS.ProcessEnv): string | undefined {
+  for (const name of ['AOS_HERMES_HOME', 'HERMES_HOME'] as const) {
+    const value = env[name];
+    if (!value) continue;
+    if (value.includes('%')) throw new Error(`${name} contains an unexpanded variable: ${value} — write the full path`);
+    return value;
+  }
+  return undefined;
+}
+
 export function resolveHermesHome({ env, exists }: HomeProbe): string {
+  const override = explicitOverride(env);
+  if (override) return override;
   const candidates = hermesHomeCandidates(env);
   const found = candidates.find((dir) => exists(join(dir, 'config.yaml')) || exists(join(dir, 'profiles')));
   if (!found) throw new Error(`HERMES_HOME not found. Checked: ${candidates.join(', ')}`);

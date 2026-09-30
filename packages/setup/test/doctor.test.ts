@@ -38,6 +38,19 @@ describe('checkHermesPin', () => {
   });
 });
 
+describe('checkHermesPin when git cannot run', () => {
+  it('returns a failed row instead of throwing', async () => {
+    const enoent: Exec = async () => {
+      throw new Error('spawn git ENOENT');
+    };
+    expect(await checkHermesPin('H', `commit=${SHA}\n`, enoent)).toEqual({
+      name: 'hermes-pin',
+      ok: false,
+      detail: 'git not runnable: spawn git ENOENT',
+    });
+  });
+});
+
 describe('checkProfile', () => {
   it('passes for a correctly applied profile', () => {
     const home = healthyHome();
@@ -60,6 +73,15 @@ describe('checkProfile', () => {
     expect(byName['profile:researcher:model'].ok).toBe(false);
     expect(byName['profile:researcher:no-direct-keys']).toMatchObject({ ok: false, detail: 'remove: ANTHROPIC_API_KEY' });
     expect(byName['profile:researcher:router-key'].ok).toBe(false);
+  });
+
+  it('reports malformed config.yaml as a single failed row', () => {
+    const home = healthyHome();
+    writeFileSync(join(profileDir(home, 'researcher'), 'config.yaml'), 'model: [unclosed\n');
+    const results = checkProfile(home, roster[1], BASE, 'rk');
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({ name: 'profile:researcher:config', ok: false });
+    expect(results[0].detail).toMatch(/^config\.yaml is not valid YAML: /);
   });
 
   it('reports a missing profile directory', () => {

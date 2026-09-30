@@ -20,13 +20,19 @@ function required(name: string): string {
 
 async function main(cmd: string | undefined): Promise<number> {
   const roster = loadRoster(readFileSync(join(repoRoot, 'infra/profiles/roster.yaml'), 'utf8'));
-  const routerBaseUrl = process.env.AOS_ROUTER_URL ?? 'http://127.0.0.1:20128/v1';
-  const hermesHome = (): string => resolveHermesHome({ env: process.env, exists: existsSync });
+  const rawRouterUrl = (process.env.AOS_ROUTER_URL ?? 'http://127.0.0.1:20128/v1').replace(/\/+$/, '');
+  const routerBaseUrl = rawRouterUrl.endsWith('/v1') ? rawRouterUrl : `${rawRouterUrl}/v1`;
+  const useHermesHome = (): string => {
+    const home = resolveHermesHome({ env: process.env, exists: existsSync });
+    process.env.HERMES_HOME = home;
+    console.log(`HERMES_HOME=${home}`);
+    return home;
+  };
 
   switch (cmd) {
     case 'apply-profiles': {
       const log = await applyProfiles({
-        home: hermesHome(),
+        home: useHermesHome(),
         roster,
         templatesDir: join(repoRoot, 'infra/profiles/soul'),
         routerBaseUrl,
@@ -41,7 +47,7 @@ async function main(cmd: string | undefined): Promise<number> {
     case 'doctor': {
       const results = await runDoctor(
         {
-          home: hermesHome(),
+          home: useHermesHome(),
           roster,
           lockText: readFileSync(join(repoRoot, 'infra/hermes.lock'), 'utf8'),
           routerBaseUrl,
@@ -53,11 +59,13 @@ async function main(cmd: string | undefined): Promise<number> {
       return results.every((r) => r.ok) ? 0 : 1;
     }
     case 'smoke-kanban': {
+      useHermesHome();
       const result = await smokeKanban(realExec);
       console.log(`${result.ok ? 'PASS' : 'FAIL'} ${result.taskId} -> ${result.status}`);
       return result.ok ? 0 : 1;
     }
     case 'smoke-chief': {
+      useHermesHome();
       const result = await smokeChief(realExec);
       console.log(`${result.ok ? 'PASS' : 'FAIL'} ${result.taskId} -> ${result.status}`);
       return result.ok ? 0 : 1;

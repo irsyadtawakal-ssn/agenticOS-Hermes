@@ -38,6 +38,33 @@ describe('checkRouter', () => {
     const results = await checkRouter(BASE, 'good-key', failing);
     expect(results).toEqual([{ name: 'router-reachable', ok: false, detail: `${BASE}/models: ECONNREFUSED` }]);
   });
+
+  it('reports a non-JSON 200 body as a failed row without throwing', async () => {
+    const html = (async (_u: string | URL | Request, init?: RequestInit) =>
+      new Headers(init?.headers).get('authorization')
+        ? new Response('<html>dashboard</html>', { status: 200 })
+        : new Response('', { status: 401 })) as unknown as typeof fetch;
+    const results = await checkRouter(BASE, 'good-key', html);
+    expect(results.map((r) => [r.name, r.ok])).toEqual([
+      ['router-reachable', true],
+      ['router-models-json', false],
+      ['router-auth-required', true],
+    ]);
+    expect(results[1].detail).toMatch(/non-JSON response from .*\/models - does AOS_ROUTER_URL end in \/v1\?/);
+  });
+
+  it('reports a failing anonymous request as a failed row without throwing', async () => {
+    const flaky = (async (_u: string | URL | Request, init?: RequestInit) => {
+      if (!new Headers(init?.headers).get('authorization')) throw new Error('socket hang up');
+      return new Response(JSON.stringify({ data: [] }), { status: 200 });
+    }) as unknown as typeof fetch;
+    const results = await checkRouter(BASE, 'good-key', flaky);
+    expect(results.find((r) => r.name === 'router-auth-required')).toEqual({
+      name: 'router-auth-required',
+      ok: false,
+      detail: 'anonymous GET failed: socket hang up',
+    });
+  });
 });
 
 describe('formatResults', () => {

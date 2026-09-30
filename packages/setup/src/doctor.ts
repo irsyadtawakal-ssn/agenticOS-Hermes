@@ -38,7 +38,12 @@ const readText = (path: string): string => (existsSync(path) ? readFileSync(path
 
 export async function checkHermesPin(home: string, lockText: string, exec: Exec): Promise<CheckResult> {
   const { commit } = parseLock(lockText);
-  const r = await exec('git', ['-C', hermesSourceDir(home), 'rev-parse', 'HEAD']);
+  let r: Awaited<ReturnType<Exec>>;
+  try {
+    r = await exec('git', ['-C', hermesSourceDir(home), 'rev-parse', 'HEAD']);
+  } catch (err) {
+    return { name: 'hermes-pin', ok: false, detail: `git not runnable: ${(err as Error).message}` };
+  }
   const head = r.stdout.trim();
   if (r.code !== 0) return { name: 'hermes-pin', ok: false, detail: `git rev-parse failed: ${r.stderr.trim()}` };
   return head === commit
@@ -61,7 +66,12 @@ export function checkProfile(home: string, spec: ProfileSpec, routerBaseUrl: str
   const label = `profile:${spec.name}`;
   if (!existsSync(dir)) return [{ name: label, ok: false, detail: `missing ${dir}` }];
 
-  const cfg = (YAML.parse(readText(join(dir, 'config.yaml'))) ?? {}) as Record<string, Record<string, unknown> | undefined>;
+  let cfg: Record<string, Record<string, unknown> | undefined>;
+  try {
+    cfg = (YAML.parse(readText(join(dir, 'config.yaml'))) ?? {}) as Record<string, Record<string, unknown> | undefined>;
+  } catch (err) {
+    return [{ name: `${label}:config`, ok: false, detail: `config.yaml is not valid YAML: ${(err as Error).message}` }];
+  }
   const model = cfg.model ?? {};
   const modelOk = model.provider === 'custom' && model.base_url === routerBaseUrl && model.default === spec.tier;
   const env = parseEnv(readText(join(dir, '.env')));

@@ -44,7 +44,9 @@ export async function applyProfiles(o: ApplyOptions): Promise<string[]> {
     backup(envPath, o.stamp);
     writeFileSync(envPath, mergeEnv(envText, { OPENAI_API_KEY: o.routerKey, HERMES_TIMEZONE: o.timezone }), 'utf8');
 
-    writeFileSync(join(dir, 'SOUL.md'), buildSoul(spec, o.templatesDir), 'utf8');
+    const soulPath = join(dir, 'SOUL.md');
+    backup(soulPath, o.stamp);
+    writeFileSync(soulPath, buildSoul(spec, o.templatesDir), 'utf8');
     log.push(`configured profile ${spec.name} (tier ${spec.tier})`);
   }
   return log;
