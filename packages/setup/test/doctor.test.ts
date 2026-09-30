@@ -25,7 +25,7 @@ function healthyHome(): string {
   return home;
 }
 
-const INSTALL_DIR = 'C:\Users\lu.DESKTOP-HRO3RNS\AppData\Local\hermes\hermes-agent';
+const INSTALL_DIR = 'C:\\Users\\lu.DESKTOP-HRO3RNS\\AppData\\Local\\hermes\\hermes-agent';
 const versionOutput = (installDir = INSTALL_DIR): string =>
   [
     'Hermes Agent v0.21.5+4515.ge85706c (2026.9.24) · upstream e85706cb',
@@ -57,9 +57,9 @@ describe('checkHermesPin', () => {
   });
   it('runs git against the install directory reported by hermes --version', async () => {
     const calls: Call[] = [];
-    await checkHermesPin(`commit=${SHA}\n`, fakeExec(SHA, { calls, version: versionOutput('D:\elsewhere\hermes-agent') }));
+    await checkHermesPin(`commit=${SHA}\n`, fakeExec(SHA, { calls, version: versionOutput('D:\\elsewhere\\hermes-agent') }));
     expect(calls[0]).toEqual({ cmd: 'hermes', args: ['--version'] });
-    expect(calls[1]).toEqual({ cmd: 'git', args: ['-C', 'D:\elsewhere\hermes-agent', 'rev-parse', 'HEAD'] });
+    expect(calls[1]).toEqual({ cmd: 'git', args: ['-C', 'D:\\elsewhere\\hermes-agent', 'rev-parse', 'HEAD'] });
   });
 });
 

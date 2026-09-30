@@ -67,7 +67,7 @@ describe('parseLock', () => {
 });
 
 describe('parseInstallDir', () => {
-  const INSTALL = 'C:\Users\lu.DESKTOP-HRO3RNS\AppData\Local\hermes\hermes-agent';
+  const INSTALL = 'C:\\Users\\lu.DESKTOP-HRO3RNS\\AppData\\Local\\hermes\\hermes-agent';
   const SAMPLE = [
     'Hermes Agent v0.21.5+4515.ge85706c (2026.9.24) · upstream e85706cb',
     `Install directory: ${INSTALL}`,
@@ -79,6 +79,10 @@ describe('parseInstallDir', () => {
   });
   it('handles CRLF line endings', () => {
     expect(parseInstallDir(SAMPLE.join('\r\n') + '\r\n')).toBe(INSTALL);
+  });
+  it('keeps spaces inside the path', () => {
+    const dir = 'C:\\Program Files\\Hermes Agent\\hermes-agent';
+    expect(parseInstallDir(`Hermes Agent v1\nInstall directory: ${dir}\nInstall method: git\n`)).toBe(dir);
   });
   it('throws when the Install directory line is absent', () => {
     expect(() => parseInstallDir('Hermes Agent v0.21.5\nPython: 3.14.7\n')).toThrow(/Install directory/);
