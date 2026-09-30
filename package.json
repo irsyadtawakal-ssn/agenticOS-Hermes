@@ -1,0 +1,15 @@
+{
+  "name": "agentic-os",
+  "private": true,
+  "packageManager": "pnpm@11.3.0",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "aos": "tsx packages/setup/src/cli.ts",
+    "test": "pnpm -r test"
+  },
+  "devDependencies": {
+    "tsx": "^4.23.15"
+  }
+}
