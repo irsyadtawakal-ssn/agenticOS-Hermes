@@ -1,9 +1,11 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { applyProfiles } from './apply.js';
+import { formatResults } from './check.js';
 import { realExec } from './exec.js';
 import { resolveHermesHome } from './hermesHome.js';
 import { loadRoster } from './profiles.js';
+import { runDoctor } from './doctor.js';
 
 const repoRoot = resolve(import.meta.dirname, '../../..');
 const envFile = join(repoRoot, '.env.local');
@@ -35,8 +37,22 @@ async function main(cmd: string | undefined): Promise<number> {
       for (const line of log) console.log(line);
       return 0;
     }
+    case 'doctor': {
+      const results = await runDoctor(
+        {
+          home: hermesHome(),
+          roster,
+          lockText: readFileSync(join(repoRoot, 'infra/hermes.lock'), 'utf8'),
+          routerBaseUrl,
+          routerKey: required('AOS_ROUTER_KEY'),
+        },
+        { exec: realExec, fetchFn: fetch },
+      );
+      console.log(formatResults(results));
+      return results.every((r) => r.ok) ? 0 : 1;
+    }
     default:
-      console.error('Usage: pnpm aos <apply-profiles>');
+      console.error('Usage: pnpm aos <apply-profiles|doctor>');
       return 2;
   }
 }
