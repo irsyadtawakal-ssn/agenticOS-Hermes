@@ -32,24 +32,25 @@ def _describe(value, depth=0):
 
 
 def _log_path():
-    return Path(os.environ.get("AOS_PROBE_LOG", str(Path.home() / "aos-probe.jsonl")))
+    p = os.environ.get("AOS_PROBE_LOG")
+    return Path(p) if p else Path.home() / "aos-probe.jsonl"
 
 
 def _make(name):
     def callback(*args, **kwargs):
         tool_name = kwargs.get("tool_name") or (args[0] if name.endswith("tool_call") and args else None)
-        record = {
-            "ts": time.time(),
-            "hook": name,
-            "tool_name": tool_name if isinstance(tool_name, str) else None,
-            "args": [_describe(a) for a in args],
-            "kwargs": {k: _describe(v) for k, v in kwargs.items()},
-            "env_task": os.environ.get("HERMES_KANBAN_TASK"),
-        }
         try:
+            record = {
+                "ts": time.time(),
+                "hook": name,
+                "tool_name": tool_name if isinstance(tool_name, str) else None,
+                "args": [_describe(a) for a in args],
+                "kwargs": {k: _describe(v) for k, v in kwargs.items()},
+                "env_task": os.environ.get("HERMES_KANBAN_TASK"),
+            }
             with _log_path().open("a", encoding="utf-8") as f:
                 f.write(json.dumps(record) + "\n")
-        except OSError:
+        except Exception:
             pass
         if name == "pre_tool_call" and tool_name and tool_name == os.environ.get("AOS_PROBE_BLOCK"):
             return {"action": "block", "message": "blocked by aos-probe (AOS_PROBE_BLOCK)"}

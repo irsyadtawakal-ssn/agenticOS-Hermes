@@ -70,3 +70,21 @@ def test_describes_objects_by_public_attributes(tmp_path, monkeypatch):
     described = mod._describe(Usage())
     assert described["__type__"] == "Usage"
     assert {"completion_tokens", "prompt_tokens"} <= set(described["attrs"])
+
+
+def test_hook_never_raises_on_hostile_payload(tmp_path, monkeypatch):
+    monkeypatch.setenv("AOS_PROBE_LOG", str(tmp_path / "p.jsonl"))
+    mod = load()
+    ctx = Ctx()
+    mod.register(ctx)
+
+    class Hostile:
+        def __dir__(self):
+            raise RuntimeError("boom")
+
+    assert ctx.hooks["post_llm_call"](Hostile(), extra=Hostile()) is None
+    monkeypatch.setenv("AOS_PROBE_BLOCK", "terminal")
+    assert ctx.hooks["pre_tool_call"]("terminal", Hostile()) == {
+        "action": "block",
+        "message": "blocked by aos-probe (AOS_PROBE_BLOCK)",
+    }
