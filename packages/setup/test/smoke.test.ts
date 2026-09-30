@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Exec } from '../src/exec.js';
-import { smokeKanban } from '../src/smoke.js';
+import { chiefPrompt, smokeChief, smokeKanban } from '../src/smoke.js';
 
 function scriptedExec(finalStatus: string): Exec & { calls: string[][] } {
   const statuses = ['ready', 'running', finalStatus];
@@ -28,5 +28,30 @@ describe('smokeKanban', () => {
   it('fails when the task ends blocked', async () => {
     const result = await smokeKanban(scriptedExec('blocked'), () => {}, 'S2', 0);
     expect(result).toEqual({ ok: false, taskId: 't_smoke1', status: 'blocked' });
+  });
+});
+
+describe('smokeChief', () => {
+  it('asks chief to delegate, then waits for the researcher task to finish', async () => {
+    const statuses = ['ready', 'running', 'done'];
+    const calls: string[][] = [];
+    const exec: Exec = async (_cmd, args) => {
+      calls.push(args);
+      if (args[0] === '-p') return { code: 0, stdout: 'Kartu dibuat: t_chief7 untuk researcher', stderr: '' };
+      if (args[1] === 'show' && args[2] === '--help') return { code: 0, stdout: '', stderr: '' };
+      return { code: 0, stdout: `Task t_chief7\nStatus: ${statuses.shift() ?? 'done'}\nAssignee: researcher\n`, stderr: '' };
+    };
+    const result = await smokeChief(exec, () => {}, 'S3', 0);
+    expect(result).toEqual({ ok: true, taskId: 't_chief7', status: 'done' });
+    expect(calls[1]).toEqual(['-p', 'chief', 'chat', '-q', chiefPrompt('S3')]);
+  });
+
+  it('fails when chief assigns the task to the wrong agent', async () => {
+    const exec: Exec = async (_cmd, args) => {
+      if (args[0] === '-p') return { code: 0, stdout: 't_wrong1', stderr: '' };
+      if (args[2] === '--help') return { code: 0, stdout: '', stderr: '' };
+      return { code: 0, stdout: 'Task t_wrong1\nStatus: ready\nAssignee: dev\n', stderr: '' };
+    };
+    expect(await smokeChief(exec, () => {}, 'S4', 0)).toEqual({ ok: false, taskId: 't_wrong1', status: 'wrong assignee dev' });
   });
 });

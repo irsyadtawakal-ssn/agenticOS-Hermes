@@ -6,7 +6,7 @@ import { realExec } from './exec.js';
 import { resolveHermesHome } from './hermesHome.js';
 import { loadRoster } from './profiles.js';
 import { runDoctor } from './doctor.js';
-import { smokeKanban } from './smoke.js';
+import { smokeKanban, smokeChief } from './smoke.js';
 
 const repoRoot = resolve(import.meta.dirname, '../../..');
 const envFile = join(repoRoot, '.env.local');
@@ -57,8 +57,13 @@ async function main(cmd: string | undefined): Promise<number> {
       console.log(`${result.ok ? 'PASS' : 'FAIL'} ${result.taskId} -> ${result.status}`);
       return result.ok ? 0 : 1;
     }
+    case 'smoke-chief': {
+      const result = await smokeChief(realExec);
+      console.log(`${result.ok ? 'PASS' : 'FAIL'} ${result.taskId} -> ${result.status}`);
+      return result.ok ? 0 : 1;
+    }
     default:
-      console.error('Usage: pnpm aos <apply-profiles|doctor|smoke-kanban>');
+      console.error('Usage: pnpm aos <apply-profiles|doctor|smoke-kanban|smoke-chief>');
       return 2;
   }
 }
