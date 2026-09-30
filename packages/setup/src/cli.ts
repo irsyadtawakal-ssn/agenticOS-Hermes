@@ -6,6 +6,7 @@ import { realExec } from './exec.js';
 import { resolveHermesHome } from './hermesHome.js';
 import { loadRoster } from './profiles.js';
 import { runDoctor } from './doctor.js';
+import { smokeKanban } from './smoke.js';
 
 const repoRoot = resolve(import.meta.dirname, '../../..');
 const envFile = join(repoRoot, '.env.local');
@@ -51,8 +52,13 @@ async function main(cmd: string | undefined): Promise<number> {
       console.log(formatResults(results));
       return results.every((r) => r.ok) ? 0 : 1;
     }
+    case 'smoke-kanban': {
+      const result = await smokeKanban(realExec);
+      console.log(`${result.ok ? 'PASS' : 'FAIL'} ${result.taskId} -> ${result.status}`);
+      return result.ok ? 0 : 1;
+    }
     default:
-      console.error('Usage: pnpm aos <apply-profiles|doctor>');
+      console.error('Usage: pnpm aos <apply-profiles|doctor|smoke-kanban>');
       return 2;
   }
 }
