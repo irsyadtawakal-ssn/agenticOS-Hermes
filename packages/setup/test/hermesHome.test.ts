@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { hermesHomeCandidates, hermesSourceDir, parseLock, resolveHermesHome } from '../src/hermesHome.js';
+import { hermesHomeCandidates, hermesSourceDir, parseInstallDir, parseLock, resolveHermesHome } from '../src/hermesHome.js';
 
 const LOCAL = 'C:\\Users\\me\\AppData\\Local';
 
@@ -63,5 +63,24 @@ describe('parseLock', () => {
   });
   it('rejects a lock without a commit line', () => {
     expect(() => parseLock('installed_at=2026-09-30')).toThrow(/commit=<git sha>/);
+  });
+});
+
+describe('parseInstallDir', () => {
+  const INSTALL = 'C:\Users\lu.DESKTOP-HRO3RNS\AppData\Local\hermes\hermes-agent';
+  const SAMPLE = [
+    'Hermes Agent v0.21.5+4515.ge85706c (2026.9.24) · upstream e85706cb',
+    `Install directory: ${INSTALL}`,
+    'Install method: git',
+    'Python: 3.14.7',
+  ];
+  it('reads the install directory from hermes --version output', () => {
+    expect(parseInstallDir(SAMPLE.join('\n'))).toBe(INSTALL);
+  });
+  it('handles CRLF line endings', () => {
+    expect(parseInstallDir(SAMPLE.join('\r\n') + '\r\n')).toBe(INSTALL);
+  });
+  it('throws when the Install directory line is absent', () => {
+    expect(() => parseInstallDir('Hermes Agent v0.21.5\nPython: 3.14.7\n')).toThrow(/Install directory/);
   });
 });

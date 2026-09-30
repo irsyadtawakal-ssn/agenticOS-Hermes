@@ -38,6 +38,12 @@ export function hermesSourceDir(home: string): string {
   return join(home, 'hermes-agent');
 }
 
+export function parseInstallDir(versionOutput: string): string {
+  const match = /^\s*Install directory:\s*(.+?)\s*$/m.exec(versionOutput);
+  if (!match) throw new Error('Cannot find "Install directory:" in `hermes --version` output');
+  return match[1];
+}
+
 export function parseLock(text: string): { commit: string } {
   const match = /^commit=([0-9a-f]{7,40})\s*$/m.exec(text);
   if (!match) throw new Error('infra/hermes.lock must contain a line commit=<git sha>');

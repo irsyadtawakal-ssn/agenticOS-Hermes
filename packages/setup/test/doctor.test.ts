@@ -25,29 +25,80 @@ function healthyHome(): string {
   return home;
 }
 
-const gitExec = (head: string, code = 0): Exec => async () => ({ code, stdout: `${head}\n`, stderr: code ? 'not a git repo' : '' });
+const INSTALL_DIR = 'C:\Users\lu.DESKTOP-HRO3RNS\AppData\Local\hermes\hermes-agent';
+const versionOutput = (installDir = INSTALL_DIR): string =>
+  [
+    'Hermes Agent v0.21.5+4515.ge85706c (2026.9.24) · upstream e85706cb',
+    `Install directory: ${installDir}`,
+    'Install method: git',
+    'Python: 3.14.7',
+    '',
+  ].join('\n');
+
+type Call = { cmd: string; args: string[] };
+const fakeExec =
+  (head: string, opts: { gitCode?: number; version?: string; calls?: Call[] } = {}): Exec =>
+  async (cmd, args) => {
+    opts.calls?.push({ cmd, args });
+    if (cmd === 'hermes') return { code: 0, stdout: opts.version ?? versionOutput(), stderr: '' };
+    const code = opts.gitCode ?? 0;
+    return { code, stdout: `${head}\n`, stderr: code ? 'not a git repo' : '' };
+  };
 
 describe('checkHermesPin', () => {
   it('passes when HEAD equals the locked commit', async () => {
-    expect((await checkHermesPin('H', `commit=${SHA}\n`, gitExec(SHA))).ok).toBe(true);
+    const r = await checkHermesPin(`commit=${SHA}\n`, fakeExec(SHA));
+    expect(r).toEqual({ name: 'hermes-pin', ok: true, detail: `pinned at ${SHA.slice(0, 12)} (${INSTALL_DIR})` });
   });
   it('fails on drift and on git errors', async () => {
-    expect((await checkHermesPin('H', `commit=${SHA}\n`, gitExec('f'.repeat(40)))).ok).toBe(false);
-    const r = await checkHermesPin('H', `commit=${SHA}\n`, gitExec('', 128));
+    expect((await checkHermesPin(`commit=${SHA}\n`, fakeExec('f'.repeat(40)))).ok).toBe(false);
+    const r = await checkHermesPin(`commit=${SHA}\n`, fakeExec('', { gitCode: 128 }));
     expect(r).toMatchObject({ ok: false, detail: expect.stringMatching(/git rev-parse failed/) });
+  });
+  it('runs git against the install directory reported by hermes --version', async () => {
+    const calls: Call[] = [];
+    await checkHermesPin(`commit=${SHA}\n`, fakeExec(SHA, { calls, version: versionOutput('D:\elsewhere\hermes-agent') }));
+    expect(calls[0]).toEqual({ cmd: 'hermes', args: ['--version'] });
+    expect(calls[1]).toEqual({ cmd: 'git', args: ['-C', 'D:\elsewhere\hermes-agent', 'rev-parse', 'HEAD'] });
   });
 });
 
 describe('checkHermesPin when git cannot run', () => {
   it('returns a failed row instead of throwing', async () => {
-    const enoent: Exec = async () => {
+    const enoent: Exec = async (cmd) => {
+      if (cmd === 'hermes') return { code: 0, stdout: versionOutput(), stderr: '' };
       throw new Error('spawn git ENOENT');
     };
-    expect(await checkHermesPin('H', `commit=${SHA}\n`, enoent)).toEqual({
+    expect(await checkHermesPin(`commit=${SHA}\n`, enoent)).toEqual({
       name: 'hermes-pin',
       ok: false,
       detail: 'git not runnable: spawn git ENOENT',
     });
+  });
+});
+
+describe('checkHermesPin when hermes --version is unusable', () => {
+  it('fails when hermes cannot run', async () => {
+    const enoent: Exec = async () => {
+      throw new Error('spawn hermes ENOENT');
+    };
+    expect(await checkHermesPin(`commit=${SHA}\n`, enoent)).toEqual({
+      name: 'hermes-pin',
+      ok: false,
+      detail: 'hermes not runnable: spawn hermes ENOENT',
+    });
+  });
+  it('fails on a non-zero exit', async () => {
+    const bad: Exec = async () => ({ code: 1, stdout: '', stderr: 'boom\n' });
+    expect(await checkHermesPin(`commit=${SHA}\n`, bad)).toEqual({
+      name: 'hermes-pin',
+      ok: false,
+      detail: 'hermes --version failed: boom',
+    });
+  });
+  it('fails when the output has no Install directory line', async () => {
+    const r = await checkHermesPin(`commit=${SHA}\n`, fakeExec(SHA, { version: 'Hermes Agent v0.21.5\n' }));
+    expect(r).toMatchObject({ name: 'hermes-pin', ok: false, detail: expect.stringMatching(/Install directory/) });
   });
 });
 
@@ -107,7 +158,7 @@ describe('runDoctor', () => {
         : new Response('', { status: 401 })) as unknown as typeof fetch;
     const results = await runDoctor(
       { home, roster, lockText: `commit=${SHA}\n`, routerBaseUrl: BASE, routerKey: 'rk' },
-      { exec: gitExec(SHA), fetchFn },
+      { exec: fakeExec(SHA), fetchFn },
     );
     expect(results.every((r) => r.ok)).toBe(true);
     expect(results.map((r) => r.name)).toContain('hermes-pin');

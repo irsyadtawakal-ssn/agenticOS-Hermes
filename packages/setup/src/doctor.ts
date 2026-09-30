@@ -4,7 +4,7 @@ import YAML from 'yaml';
 import { profileDir } from './apply.js';
 import type { CheckResult } from './check.js';
 import type { Exec } from './exec.js';
-import { hermesSourceDir, parseLock } from './hermesHome.js';
+import { parseInstallDir, parseLock } from './hermesHome.js';
 import { parseEnv, type ProfileSpec } from './profiles.js';
 import { checkRouter } from './router.js';
 
@@ -36,18 +36,33 @@ export interface DoctorDeps {
 
 const readText = (path: string): string => (existsSync(path) ? readFileSync(path, 'utf8') : '');
 
-export async function checkHermesPin(home: string, lockText: string, exec: Exec): Promise<CheckResult> {
+export async function checkHermesPin(lockText: string, exec: Exec): Promise<CheckResult> {
   const { commit } = parseLock(lockText);
+  let v: Awaited<ReturnType<Exec>>;
+  try {
+    v = await exec('hermes', ['--version'], { timeoutMs: 60_000 });
+  } catch (err) {
+    return { name: 'hermes-pin', ok: false, detail: `hermes not runnable: ${(err as Error).message}` };
+  }
+  if (v.code !== 0) {
+    return { name: 'hermes-pin', ok: false, detail: `hermes --version failed: ${(v.stderr || v.stdout).trim()}` };
+  }
+  let installDir: string;
+  try {
+    installDir = parseInstallDir(v.stdout);
+  } catch (err) {
+    return { name: 'hermes-pin', ok: false, detail: (err as Error).message };
+  }
   let r: Awaited<ReturnType<Exec>>;
   try {
-    r = await exec('git', ['-C', hermesSourceDir(home), 'rev-parse', 'HEAD']);
+    r = await exec('git', ['-C', installDir, 'rev-parse', 'HEAD']);
   } catch (err) {
     return { name: 'hermes-pin', ok: false, detail: `git not runnable: ${(err as Error).message}` };
   }
   const head = r.stdout.trim();
   if (r.code !== 0) return { name: 'hermes-pin', ok: false, detail: `git rev-parse failed: ${r.stderr.trim()}` };
   return head === commit
-    ? { name: 'hermes-pin', ok: true, detail: `pinned at ${commit.slice(0, 12)}` }
+    ? { name: 'hermes-pin', ok: true, detail: `pinned at ${commit.slice(0, 12)} (${installDir})` }
     : { name: 'hermes-pin', ok: false, detail: `HEAD ${head.slice(0, 12)} != lock ${commit.slice(0, 12)}` };
 }
 
@@ -94,7 +109,7 @@ export function checkProfile(home: string, spec: ProfileSpec, routerBaseUrl: str
 
 export async function runDoctor(cfg: DoctorConfig, deps: DoctorDeps): Promise<CheckResult[]> {
   return [
-    await checkHermesPin(cfg.home, cfg.lockText, deps.exec),
+    await checkHermesPin(cfg.lockText, deps.exec),
     checkEnvFile(join(cfg.home, '.env'), 'root-env'),
     ...cfg.roster.flatMap((spec) => checkProfile(cfg.home, spec, cfg.routerBaseUrl, cfg.routerKey)),
     ...(await checkRouter(cfg.routerBaseUrl, cfg.routerKey, deps.fetchFn)),
