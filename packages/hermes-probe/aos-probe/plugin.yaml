@@ -1,0 +1,3 @@
+name: aos-probe
+version: "0.1.0"
+description: Agentic OS (temporary) - records hook payload shapes for the os-bridge contract.
