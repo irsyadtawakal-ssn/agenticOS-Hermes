@@ -80,3 +80,84 @@ def test_build_event_modes_and_privacy():
     assert end["type"] == "session.ended" and end["payload"]["completed"] is True
     assert end["mode"] == "interactive"
     assert mod.build_event("pre_auxiliary_call", {}, "chief", env={}) is None
+
+
+def _ev(mod, n):
+    return mod.build_event("on_session_start", {"session_id": f"s{n}", "platform": "cli"}, "chief", env={}, ts_ms=n)
+
+
+def test_transport_sends_batches(tmp_path):
+    mod = load()
+    sent = []
+    t = mod.Transport("http://x", "tok", tmp_path / "spool.jsonl", send=lambda evs: sent.append(list(evs)) or True)
+    t.enqueue(_ev(mod, 1))
+    t.enqueue(_ev(mod, 2))
+    assert t.flush_once() == 2
+    assert [e["ts"] for e in sent[0]] == [1, 2]
+    assert t.flush_once() == 0
+
+
+def test_transport_spools_on_failure_and_replays(tmp_path):
+    mod = load()
+    spool = tmp_path / "spool.jsonl"
+    ok = {"value": False}
+    sent = []
+    t = mod.Transport("http://x", "tok", spool, send=lambda evs: (sent.append(list(evs)) or True) if ok["value"] else False)
+    t.enqueue(_ev(mod, 1))
+    assert t.flush_once() == 0
+    assert spool.exists() and len(spool.read_text(encoding="utf-8").splitlines()) == 1
+    ok["value"] = True
+    t.enqueue(_ev(mod, 2))
+    assert t.flush_once() == 2
+    assert [e["ts"] for e in sent[-1]] == [1, 2]
+    assert not spool.exists() or spool.read_text(encoding="utf-8") == ""
+
+
+def test_transport_never_raises(tmp_path):
+    mod = load()
+
+    def boom(_events):
+        raise RuntimeError("network down")
+
+    t = mod.Transport("http://x", "tok", tmp_path / "spool.jsonl", send=boom)
+    t.enqueue(_ev(mod, 1))
+    assert t.flush_once() == 0
+
+
+def test_load_settings_prefers_env_then_config_file(tmp_path):
+    mod = load()
+    (tmp_path / "config.json").write_text('{"core_url": "http://127.0.0.1:7400", "token": "file-tok"}', encoding="utf-8")
+    s = mod.load_settings(tmp_path, env={})
+    assert s["core_url"] == "http://127.0.0.1:7400" and s["token"] == "file-tok"
+    assert s["spool"] == tmp_path / "spool.jsonl"
+    s2 = mod.load_settings(tmp_path, env={"AOS_CORE_URL": "http://other", "AOS_BRIDGE_TOKEN": "env-tok"})
+    assert s2["core_url"] == "http://other" and s2["token"] == "env-tok"
+    s3 = mod.load_settings(tmp_path / "missing", env={})
+    assert s3["core_url"] == "http://127.0.0.1:7400" and s3["token"] == ""
+
+
+def test_register_wires_six_hooks_that_never_raise(tmp_path, monkeypatch):
+    mod = load()
+    queued = []
+
+    class FakeTransport:
+        def enqueue(self, event):
+            queued.append(event)
+
+    monkeypatch.setattr(mod, "_transport", lambda: FakeTransport())
+    hooks = {}
+
+    class Ctx:
+        def register_hook(self, name, fn):
+            hooks[name] = fn
+
+    mod.register(Ctx())
+    assert sorted(hooks) == sorted(mod.HOOKS)
+    assert hooks["pre_tool_call"](tool_name="terminal", args={"command": "ls"}, session_id="s") is None
+    assert queued and queued[0]["type"] == "tool.started"
+
+    def broken():
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(mod, "_transport", broken)
+    assert hooks["on_session_end"](session_id="s") is None

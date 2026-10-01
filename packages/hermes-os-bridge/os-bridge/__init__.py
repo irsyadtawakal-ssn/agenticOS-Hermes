@@ -2,10 +2,14 @@
 
 Never blocks a tool, never raises into Hermes, never forwards message/result content.
 """
+import atexit
 import json
 import os
+import queue
 import re
+import threading
 import time
+import urllib.request
 import uuid
 from pathlib import Path
 
@@ -114,3 +118,146 @@ def build_event(hook, kwargs, profile, env=None, ts_ms=None):
         "mode": mode,
         "payload": payload,
     }
+
+
+DEFAULT_CORE_URL = "http://127.0.0.1:7400"
+HOOKS = ["on_session_start", "on_session_end", "pre_llm_call", "post_llm_call", "pre_tool_call", "post_tool_call"]
+_MAX_SPOOL_BYTES = 5 * 1024 * 1024
+
+
+class Transport:
+    def __init__(self, url, token, spool_path, send=None, batch_size=50):
+        self._url = url.rstrip("/") + "/v1/events"
+        self._token = token
+        self._spool = Path(spool_path)
+        self._send = send or self._http_send
+        self._batch_size = batch_size
+        self._queue = queue.Queue(maxsize=5000)
+        self._lock = threading.Lock()
+        self._thread = None
+
+    def enqueue(self, event):
+        try:
+            self._queue.put_nowait(event)
+        except queue.Full:
+            pass
+
+    def _http_send(self, events):
+        body = json.dumps(events, ensure_ascii=False).encode("utf-8")
+        req = urllib.request.Request(
+            self._url, data=body, method="POST",
+            headers={"content-type": "application/json", "x-aos-bridge-token": self._token},
+        )
+        with urllib.request.urlopen(req, timeout=2) as resp:
+            return 200 <= resp.status < 300
+
+    def _read_spool(self):
+        try:
+            if not self._spool.exists():
+                return []
+            return [json.loads(line) for line in self._spool.read_text(encoding="utf-8").splitlines() if line.strip()]
+        except Exception:
+            return []
+
+    def _append_spool(self, events):
+        try:
+            if self._spool.exists() and self._spool.stat().st_size > _MAX_SPOOL_BYTES:
+                return
+            self._spool.parent.mkdir(parents=True, exist_ok=True)
+            with self._spool.open("a", encoding="utf-8") as f:
+                for event in events:
+                    f.write(json.dumps(event, ensure_ascii=False) + "\n")
+        except Exception:
+            pass
+
+    def _clear_spool(self):
+        try:
+            self._spool.write_text("", encoding="utf-8")
+        except Exception:
+            pass
+
+    def flush_once(self):
+        with self._lock:
+            batch = []
+            while len(batch) < self._batch_size:
+                try:
+                    batch.append(self._queue.get_nowait())
+                except queue.Empty:
+                    break
+            spooled = self._read_spool()
+            events = spooled + batch
+            if not events:
+                return 0
+            try:
+                delivered = bool(self._send(events))
+            except Exception:
+                delivered = False
+            if delivered:
+                if spooled:
+                    self._clear_spool()
+                return len(events)
+            if batch:
+                self._append_spool(batch)
+            return 0
+
+    def start(self):
+        if self._thread is not None:
+            return
+
+        def loop():
+            while True:
+                time.sleep(0.5)
+                self.flush_once()
+
+        self._thread = threading.Thread(target=loop, name="aos-os-bridge", daemon=True)
+        self._thread.start()
+        atexit.register(self.flush_once)
+
+
+def load_settings(plugin_dir, env=None):
+    env = os.environ if env is None else env
+    plugin_dir = Path(plugin_dir)
+    file_cfg = {}
+    try:
+        file_cfg = json.loads((plugin_dir / "config.json").read_text(encoding="utf-8"))
+    except Exception:
+        file_cfg = {}
+    return {
+        "core_url": env.get("AOS_CORE_URL") or file_cfg.get("core_url") or DEFAULT_CORE_URL,
+        "token": env.get("AOS_BRIDGE_TOKEN") or file_cfg.get("token") or "",
+        "spool": plugin_dir / "spool.jsonl",
+    }
+
+
+_TRANSPORT = None
+
+
+def _transport():
+    global _TRANSPORT
+    if _TRANSPORT is None:
+        settings = load_settings(Path(__file__).resolve().parent)
+        _TRANSPORT = Transport(settings["core_url"], settings["token"], settings["spool"])
+        _TRANSPORT.start()
+    return _TRANSPORT
+
+
+def _make_hook(hook, profile):
+    def callback(*args, **kwargs):
+        try:
+            event = build_event(hook, kwargs, profile)
+            if event is not None:
+                _transport().enqueue(event)
+        except Exception:
+            pass
+        return None
+
+    return callback
+
+
+def register(ctx):
+    profile = profile_name(str(Path(__file__).resolve()))
+    for hook in HOOKS:
+        try:
+            ctx.register_hook(hook, _make_hook(hook, profile))
+        except Exception:
+            pass
