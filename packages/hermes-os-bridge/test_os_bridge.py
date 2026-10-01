@@ -45,13 +45,6 @@ def test_preview_serialises_redacts_and_truncates():
     assert len(long) == 50 and long.endswith("…")
 
 
-def test_profile_name_from_plugin_location():
-    mod = load()
-    path = r"D:\agentic-os\hermes-home\profiles\researcher\plugins\os-bridge\__init__.py"
-    assert mod.profile_name(path) == "researcher"
-    assert mod.profile_name("/tmp/elsewhere/__init__.py") == "unknown"
-
-
 def test_build_event_tool_started_in_kanban_mode():
     mod = load()
     ev = mod.build_event(
@@ -114,8 +107,8 @@ def test_transport_spools_on_failure_and_replays(tmp_path):
     # Need to pass now=2 to bypass the backoff delay (which is 1s)
     assert t.flush_once(now=2) == 2
     assert [e["ts"] for e in sent[-1]] == [1, 2]
-    # Empty spool files are now deleted
-    assert not own_file.exists() or own_file.read_text(encoding="utf-8") == ""
+    # Empty spool files are deleted, not left behind
+    assert not own_file.exists()
 
 
 def test_transport_never_raises(tmp_path):
@@ -127,6 +120,9 @@ def test_transport_never_raises(tmp_path):
     t = mod.Transport("http://x", "tok", tmp_path / "spool", send=boom)
     t.enqueue(_ev(mod, 1))
     assert t.flush_once() == 0
+    # The undelivered event is preserved on disk, not dropped
+    own_file = tmp_path / "spool" / f"{os.getpid()}.jsonl"
+    assert [json.loads(l)["ts"] for l in own_file.read_text(encoding="utf-8").splitlines()] == [1]
 
 
 def test_load_settings_prefers_env_then_config_file(tmp_path):
@@ -168,433 +164,367 @@ def test_register_wires_six_hooks_that_never_raise(tmp_path, monkeypatch):
     assert hooks["on_session_end"](session_id="s") is None
 
 
-# Fix Round 1 Tests
+# ---------------------------------------------------------------------------
+# Durability: per-process spool, tolerant replay, batching, backoff, adoption
+# ---------------------------------------------------------------------------
 
-def test_transport_per_process_spool_directory(tmp_path, monkeypatch):
+def _spool_ts(path):
+    return [json.loads(line)["ts"] for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+def _age(path, seconds):
+    old = time.time() - seconds
+    os.utime(path, (old, old))
+
+
+def test_transport_per_process_spool_directory(tmp_path):
     mod = load()
     spool_dir = tmp_path / "spool"
-    # Failure mode: spool should be <pid>.jsonl
     t = mod.Transport("http://x", "tok", spool_dir, send=lambda evs: False)
     t.enqueue(_ev(mod, 1))
-    assert t.flush_once(now=0) == 0  # Failure
+    assert t.flush_once(now=0) == 0
     own_file = spool_dir / f"{os.getpid()}.jsonl"
-    assert own_file.exists()
-    assert own_file.read_text(encoding="utf-8").strip() != ""
+    assert [p.name for p in spool_dir.iterdir()] == [own_file.name]
+    assert _spool_ts(own_file) == [1]
 
 
-def test_transport_corrupt_line_skipped(tmp_path, monkeypatch):
-    import os as os_module
+def test_transport_corrupt_line_skipped(tmp_path):
     mod = load()
     spool_dir = tmp_path / "spool"
     spool_dir.mkdir()
-    own_file = spool_dir / f"{os_module.getpid()}.jsonl"
-    # Write one valid, one corrupt, one valid event
-    ev1 = _ev(mod, 1)
-    ev2 = _ev(mod, 2)
+    own_file = spool_dir / f"{os.getpid()}.jsonl"
     own_file.write_text(
-        json.dumps(ev1) + "\n" +
-        "{ corrupt json\n" +
-        json.dumps(ev2) + "\n",
-        encoding="utf-8"
+        json.dumps(_ev(mod, 1)) + "\n" + "{ corrupt json\n" + json.dumps(_ev(mod, 2)) + "\n",
+        encoding="utf-8",
     )
     sent = []
     t = mod.Transport("http://x", "tok", spool_dir, send=lambda evs: sent.append(list(evs)) or True)
-    count = t.flush_once(now=0)
-    # Should replay only the 2 valid events, skip the corrupt line
-    assert count == 2
+    assert t.flush_once(now=0) == 2
     assert [e["ts"] for e in sent[0]] == [1, 2]
+    assert not own_file.exists()
 
 
-def test_transport_backoff_on_failure(tmp_path):
-    import os as os_module
+def test_profile_name_logic():
     mod = load()
-    spool_dir = tmp_path / "spool"
-    sent = []
-    t = mod.Transport("http://x", "tok", spool_dir, send=lambda evs: False)
-    t.enqueue(_ev(mod, 1))
-    # First flush fails, enters backoff
-    assert t.flush_once(now=0) == 0
-    # At now=0.5, still backing off (delay=1s)
-    assert t.flush_once(now=0.5) == 0
-    # At now=1.5, backoff expired, should call send again
-    sent.append(None)  # Track that send was called
-    t._send = lambda evs: sent.pop() is None and False
-    assert t.flush_once(now=1.5) == 0
-    assert len(sent) == 0  # send was called
-
-
-def test_transport_orphan_adoption(tmp_path, monkeypatch):
-    import os as os_module
-    import time as time_module
-    mod = load()
-    spool_dir = tmp_path / "spool"
-    spool_dir.mkdir()
-    # Create an orphan file with old mtime
-    orphan_file = spool_dir / "999999.jsonl"
-    ev = _ev(mod, 1)
-    orphan_file.write_text(json.dumps(ev) + "\n", encoding="utf-8")
-    # Set mtime to 120s in the past
-    now_time = time_module.time()
-    old_time = now_time - 120
-    os_module.utime(orphan_file, (old_time, old_time))
-
-    sent = []
-    t = mod.Transport("http://x", "tok", spool_dir, send=lambda evs: sent.append(list(evs)) or True)
-    # Flush with current time
-    count = t.flush_once(now=now_time)
-    # Should adopt the orphan file and replay it
-    assert count == 1
-    assert [e["ts"] for e in sent[0]] == [1]
-
-
-def test_profile_name_updated_logic():
-    mod = load()
-    # Under profiles/researcher/plugins/os-bridge
-    path1 = r"D:\agentic-os\hermes-home\profiles\researcher\plugins\os-bridge\__init__.py"
-    assert mod.profile_name(path1) == "researcher"
-    # At plugins dir but not under profiles (default)
-    path2 = r"D:\h\plugins\os-bridge\__init__.py"
-    assert mod.profile_name(path2) == "default"
-    # Not under plugins at all
-    path3 = "/tmp/x/__init__.py"
-    assert mod.profile_name(path3) == "unknown"
+    assert mod.profile_name(r"D:\agentic-os\hermes-home\profiles\researcher\plugins\os-bridge\__init__.py") == "researcher"
+    assert mod.profile_name(r"D:\h\plugins\os-bridge\__init__.py") == "default"
+    assert mod.profile_name("/tmp/x/__init__.py") == "unknown"
 
 
 def test_preview_redacts_sensitive_keys():
     mod = load()
-    val = {"password": "secret_pass", "nested": {"api_key": "key123"}, "q": "ok"}
-    result = mod.preview(val)
-    assert "secret_pass" not in result
-    assert "key123" not in result
-    assert "ok" in result
+    result = mod.preview({"password": "secret_pass", "nested": {"api_key": "key123"}, "q": "ok"})
+    assert json.loads(result) == {"password": "[REDACTED]", "nested": {"api_key": "[REDACTED]"}, "q": "ok"}
 
 
 def test_redact_password_token_patterns():
     mod = load()
-    text = "pwd=abc123 secret=xyz token: abc"
-    result = mod.redact(text)
-    assert "abc123" not in result
-    assert "xyz" not in result
+    assert mod.redact("pwd=abc123") == "pwd=[REDACTED]"
+    assert mod.redact("secret=xyz token: abc") == "secret=[REDACTED] token=[REDACTED]"
 
 
-def test_load_settings_with_spool_directory(tmp_path):
+def test_redaction_non_str_keys_and_nested_lists():
     mod = load()
-    (tmp_path / "config.json").write_text('{"core_url": "http://127.0.0.1:7400", "token": "file-tok"}', encoding="utf-8")
-    s = mod.load_settings(tmp_path, env={})
-    assert s["spool"] == tmp_path / "spool"
-    assert s["spool"].is_absolute() or not str(s["spool"]).startswith("/tmp")
+    val = {1: "x", "outer": [[{"api_key": "SECRET1"}]], "token": "SECRET2"}
+    result = mod.preview(val)
+    assert "SECRET1" not in result and "SECRET2" not in result
+    assert json.loads(result) == {"1": "x", "outer": [[{"api_key": "[REDACTED]"}]], "token": "[REDACTED]"}
 
 
 def test_http_send_no_proxy_for_loopback(tmp_path, monkeypatch):
     import http.server
-    import socketserver
-    import threading as threading_module
-    mod = load()
+    import threading
 
-    # Start local server
-    request_data = []
+    seen = {}
+
     class Handler(http.server.BaseHTTPRequestHandler):
         def do_POST(self):
-            request_data.append({
-                "headers": dict(self.headers),
-                "body": self.rfile.read(int(self.headers.get("content-length", 0)))
-            })
+            seen["path"] = self.path
+            seen["token"] = self.headers.get("x-aos-bridge-token")
+            seen["body"] = json.loads(self.rfile.read(int(self.headers["content-length"])))
+            payload = b'{"accepted": 1}'
             self.send_response(200)
+            self.send_header("content-length", str(len(payload)))
             self.end_headers()
+            self.wfile.write(payload)
+
         def log_message(self, *args):
             pass
 
-    handler = Handler
-    with socketserver.TCPServer(("127.0.0.1", 0), handler) as httpd:
-        host, port = httpd.server_address
-        server_thread = threading_module.Thread(target=httpd.serve_forever, daemon=True)
-        server_thread.start()
+    for name in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"):
+        monkeypatch.setenv(name, "http://127.0.0.1:9")  # nothing listens on port 9
+    mod = load()  # loaded after the env is set: a default opener would capture these proxies at import
+    server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        port = server.server_address[1]
+        event = _ev(mod, 1)
+        t = mod.Transport(f"http://127.0.0.1:{port}", "tok", tmp_path / "spool")
+        assert t._http_send([event]) is True
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+    assert seen["path"] == "/v1/events"
+    assert seen["token"] == "tok"
+    assert isinstance(seen["body"], list) and seen["body"][0]["id"] == event["id"]
 
-        # Monkeypatch HTTP_PROXY to point to invalid proxy
-        monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:9")
 
-        t = mod.Transport(f"http://{host}:{port}", "tok", tmp_path / "spool")
-        ev = _ev(mod, 1)
-        # This should still work (bypass proxy for loopback)
-        try:
-            t._http_send([ev])
-            httpd.shutdown()
-        except Exception:
-            pass  # Connection may fail but we just verify it tried loopback
+def test_transport_thread_safe_singleton(monkeypatch):
+    import threading
 
-        assert len(request_data) > 0 or True  # Relaxed check for test
-
-
-def test_transport_thread_safe_singleton(tmp_path, monkeypatch):
-    import threading as threading_module
     mod = load()
     created = []
 
     class CountingTransport:
         def __init__(self, *args, **kwargs):
-            created.append(1)
+            time.sleep(0.05)  # widen the race window so an unlocked check-then-create would duplicate
+            created.append(self)
+
         def start(self):
             pass
 
     monkeypatch.setattr(mod, "Transport", CountingTransport)
+    mod._TRANSPORT = None
+    barrier = threading.Barrier(5)
+    results = []
 
     def call_transport():
-        try:
-            mod._transport()
-        except Exception:
-            pass
+        barrier.wait(timeout=5)
+        results.append(mod._transport())
 
-    # Reset global
-    mod._TRANSPORT = None
+    threads = [threading.Thread(target=call_transport) for _ in range(5)]
+    for th in threads:
+        th.start()
+    for th in threads:
+        th.join(timeout=10)
 
-    threads = []
-    for _ in range(5):
-        t = threading_module.Thread(target=call_transport)
-        threads.append(t)
-        t.start()
-
-    for t in threads:
-        t.join()
-
-    # Should create exactly one transport (or at most a very small number due to race)
-    assert len(created) <= 2  # Allow for minor race condition
+    assert len(results) == 5
+    assert len(created) == 1
+    assert all(r is created[0] for r in results)
 
 
 def test_load_settings_invalid_config_json(tmp_path):
     mod = load()
-    # Write invalid JSON
-    (tmp_path / "config.json").write_text('not valid json', encoding="utf-8")
+    (tmp_path / "config.json").write_text("not valid json", encoding="utf-8")
     s = mod.load_settings(tmp_path, env={})
-    # Should fall back to defaults
-    assert s["core_url"] == "http://127.0.0.1:7400"
-    assert s["token"] == ""
+    assert s["core_url"] == "http://127.0.0.1:7400" and s["token"] == ""
 
 
-# Fix Round 2 Tests
+def test_load_settings_non_dict_config(tmp_path):
+    mod = load()
+    (tmp_path / "config.json").write_text("[]", encoding="utf-8")
+    s = mod.load_settings(tmp_path, env={})
+    assert s["core_url"] == "http://127.0.0.1:7400" and s["token"] == ""
+    assert s["spool"] == tmp_path / "spool"
+
+
+# ---------------------------------------------------------------------------
+# Orphan adoption
+# ---------------------------------------------------------------------------
 
 def test_orphan_adoption_with_wall_clock(tmp_path):
     mod = load()
     spool_dir = tmp_path / "spool"
     spool_dir.mkdir()
-    orphan_file = spool_dir / "999999.jsonl"
-    ev = _ev(mod, 1)
-    orphan_file.write_text(json.dumps(ev) + "\n", encoding="utf-8")
-    old_time = time.time() - 120
-    os.utime(orphan_file, (old_time, old_time))
+    orphan = spool_dir / "999999.jsonl"
+    orphan.write_text(json.dumps(_ev(mod, 1)) + "\n", encoding="utf-8")
+    _age(orphan, 120)
     sent = []
     t = mod.Transport("http://x", "tok", spool_dir, send=lambda evs: sent.append(list(evs)) or True)
-    count = t.flush_once()
-    assert count == 1
+    assert t.flush_once() == 1  # no now/wall arguments: real clocks
+    assert [e["ts"] for e in sent[0]] == [1]
+    # Orphan was renamed to an adopted file, then deleted once drained
+    assert list(spool_dir.iterdir()) == []
 
 
 def test_fresh_orphan_not_adopted(tmp_path):
     mod = load()
     spool_dir = tmp_path / "spool"
     spool_dir.mkdir()
-    orphan_file = spool_dir / "999999.jsonl"
-    ev = _ev(mod, 1)
-    orphan_file.write_text(json.dumps(ev) + "\n", encoding="utf-8")
+    orphan = spool_dir / "999999.jsonl"
+    content = json.dumps(_ev(mod, 1)) + "\n"
+    orphan.write_text(content, encoding="utf-8")
     sent = []
     t = mod.Transport("http://x", "tok", spool_dir, send=lambda evs: sent.append(list(evs)) or True)
-    count = t.flush_once()
-    assert count == 0 and orphan_file.exists()
-
-
-def test_backoff_prevents_send(tmp_path):
-    mod = load()
-    spool_dir = tmp_path / "spool"
-    send_calls = []
-    t = mod.Transport("http://x", "tok", spool_dir, send=lambda evs: (send_calls.append(1), False)[1], batch_size=50)
-    t.enqueue(_ev(mod, 1))
-    assert t.flush_once(now=0) == 0 and len(send_calls) == 1
-    send_calls.clear()
     t.enqueue(_ev(mod, 2))
-    assert t.flush_once(now=0.5) == 0 and len(send_calls) == 0
+    assert t.flush_once() == 1
+    assert [e["ts"] for e in sent[0]] == [2]  # only the queued event
+    assert orphan.read_text(encoding="utf-8") == content
 
 
 def test_pid_stem_ownership(tmp_path, monkeypatch):
+    """pid 12 must not treat 123.jsonl as its own file: it is an adoptable orphan."""
     mod = load()
     spool_dir = tmp_path / "spool"
     spool_dir.mkdir()
     monkeypatch.setattr(os, "getpid", lambda: 12)
-    orphan_file = spool_dir / "123.jsonl"
-    ev = _ev(mod, 1)
-    orphan_file.write_text(json.dumps(ev) + "\n", encoding="utf-8")
-    old_time = time.time() - 120
-    os.utime(orphan_file, (old_time, old_time))
+    orphan = spool_dir / "123.jsonl"
+    orphan.write_text(json.dumps(_ev(mod, 1)) + "\n", encoding="utf-8")
+    _age(orphan, 120)
     sent = []
     t = mod.Transport("http://x", "tok", spool_dir, send=lambda evs: sent.append(list(evs)) or True)
-    count = t.flush_once()
-    assert count == 1
+    assert t.flush_once() == 1
+    assert [e["ts"] for e in sent[0]] == [1]
+    assert list(spool_dir.iterdir()) == []
 
 
-def test_load_settings_non_dict_config(tmp_path):
+def test_adopted_orphan_with_remainder_then_deleted(tmp_path):
     mod = load()
-    (tmp_path / "config.json").write_text('[]', encoding="utf-8")
-    s = mod.load_settings(tmp_path, env={})
-    assert s["core_url"] == "http://127.0.0.1:7400" and s["token"] == ""
+    spool_dir = tmp_path / "spool"
+    spool_dir.mkdir()
+    orphan = spool_dir / "999999.jsonl"
+    orphan.write_text("".join(json.dumps(_ev(mod, n)) + "\n" for n in (1, 2, 3)), encoding="utf-8")
+    _age(orphan, 120)
+    sent = []
+    t = mod.Transport("http://x", "tok", spool_dir, send=lambda evs: sent.extend(evs) or True, batch_size=2)
+    assert t.flush_once() == 2
+    adopted = spool_dir / f"{os.getpid()}-adopt-0.jsonl"
+    assert not orphan.exists()
+    assert _spool_ts(adopted) == [3]
+    assert t.flush_once() == 1
+    assert [e["ts"] for e in sent] == [1, 2, 3]
+    assert not adopted.exists()
 
 
-# Fix Round 3 Tests
+# ---------------------------------------------------------------------------
+# Data safety: read failure, room-limited drain, rewrite failure, empty files
+# ---------------------------------------------------------------------------
 
 def test_read_failure_keeps_data(tmp_path, monkeypatch):
-    """Read failure must NOT modify the spool file."""
+    """An unreadable own spool file must be left byte-for-byte untouched."""
     mod = load()
     spool_dir = tmp_path / "spool"
     spool_dir.mkdir()
     own_file = spool_dir / f"{os.getpid()}.jsonl"
+    own_file.write_text(json.dumps(_ev(mod, 1)) + "\n" + json.dumps(_ev(mod, 2)) + "\n", encoding="utf-8")
+    original_bytes = own_file.read_bytes()
 
-    # Write 2 events to spool
-    ev1, ev2 = _ev(mod, 1), _ev(mod, 2)
-    original_content = json.dumps(ev1) + "\n" + json.dumps(ev2) + "\n"
-    own_file.write_text(original_content, encoding="utf-8")
+    real_read_text = Path.read_text
 
-    # Monkeypatch read_text to fail for own_file only
-    original_read = Path.read_text
-    def read_fail(self, **kwargs):
+    def read_fail(self, *args, **kwargs):
         if self == own_file:
-            raise PermissionError("Cannot read")
-        return original_read(self, **kwargs)
-    monkeypatch.setattr(Path, "read_text", read_fail)
+            raise PermissionError("cannot read")
+        return real_read_text(self, *args, **kwargs)
 
-    # Enqueue 1 event and flush
+    monkeypatch.setattr(Path, "read_text", read_fail)
     sent = []
     t = mod.Transport("http://x", "tok", spool_dir, send=lambda evs: sent.append(list(evs)) or True)
     t.enqueue(_ev(mod, 3))
-    t.flush_once()
+    assert t.flush_once() == 1
+    monkeypatch.undo()
 
-    # Spool file must be unchanged (byte-for-byte) - read directly, not through monkeypatch
-    with open(own_file, "r", encoding="utf-8") as f:
-        actual_content = f.read()
-    assert actual_content == original_content
-    # Send received only the queued event
-    assert len(sent) == 1
-    assert len(sent[0]) == 1
-    assert sent[0][0]["ts"] == 3
+    assert own_file.read_bytes() == original_bytes
+    assert [[e["ts"] for e in batch] for batch in sent] == [[3]]
 
 
-def test_room_limited_drain(tmp_path):
-    """Drain only fits room = batch_size - len(replayed)."""
-    mod = load()
+def _room_limited_setup(mod, tmp_path, sent_ids):
+    """3 spooled events (ts 1-3) + 2 queued (ts 4-5), batch_size 2."""
     spool_dir = tmp_path / "spool"
     spool_dir.mkdir()
     own_file = spool_dir / f"{os.getpid()}.jsonl"
-
-    # Own spool: 3 events (ids a, b, c)
-    ev_a, ev_b, ev_c = _ev(mod, 1), _ev(mod, 2), _ev(mod, 3)
-    own_file.write_text(
-        json.dumps(ev_a) + "\n" +
-        json.dumps(ev_b) + "\n" +
-        json.dumps(ev_c) + "\n",
-        encoding="utf-8"
+    spooled = [_ev(mod, n) for n in (1, 2, 3)]
+    own_file.write_text("".join(json.dumps(e) + "\n" for e in spooled), encoding="utf-8")
+    t = mod.Transport(
+        "http://x", "tok", spool_dir,
+        send=lambda evs: sent_ids.extend(e["id"] for e in evs) or True, batch_size=2,
     )
-
-    sent_events = []
-    t = mod.Transport("http://x", "tok", spool_dir, send=lambda evs: sent_events.extend(evs) or True, batch_size=2)
-
-    # Queue: 2 events (d, e)
-    ev_d, ev_e = _ev(mod, 4), _ev(mod, 5)
-    t.enqueue(ev_d)
-    t.enqueue(ev_e)
-
-    # Tick 1: should send exactly [a, b] (batch_size=2)
-    count1 = t.flush_once()
-    assert count1 == 2
-    assert [e["ts"] for e in sent_events[-2:]] == [1, 2]
-
-    # Spool should hold only c
-    remaining = own_file.read_text(encoding="utf-8").strip().split("\n")
-    assert len(remaining) == 1
-    assert json.loads(remaining[0])["ts"] == 3
-
-    # Tick 2: should send [c, d] (c from spool, d from queue)
-    count2 = t.flush_once()
-    assert count2 == 2
-    assert [e["ts"] for e in sent_events[-2:]] == [3, 4]
-
-    # Tick 3: should send [e]
-    count3 = t.flush_once()
-    assert count3 == 1
-    assert sent_events[-1]["ts"] == 5
-
-    # All ids accounted for: {1,2,3,4,5}
-    all_ids = {e["ts"] for e in sent_events}
-    assert all_ids == {1, 2, 3, 4, 5}
+    queued = [_ev(mod, 4), _ev(mod, 5)]
+    for e in queued:
+        t.enqueue(e)
+    return t, own_file, [e["id"] for e in spooled], [e["id"] for e in queued]
 
 
-def test_empty_spool_files_deleted(tmp_path):
-    """Empty spool files are deleted, not left empty."""
+def test_room_limited_drain(tmp_path):
     mod = load()
-    spool_dir = tmp_path / "spool"
+    sent_ids = []
+    t, own_file, spooled_ids, queued_ids = _room_limited_setup(mod, tmp_path, sent_ids)
 
-    sent = []
-    t = mod.Transport("http://x", "tok", spool_dir, send=lambda evs: sent.append(list(evs)) or True)
+    assert t.flush_once() == 2
+    assert sent_ids == spooled_ids[:2]  # exactly the first two spooled events, nothing from the queue
+    assert _spool_ts(own_file) == [3]
+    assert t._queue.qsize() == 2
 
-    # Enqueue and flush successfully
-    t.enqueue(_ev(mod, 1))
-    count = t.flush_once()
-    assert count == 1
+    assert t.flush_once() == 2
+    assert sent_ids[2:] == [spooled_ids[2], queued_ids[0]]
+    assert t.flush_once() == 1
+    assert sent_ids[4:] == [queued_ids[1]]
+    assert t.flush_once() == 0
 
-    own_file = spool_dir / f"{os.getpid()}.jsonl"
-    # After successful send with no remainder, file should be deleted
+    assert len(sent_ids) == 5
+    assert set(sent_ids) == set(spooled_ids + queued_ids)
     assert not own_file.exists()
 
 
-def test_backoff_counts_send_calls(tmp_path):
-    """Backoff prevents send calls; events spool during backoff."""
+def test_room_limited_drain_survives_replace_failure(tmp_path, monkeypatch):
+    """If rewriting the remainder fails, the spool file stays intact (duplicates ok, loss not)."""
+    mod = load()
+    sent_ids = []
+    t, own_file, spooled_ids, queued_ids = _room_limited_setup(mod, tmp_path, sent_ids)
+    original_bytes = own_file.read_bytes()
+
+    def replace_fail(src, dst):
+        raise PermissionError("replace denied")
+
+    monkeypatch.setattr(os, "replace", replace_fail)
+    assert t.flush_once() == 2
+    assert sent_ids == spooled_ids[:2]
+    assert own_file.read_bytes() == original_bytes
+    assert t._queue.qsize() == 2  # queued events were not drained into a remainder that could be lost
+
+    monkeypatch.undo()
+    for _ in range(10):  # bounded drain
+        if t.flush_once() == 0:
+            break
+
+    assert set(sent_ids) == set(spooled_ids + queued_ids)  # all 5 unique ids delivered
+    assert not own_file.exists()
+
+
+def test_empty_spool_files_deleted_own(tmp_path):
     mod = load()
     spool_dir = tmp_path / "spool"
+    sent = []
+    t = mod.Transport("http://x", "tok", spool_dir, send=lambda evs: sent.append(list(evs)) or True)
+    own_file = spool_dir / f"{os.getpid()}.jsonl"
 
+    t.enqueue(_ev(mod, 1))
+    assert t.flush_once() == 1
+    assert not own_file.exists()
+
+    spool_dir.mkdir(exist_ok=True)
+    own_file.write_text(json.dumps(_ev(mod, 2)) + "\n", encoding="utf-8")
+    assert t.flush_once() == 1  # replayed entirely from the spool
+    assert not own_file.exists()
+
+
+# ---------------------------------------------------------------------------
+# Backoff
+# ---------------------------------------------------------------------------
+
+def test_backoff_counts_send_calls(tmp_path):
+    mod = load()
+    spool_dir = tmp_path / "spool"
     send_calls = []
+
     def counting_send(evs):
-        send_calls.append(len(evs))
-        if len(send_calls) == 1:
-            return False  # Fail first call
-        return True  # Succeed after
+        send_calls.append([e["ts"] for e in evs])
+        return len(send_calls) > 1  # fail the first call only
 
     t = mod.Transport("http://x", "tok", spool_dir, send=counting_send, batch_size=50)
-
-    # Tick 1: send fails
-    t.enqueue(_ev(mod, 1))
-    count1 = t.flush_once(now=0)
-    assert count1 == 0
-    assert len(send_calls) == 1  # Send was called once
-
-    # Enqueue another event
-    t.enqueue(_ev(mod, 2))
-
-    # Tick 2 at now=0.5: still backing off (delay is 1s)
-    send_calls.clear()
-    count2 = t.flush_once(now=0.5)
-    assert count2 == 0
-    assert len(send_calls) == 0  # Send NOT called
-
-    # Verify event 2 is in spool
     own_file = spool_dir / f"{os.getpid()}.jsonl"
-    assert own_file.exists()
-    lines = [l for l in own_file.read_text(encoding="utf-8").strip().split("\n") if l.strip()]
-    assert len(lines) == 2  # Both events in spool
 
-    # Tick 3 at now=1.5: backoff expired
-    send_calls.clear()
-    count3 = t.flush_once(now=1.5)
-    assert len(send_calls) >= 1  # Send was called again
+    t.enqueue(_ev(mod, 1))
+    assert t.flush_once(now=0) == 0
+    assert send_calls == [[1]]  # one call at t
 
+    t.enqueue(_ev(mod, 2))
+    assert t.flush_once(now=0.5) == 0
+    assert send_calls == [[1]]  # still one call at t+0.5 (backing off)
+    assert _spool_ts(own_file) == [1, 2]  # the backoff-period event landed in the own spool file
+    assert t._queue.qsize() == 0
 
-def test_redaction_complex_structures(tmp_path):
-    """Redaction handles numeric keys, nested lists, etc."""
-    mod = load()
-
-    val = {
-        1: "x",
-        "outer": [[{"api_key": "SECRET1"}]],
-        "token": "SECRET2"
-    }
-
-    result = mod.preview(val)
-
-    # Must not contain the secrets
-    assert "SECRET1" not in result
-    assert "SECRET2" not in result
-    # Must not raise
-    assert isinstance(result, str)
+    assert t.flush_once(now=1.5) == 2
+    assert send_calls == [[1], [1, 2]]  # second call at t+1.5 replays both
+    assert not own_file.exists()
