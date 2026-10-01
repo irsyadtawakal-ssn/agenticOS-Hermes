@@ -1,0 +1,3 @@
+name: os-bridge
+version: "0.1.0"
+description: Agentic OS - forwards session, LLM and tool lifecycle events to OS Core. Never blocks, never raises.
