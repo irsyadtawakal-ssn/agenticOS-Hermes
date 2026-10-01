@@ -37,17 +37,41 @@ LIST_SCHEMA = {
 }
 
 
+def _agentic_root():
+    """The Agentic OS HERMES_HOME this plugin is installed under (never the owner's other Hermes install)."""
+    explicit = os.environ.get("AOS_HERMES_HOME")
+    if explicit:
+        return Path(explicit)
+    # Installed layout: <root>/profiles/<profile>/plugins/aos-office-tools/__init__.py
+    candidate = Path(__file__).resolve().parents[4]
+    if (candidate / "profiles").is_dir():
+        return candidate
+    fallback = os.environ.get("HERMES_HOME")
+    if fallback:
+        return Path(fallback)
+    return None
+
+
 def _run(args):
+    root = _agentic_root()
+    if root is None:
+        return 1, "", "cannot determine the Agentic OS HERMES_HOME (set AOS_HERMES_HOME)"
     exe = shutil.which("hermes")
     if not exe:
         return 127, "", "hermes executable not found on PATH"
     try:
         proc = subprocess.run(
-            [exe, *args], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60
+            [exe, *args],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=60,
+            env={**os.environ, "HERMES_HOME": str(root)},
         )
     except subprocess.TimeoutExpired:
         return 124, "", "hermes timed out after 60s"
-    except OSError as e:
+    except (OSError, ValueError) as e:
         return 1, "", str(e)
     return proc.returncode, proc.stdout, proc.stderr
 
@@ -62,8 +86,8 @@ def _workspaces_root():
     root = os.environ.get("AOS_WORKSPACES_ROOT")
     if root:
         return Path(root).absolute()
-    home = os.environ.get("HERMES_HOME")
-    return ((Path(home) / "workspaces") if home else (Path.home() / "aos-workspaces")).absolute()
+    root = _agentic_root()
+    return ((root / "workspaces") if root else (Path.home() / "aos-workspaces")).absolute()
 
 
 def _new_workspace(title):

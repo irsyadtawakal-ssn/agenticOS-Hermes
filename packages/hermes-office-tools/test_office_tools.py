@@ -3,7 +3,15 @@ import json
 import subprocess
 from pathlib import Path
 
+import pytest
+
 PLUGIN = Path(__file__).parent / "aos-office-tools" / "__init__.py"
+
+
+@pytest.fixture(autouse=True)
+def _clean_env(monkeypatch):
+    for name in ("AOS_HERMES_HOME", "HERMES_HOME", "AOS_WORKSPACES_ROOT"):
+        monkeypatch.delenv(name, raising=False)
 
 
 def load():
@@ -50,9 +58,9 @@ def test_create_truncates_title_and_reports_cli_errors(monkeypatch, tmp_path):
 
 
 def test_workspaces_root_falls_back_to_hermes_home(monkeypatch, tmp_path):
-    monkeypatch.delenv("AOS_WORKSPACES_ROOT", raising=False)
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     mod = load()
+    mod.__file__ = str(tmp_path / "nolayout" / "x" / "__init__.py")
     assert mod._workspaces_root() == tmp_path / "workspaces"
 
 
@@ -138,7 +146,8 @@ def test_list_uses_equals_form_for_filters(monkeypatch):
     assert calls == [["kanban", "list", "--status=ready", "--assignee=researcher"]]
 
 
-def test_run_converts_timeout_to_error_tuple(monkeypatch):
+def test_run_converts_timeout_to_error_tuple(monkeypatch, tmp_path):
+    monkeypatch.setenv("AOS_HERMES_HOME", str(tmp_path))
     mod = load()
     monkeypatch.setattr(mod.shutil, "which", lambda name: "hermes")
 
@@ -151,7 +160,8 @@ def test_run_converts_timeout_to_error_tuple(monkeypatch):
     assert out == {"success": False, "error": "hermes timed out after 60s"}
 
 
-def test_run_converts_oserror_to_error_tuple(monkeypatch):
+def test_run_converts_oserror_to_error_tuple(monkeypatch, tmp_path):
+    monkeypatch.setenv("AOS_HERMES_HOME", str(tmp_path))
     mod = load()
     monkeypatch.setattr(mod.shutil, "which", lambda name: "hermes")
 
@@ -160,3 +170,76 @@ def test_run_converts_oserror_to_error_tuple(monkeypatch):
 
     monkeypatch.setattr(mod.subprocess, "run", boom)
     assert mod._run(["kanban", "list"]) == (1, "", "exec failed")
+
+
+def test_run_pins_hermes_home_from_aos_hermes_home(monkeypatch, tmp_path):
+    monkeypatch.setenv("AOS_HERMES_HOME", str(tmp_path))
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "other"))
+    mod = load()
+    monkeypatch.setattr(mod.shutil, "which", lambda name: "hermes")
+    seen = {}
+
+    class Proc:
+        returncode = 0
+        stdout = "ok"
+        stderr = ""
+
+    def fake_run(cmd, **kwargs):
+        seen["env"] = kwargs.get("env")
+        return Proc()
+
+    monkeypatch.setattr(mod.subprocess, "run", fake_run)
+    assert mod._run(["kanban", "list"]) == (0, "ok", "")
+    assert seen["env"]["HERMES_HOME"] == str(tmp_path)
+
+
+def test_agentic_root_detects_installed_plugin_layout(monkeypatch, tmp_path):
+    (tmp_path / "profiles" / "chief" / "plugins" / "aos-office-tools").mkdir(parents=True)
+    mod = load()
+    mod.__file__ = str(tmp_path / "profiles" / "chief" / "plugins" / "aos-office-tools" / "__init__.py")
+    assert mod._agentic_root() == tmp_path.resolve()
+
+
+def test_agentic_root_prefers_aos_hermes_home_over_layout_and_hermes_home(monkeypatch, tmp_path):
+    (tmp_path / "profiles" / "chief" / "plugins" / "aos-office-tools").mkdir(parents=True)
+    monkeypatch.setenv("AOS_HERMES_HOME", str(tmp_path / "explicit"))
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "other"))
+    mod = load()
+    mod.__file__ = str(tmp_path / "profiles" / "chief" / "plugins" / "aos-office-tools" / "__init__.py")
+    assert mod._agentic_root() == tmp_path / "explicit"
+
+
+def test_unknown_home_returns_error_without_running_hermes(monkeypatch, tmp_path):
+    mod = load()
+    mod.__file__ = str(tmp_path / "a" / "b" / "c" / "d" / "__init__.py")
+    monkeypatch.setattr(mod.shutil, "which", lambda name: "hermes")
+    monkeypatch.setattr(mod.subprocess, "run", lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not run")))
+    assert mod._agentic_root() is None
+    out = json.loads(mod.handle_list({}))
+    assert out["success"] is False and "AOS_HERMES_HOME" in out["error"]
+    monkeypatch.setenv("AOS_WORKSPACES_ROOT", str(tmp_path / "ws"))
+    out = json.loads(mod.handle_create({"title": "T", "assignee": "dev", "body": "b"}))
+    assert out["success"] is False and "AOS_HERMES_HOME" in out["error"]
+    assert list((tmp_path / "ws").iterdir()) == []
+
+
+def test_nul_byte_in_title_returns_error_and_removes_workspace(monkeypatch, tmp_path):
+    monkeypatch.setenv("AOS_HERMES_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("AOS_WORKSPACES_ROOT", str(tmp_path / "ws"))
+    mod = load()
+    monkeypatch.setattr(mod.shutil, "which", lambda name: "hermes")
+
+    def boom(*a, **k):
+        raise ValueError("embedded null byte")
+
+    monkeypatch.setattr(mod.subprocess, "run", boom)
+    assert mod._run(["x"]) == (1, "", "embedded null byte")
+    out = json.loads(mod.handle_create({"title": "bad\u0000title", "assignee": "dev", "body": "b"}))
+    assert out == {"success": False, "error": "embedded null byte"}
+    assert list((tmp_path / "ws").iterdir()) == []
+
+
+def test_workspaces_root_defaults_under_agentic_root(monkeypatch, tmp_path):
+    monkeypatch.setenv("AOS_HERMES_HOME", str(tmp_path))
+    mod = load()
+    assert mod._workspaces_root() == (tmp_path / "workspaces").absolute()
