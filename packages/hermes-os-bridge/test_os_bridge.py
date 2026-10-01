@@ -433,3 +433,168 @@ def test_load_settings_non_dict_config(tmp_path):
     (tmp_path / "config.json").write_text('[]', encoding="utf-8")
     s = mod.load_settings(tmp_path, env={})
     assert s["core_url"] == "http://127.0.0.1:7400" and s["token"] == ""
+
+
+# Fix Round 3 Tests
+
+def test_read_failure_keeps_data(tmp_path, monkeypatch):
+    """Read failure must NOT modify the spool file."""
+    mod = load()
+    spool_dir = tmp_path / "spool"
+    spool_dir.mkdir()
+    own_file = spool_dir / f"{os.getpid()}.jsonl"
+
+    # Write 2 events to spool
+    ev1, ev2 = _ev(mod, 1), _ev(mod, 2)
+    original_content = json.dumps(ev1) + "\n" + json.dumps(ev2) + "\n"
+    own_file.write_text(original_content, encoding="utf-8")
+
+    # Monkeypatch read_text to fail for own_file only
+    original_read = Path.read_text
+    def read_fail(self, **kwargs):
+        if self == own_file:
+            raise PermissionError("Cannot read")
+        return original_read(self, **kwargs)
+    monkeypatch.setattr(Path, "read_text", read_fail)
+
+    # Enqueue 1 event and flush
+    sent = []
+    t = mod.Transport("http://x", "tok", spool_dir, send=lambda evs: sent.append(list(evs)) or True)
+    t.enqueue(_ev(mod, 3))
+    t.flush_once()
+
+    # Spool file must be unchanged (byte-for-byte) - read directly, not through monkeypatch
+    with open(own_file, "r", encoding="utf-8") as f:
+        actual_content = f.read()
+    assert actual_content == original_content
+    # Send received only the queued event
+    assert len(sent) == 1
+    assert len(sent[0]) == 1
+    assert sent[0][0]["ts"] == 3
+
+
+def test_room_limited_drain(tmp_path):
+    """Drain only fits room = batch_size - len(replayed)."""
+    mod = load()
+    spool_dir = tmp_path / "spool"
+    spool_dir.mkdir()
+    own_file = spool_dir / f"{os.getpid()}.jsonl"
+
+    # Own spool: 3 events (ids a, b, c)
+    ev_a, ev_b, ev_c = _ev(mod, 1), _ev(mod, 2), _ev(mod, 3)
+    own_file.write_text(
+        json.dumps(ev_a) + "\n" +
+        json.dumps(ev_b) + "\n" +
+        json.dumps(ev_c) + "\n",
+        encoding="utf-8"
+    )
+
+    sent_events = []
+    t = mod.Transport("http://x", "tok", spool_dir, send=lambda evs: sent_events.extend(evs) or True, batch_size=2)
+
+    # Queue: 2 events (d, e)
+    ev_d, ev_e = _ev(mod, 4), _ev(mod, 5)
+    t.enqueue(ev_d)
+    t.enqueue(ev_e)
+
+    # Tick 1: should send exactly [a, b] (batch_size=2)
+    count1 = t.flush_once()
+    assert count1 == 2
+    assert [e["ts"] for e in sent_events[-2:]] == [1, 2]
+
+    # Spool should hold only c
+    remaining = own_file.read_text(encoding="utf-8").strip().split("\n")
+    assert len(remaining) == 1
+    assert json.loads(remaining[0])["ts"] == 3
+
+    # Tick 2: should send [c, d] (c from spool, d from queue)
+    count2 = t.flush_once()
+    assert count2 == 2
+    assert [e["ts"] for e in sent_events[-2:]] == [3, 4]
+
+    # Tick 3: should send [e]
+    count3 = t.flush_once()
+    assert count3 == 1
+    assert sent_events[-1]["ts"] == 5
+
+    # All ids accounted for: {1,2,3,4,5}
+    all_ids = {e["ts"] for e in sent_events}
+    assert all_ids == {1, 2, 3, 4, 5}
+
+
+def test_empty_spool_files_deleted(tmp_path):
+    """Empty spool files are deleted, not left empty."""
+    mod = load()
+    spool_dir = tmp_path / "spool"
+
+    sent = []
+    t = mod.Transport("http://x", "tok", spool_dir, send=lambda evs: sent.append(list(evs)) or True)
+
+    # Enqueue and flush successfully
+    t.enqueue(_ev(mod, 1))
+    count = t.flush_once()
+    assert count == 1
+
+    own_file = spool_dir / f"{os.getpid()}.jsonl"
+    # After successful send with no remainder, file should be deleted
+    assert not own_file.exists()
+
+
+def test_backoff_counts_send_calls(tmp_path):
+    """Backoff prevents send calls; events spool during backoff."""
+    mod = load()
+    spool_dir = tmp_path / "spool"
+
+    send_calls = []
+    def counting_send(evs):
+        send_calls.append(len(evs))
+        if len(send_calls) == 1:
+            return False  # Fail first call
+        return True  # Succeed after
+
+    t = mod.Transport("http://x", "tok", spool_dir, send=counting_send, batch_size=50)
+
+    # Tick 1: send fails
+    t.enqueue(_ev(mod, 1))
+    count1 = t.flush_once(now=0)
+    assert count1 == 0
+    assert len(send_calls) == 1  # Send was called once
+
+    # Enqueue another event
+    t.enqueue(_ev(mod, 2))
+
+    # Tick 2 at now=0.5: still backing off (delay is 1s)
+    send_calls.clear()
+    count2 = t.flush_once(now=0.5)
+    assert count2 == 0
+    assert len(send_calls) == 0  # Send NOT called
+
+    # Verify event 2 is in spool
+    own_file = spool_dir / f"{os.getpid()}.jsonl"
+    assert own_file.exists()
+    lines = [l for l in own_file.read_text(encoding="utf-8").strip().split("\n") if l.strip()]
+    assert len(lines) == 2  # Both events in spool
+
+    # Tick 3 at now=1.5: backoff expired
+    send_calls.clear()
+    count3 = t.flush_once(now=1.5)
+    assert len(send_calls) >= 1  # Send was called again
+
+
+def test_redaction_complex_structures(tmp_path):
+    """Redaction handles numeric keys, nested lists, etc."""
+    mod = load()
+
+    val = {
+        1: "x",
+        "outer": [[{"api_key": "SECRET1"}]],
+        "token": "SECRET2"
+    }
+
+    result = mod.preview(val)
+
+    # Must not contain the secrets
+    assert "SECRET1" not in result
+    assert "SECRET2" not in result
+    # Must not raise
+    assert isinstance(result, str)
