@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import YAML from 'yaml';
 import { profileDir } from '../src/apply.js';
-import { checkEnvFile, checkGatewayRunning, checkHermesPin, checkProfile, checkRootConfig, runDoctor } from '../src/doctor.js';
+import { checkCore, checkEnvFile, checkGatewayRunning, checkHermesPin, checkProfile, checkRootConfig, runDoctor } from '../src/doctor.js';
 import type { Exec } from '../src/exec.js';
 import { buildOverlay, buildRootOverlay, loadRoster, pluginsFor } from '../src/profiles.js';
 
@@ -216,13 +216,26 @@ describe('checkEnvFile', () => {
   });
 });
 
+describe('checkCore', () => {
+  it('passes when /v1/health returns ok', async () => {
+    const fetchFn = (async () => new Response(JSON.stringify({ ok: true }), { status: 200 })) as unknown as typeof fetch;
+    expect(await checkCore('http://127.0.0.1:7400', fetchFn)).toEqual({ name: 'core-health', ok: true, detail: 'GET http://127.0.0.1:7400/v1/health -> 200' });
+  });
+  it('fails without throwing when Core is down', async () => {
+    const fetchFn = (async () => { throw new Error('ECONNREFUSED'); }) as unknown as typeof fetch;
+    expect(await checkCore('http://127.0.0.1:7400', fetchFn)).toMatchObject({ ok: false, detail: expect.stringMatching(/ECONNREFUSED/) });
+  });
+});
+
 describe('runDoctor', () => {
   it('combines pin, root env, profile and router checks', async () => {
     const home = healthyHome();
-    const fetchFn = (async (_u: string, init?: RequestInit) =>
-      new Headers(init?.headers).get('authorization')
+    const fetchFn = (async (u: string, init?: RequestInit) => {
+      if (String(u).endsWith('/v1/health')) return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      return new Headers(init?.headers).get('authorization')
         ? new Response(JSON.stringify({ data: [{ id: 'os-brain' }, { id: 'os-worker' }, { id: 'os-private' }] }), { status: 200 })
-        : new Response('', { status: 401 })) as unknown as typeof fetch;
+        : new Response('', { status: 401 });
+    }) as unknown as typeof fetch;
     const baseExec = fakeExec(SHA);
     const exec: Exec = async (cmd, args, opts) =>
       cmd === 'hermes' && args[0] === 'gateway' ? { code: 0, stdout: 'Gateway process running (PID: 1)\n', stderr: '' } : baseExec(cmd, args, opts);
@@ -236,5 +249,6 @@ describe('runDoctor', () => {
     expect(results.map((r) => r.name)).toContain('combo:os-private');
     expect(results.map((r) => r.name)).toContain('gateway-running');
     expect(results.map((r) => r.name)).toContain('root:dispatcher');
+    expect(results.map((r) => r.name)).toContain('core-health');
   });
 });

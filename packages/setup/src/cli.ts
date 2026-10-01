@@ -65,6 +65,7 @@ async function main(cmd: string | undefined): Promise<number> {
           routerKey: required('AOS_ROUTER_KEY'),
           tierModels,
           routerKeys,
+          coreUrl,
         },
         { exec: realExec, fetchFn: fetch },
       );

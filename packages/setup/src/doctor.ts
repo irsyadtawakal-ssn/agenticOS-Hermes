@@ -29,6 +29,7 @@ export interface DoctorConfig {
   routerKey: string;
   tierModels?: TierModels;
   routerKeys?: Record<string, string>;
+  coreUrl?: string;
 }
 
 export interface DoctorDeps {
@@ -161,6 +162,18 @@ export async function checkGatewayRunning(exec: Exec): Promise<CheckResult> {
   }
 }
 
+export async function checkCore(coreUrl: string, fetchFn: typeof fetch = fetch): Promise<CheckResult> {
+  const url = `${coreUrl.replace(/\/+$/, '')}/v1/health`;
+  try {
+    const res = await fetchFn(url);
+    const body = (await res.json().catch(() => ({}))) as { ok?: boolean };
+    const ok = res.ok && body.ok === true;
+    return { name: 'core-health', ok, detail: `GET ${url} -> ${res.status}` };
+  } catch (err) {
+    return { name: 'core-health', ok: false, detail: `${url}: ${(err as Error).message}` };
+  }
+}
+
 export async function runDoctor(cfg: DoctorConfig, deps: DoctorDeps): Promise<CheckResult[]> {
   const tierModels = cfg.tierModels ?? DEFAULT_TIER_MODELS;
   return [
@@ -170,5 +183,6 @@ export async function runDoctor(cfg: DoctorConfig, deps: DoctorDeps): Promise<Ch
     await checkGatewayRunning(deps.exec),
     ...cfg.roster.flatMap((spec) => checkProfile(cfg.home, spec, cfg.routerBaseUrl, cfg.routerKey, tierModels, cfg.routerKeys)),
     ...(await checkRouter(cfg.routerBaseUrl, cfg.routerKey, deps.fetchFn, Object.values(tierModels))),
+    await checkCore(cfg.coreUrl ?? 'http://127.0.0.1:7400', deps.fetchFn),
   ];
 }
