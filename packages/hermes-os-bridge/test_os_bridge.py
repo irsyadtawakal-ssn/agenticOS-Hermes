@@ -1,6 +1,7 @@
 import importlib.util
 import json
 import os
+import time
 from pathlib import Path
 
 PLUGIN = Path(__file__).parent / "os-bridge" / "__init__.py"
@@ -113,7 +114,8 @@ def test_transport_spools_on_failure_and_replays(tmp_path):
     # Need to pass now=2 to bypass the backoff delay (which is 1s)
     assert t.flush_once(now=2) == 2
     assert [e["ts"] for e in sent[-1]] == [1, 2]
-    assert own_file.read_text(encoding="utf-8") == ""
+    # Empty spool files are now deleted
+    assert not own_file.exists() or own_file.read_text(encoding="utf-8") == ""
 
 
 def test_transport_never_raises(tmp_path):
@@ -366,3 +368,68 @@ def test_load_settings_invalid_config_json(tmp_path):
     # Should fall back to defaults
     assert s["core_url"] == "http://127.0.0.1:7400"
     assert s["token"] == ""
+
+
+# Fix Round 2 Tests
+
+def test_orphan_adoption_with_wall_clock(tmp_path):
+    mod = load()
+    spool_dir = tmp_path / "spool"
+    spool_dir.mkdir()
+    orphan_file = spool_dir / "999999.jsonl"
+    ev = _ev(mod, 1)
+    orphan_file.write_text(json.dumps(ev) + "\n", encoding="utf-8")
+    old_time = time.time() - 120
+    os.utime(orphan_file, (old_time, old_time))
+    sent = []
+    t = mod.Transport("http://x", "tok", spool_dir, send=lambda evs: sent.append(list(evs)) or True)
+    count = t.flush_once()
+    assert count == 1
+
+
+def test_fresh_orphan_not_adopted(tmp_path):
+    mod = load()
+    spool_dir = tmp_path / "spool"
+    spool_dir.mkdir()
+    orphan_file = spool_dir / "999999.jsonl"
+    ev = _ev(mod, 1)
+    orphan_file.write_text(json.dumps(ev) + "\n", encoding="utf-8")
+    sent = []
+    t = mod.Transport("http://x", "tok", spool_dir, send=lambda evs: sent.append(list(evs)) or True)
+    count = t.flush_once()
+    assert count == 0 and orphan_file.exists()
+
+
+def test_backoff_prevents_send(tmp_path):
+    mod = load()
+    spool_dir = tmp_path / "spool"
+    send_calls = []
+    t = mod.Transport("http://x", "tok", spool_dir, send=lambda evs: (send_calls.append(1), False)[1], batch_size=50)
+    t.enqueue(_ev(mod, 1))
+    assert t.flush_once(now=0) == 0 and len(send_calls) == 1
+    send_calls.clear()
+    t.enqueue(_ev(mod, 2))
+    assert t.flush_once(now=0.5) == 0 and len(send_calls) == 0
+
+
+def test_pid_stem_ownership(tmp_path, monkeypatch):
+    mod = load()
+    spool_dir = tmp_path / "spool"
+    spool_dir.mkdir()
+    monkeypatch.setattr(os, "getpid", lambda: 12)
+    orphan_file = spool_dir / "123.jsonl"
+    ev = _ev(mod, 1)
+    orphan_file.write_text(json.dumps(ev) + "\n", encoding="utf-8")
+    old_time = time.time() - 120
+    os.utime(orphan_file, (old_time, old_time))
+    sent = []
+    t = mod.Transport("http://x", "tok", spool_dir, send=lambda evs: sent.append(list(evs)) or True)
+    count = t.flush_once()
+    assert count == 1
+
+
+def test_load_settings_non_dict_config(tmp_path):
+    mod = load()
+    (tmp_path / "config.json").write_text('[]', encoding="utf-8")
+    s = mod.load_settings(tmp_path, env={})
+    assert s["core_url"] == "http://127.0.0.1:7400" and s["token"] == ""

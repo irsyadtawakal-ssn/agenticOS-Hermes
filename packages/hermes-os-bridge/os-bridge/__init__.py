@@ -64,15 +64,18 @@ def _redact_keys(obj):
     if isinstance(obj, dict):
         result = {}
         for k, v in obj.items():
-            if any(sk in k.lower() for sk in _SENSITIVE_KEYS):
+            key_str = str(k).lower()
+            if any(sk in key_str for sk in _SENSITIVE_KEYS):
                 result[k] = "[REDACTED]"
             elif isinstance(v, dict):
                 result[k] = _redact_keys(v)
             elif isinstance(v, list):
-                result[k] = [_redact_keys(item) if isinstance(item, dict) else item for item in v]
+                result[k] = [_redact_keys(item) if isinstance(item, (dict, list)) else item for item in v]
             else:
                 result[k] = v
         return result
+    elif isinstance(obj, list):
+        return [_redact_keys(item) if isinstance(item, (dict, list)) else item for item in obj]
     return obj
 
 
@@ -161,8 +164,8 @@ class Transport:
         self._queue = queue.Queue(maxsize=5000)
         self._lock = threading.Lock()
         self._thread = None
-        self._next_attempt = 0.0  # Backoff time
-        self._backoff_delay = 1.0  # Start at 1s
+        self._next_attempt = 0.0
+        self._backoff_delay = 1.0
 
     def enqueue(self, event):
         try:
@@ -185,67 +188,73 @@ class Transport:
             return False
 
     def _read_spool_file(self, path):
-        """Read spool file, skipping corrupt lines."""
+        """Read spool file, skipping corrupt lines. Returns (events, ok)."""
         try:
             if not path.exists():
-                return []
+                return [], True
             events = []
-            for line in path.read_text(encoding="utf-8").splitlines():
+            text = path.read_text(encoding="utf-8", errors="replace")
+            for line in text.splitlines():
                 if not line.strip():
                     continue
                 try:
                     events.append(json.loads(line))
                 except json.JSONDecodeError:
-                    pass  # Skip corrupt lines
-            return events
+                    pass
+            return events, True
+        except (OSError, IOError):
+            return [], False
         except Exception:
-            return []
+            return [], False
 
     def _write_spool_file(self, path, events):
-        """Atomically write spool file."""
+        """Atomically write spool file; delete if empty."""
         try:
             if not events:
-                path.write_text("", encoding="utf-8")
-                return
+                if path.exists():
+                    path.unlink()
+                return True
             self._spool_dir.mkdir(parents=True, exist_ok=True)
             tmp = path.with_suffix(".tmp")
             with tmp.open("w", encoding="utf-8") as f:
                 for event in events:
                     f.write(json.dumps(event, ensure_ascii=False, default=str) + "\n")
             os.replace(tmp, path)
+            return True
         except Exception:
-            pass
+            return False
 
     def _append_to_spool(self, path, events):
         """Append events to spool file if total spool size allows."""
         try:
             total_size = sum(f.stat().st_size for f in self._spool_dir.glob("*.jsonl") if f.exists())
             if total_size > _MAX_SPOOL_BYTES:
-                return
+                return False
             self._spool_dir.mkdir(parents=True, exist_ok=True)
             with path.open("a", encoding="utf-8") as f:
                 for event in events:
                     f.write(json.dumps(event, ensure_ascii=False, default=str) + "\n")
+            return True
         except Exception:
-            pass
+            return False
 
-    def _adopt_orphan(self, now):
-        """Adopt oldest orphan file (mtime > 60s old)."""
+    def _adopt_orphan(self, wall):
+        """Adopt oldest orphan file using wall-clock time (mtime > 60s old)."""
         try:
             own_pid = os.getpid()
+            own_pid_str = str(own_pid)
             for f in sorted(self._spool_dir.glob("*.jsonl")):
-                # Skip own files (pid or pid-adopt)
-                if f.name.startswith(f"{own_pid}"):
+                stem = f.stem
+                if stem == own_pid_str or stem.startswith(f"{own_pid_str}-adopt-"):
                     continue
                 mtime = f.stat().st_mtime
-                age = now - mtime
+                age = wall - mtime
                 if age >= 60:
-                    # Adopt this file
                     adopt_num = 0
-                    new_name = self._spool_dir / f"{own_pid}-adopt-{adopt_num}.jsonl"
+                    new_name = self._spool_dir / f"{own_pid_str}-adopt-{adopt_num}.jsonl"
                     while new_name.exists():
                         adopt_num += 1
-                        new_name = self._spool_dir / f"{own_pid}-adopt-{adopt_num}.jsonl"
+                        new_name = self._spool_dir / f"{own_pid_str}-adopt-{adopt_num}.jsonl"
                     try:
                         os.replace(f, new_name)
                         return new_name
@@ -255,14 +264,14 @@ class Transport:
             pass
         return None
 
-    def flush_once(self, now=None):
+    def flush_once(self, now=None, wall=None):
         if now is None:
             now = time.monotonic()
+        if wall is None:
+            wall = time.time()
 
         with self._lock:
-            # Check backoff
             if now < self._next_attempt:
-                # Still backing off; move queued events to spool and return 0
                 batch = []
                 while len(batch) < self._batch_size:
                     try:
@@ -273,48 +282,40 @@ class Transport:
                     self._append_to_spool(self._own, batch)
                 return 0
 
-            # Collect batch from queue
+            spooled, read_ok = self._read_spool_file(self._own)
+
+            if not spooled:
+                adopted = self._adopt_orphan(wall)
+                if adopted:
+                    spooled, _ = self._read_spool_file(adopted)
+                    if spooled:
+                        self._own = adopted
+
+            replayed = spooled[:self._batch_size]
+            remaining = spooled[self._batch_size:]
+            room = self._batch_size - len(replayed)
             batch = []
-            while len(batch) < self._batch_size:
+            while len(batch) < room:
                 try:
                     batch.append(self._queue.get_nowait())
                 except queue.Empty:
                     break
 
-            # Read own spool file
-            spooled = self._read_spool_file(self._own)
-
-            # Try to adopt an orphan if own spool is empty
-            if not spooled:
-                adopted = self._adopt_orphan(now)
-                if adopted:
-                    spooled = self._read_spool_file(adopted)
-                    if spooled:
-                        self._own = adopted
-
-            # Collect events: spooled + new batch, up to batch_size
-            events = (spooled + batch)[: self._batch_size]
-            remaining = (spooled + batch)[self._batch_size :]
-
+            events = replayed + batch
             if not events:
                 return 0
 
-            # Try to send
             try:
                 delivered = bool(self._send(events))
             except Exception:
                 delivered = False
 
             if delivered:
-                # Success: rewrite spool with remaining events
-                if remaining:
+                if read_ok:
                     self._write_spool_file(self._own, remaining)
-                else:
-                    self._write_spool_file(self._own, [])
-                self._backoff_delay = 1.0  # Reset backoff
+                self._backoff_delay = 1.0
                 return len(events)
             else:
-                # Failure: append new batch to spool, enter backoff
                 if batch:
                     self._append_to_spool(self._own, batch)
                 self._next_attempt = now + self._backoff_delay
@@ -342,7 +343,6 @@ class Transport:
                 if self.flush_once() == 0:
                     break
                 time.sleep(0.1)
-            # Append any remaining queue to own spool
             remaining = []
             while True:
                 try:
