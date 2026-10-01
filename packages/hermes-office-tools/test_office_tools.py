@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import subprocess
 from pathlib import Path
 
 PLUGIN = Path(__file__).parent / "aos-office-tools" / "__init__.py"
@@ -24,9 +25,8 @@ def test_create_calls_hermes_kanban_create_with_persistent_workspace(monkeypatch
     assert workspace.name.endswith("-riset-a")
     assert out == {"success": True, "output": "created t_x1", "workspace": str(workspace)}
     assert calls == [
-        ["kanban", "create", "Riset A", "--assignee", "researcher", "--body", "Goal: x", "--workspace", f"dir:{workspace}"]
+        ["kanban", "create", "--assignee", "researcher", "--body=Goal: x", "--workspace", f"dir:{workspace}", "--", "Riset A"]
     ]
-    assert calls[0][-2:] == ["--workspace", f"dir:{workspace}"]
 
 
 def test_create_rejects_unknown_assignee(monkeypatch, tmp_path):
@@ -45,7 +45,8 @@ def test_create_truncates_title_and_reports_cli_errors(monkeypatch, tmp_path):
     monkeypatch.setattr(mod, "_run", lambda args: (seen.append(args) or (1, "", "no board")))
     out = json.loads(mod.handle_create({"title": "x" * 120, "assignee": "dev", "body": "b"}))
     assert out == {"success": False, "error": "no board"}
-    assert len(seen[0][2]) == 80
+    assert len(seen[0][-1]) == 80
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_workspaces_root_falls_back_to_hermes_home(monkeypatch, tmp_path):
@@ -61,7 +62,7 @@ def test_list_passes_filters(monkeypatch):
     monkeypatch.setattr(mod, "_run", lambda args: (calls.append(args) or (0, "t_1 ready", "")))
     out = json.loads(mod.handle_list({"status": "ready", "assignee": "researcher"}))
     assert out == {"success": True, "output": "t_1 ready"}
-    assert calls == [["kanban", "list", "--status", "ready", "--assignee", "researcher"]]
+    assert calls == [["kanban", "list", "--status=ready", "--assignee=researcher"]]
 
 
 def test_register_exposes_both_tools():
@@ -77,3 +78,85 @@ def test_register_exposes_both_tools():
         ("office_create_task", "aos_office", "office_create_task"),
         ("office_list_tasks", "aos_office", "office_list_tasks"),
     ]
+
+
+def test_create_treats_user_text_as_data_not_flags(monkeypatch, tmp_path):
+    monkeypatch.setenv("AOS_WORKSPACES_ROOT", str(tmp_path))
+    mod = load()
+    calls = []
+    monkeypatch.setattr(mod, "_run", lambda args: (calls.append(args) or (0, "created t_x2", "")))
+    mod.handle_create({"title": "--help", "assignee": "dev", "body": "--foo"})
+    args = calls[0]
+    assert args[-2:] == ["--", "--help"]
+    assert "--body=--foo" in args
+    assert "--foo" not in args
+
+
+def test_create_success_ignores_stderr_warning(monkeypatch, tmp_path):
+    monkeypatch.setenv("AOS_WORKSPACES_ROOT", str(tmp_path))
+    mod = load()
+    monkeypatch.setattr(mod, "_run", lambda args: (0, "created t_x3", "hermes: source-update completion failed: boom"))
+    out = json.loads(mod.handle_create({"title": "T", "assignee": "dev", "body": "b"}))
+    assert out["success"] is True and out["output"] == "created t_x3"
+
+
+def test_create_reports_workspace_failure_without_cli_call(monkeypatch, tmp_path):
+    blocker = tmp_path / "afile"
+    blocker.write_text("x")
+    monkeypatch.setenv("AOS_WORKSPACES_ROOT", str(blocker))
+    mod = load()
+    monkeypatch.setattr(mod, "_run", lambda args: (_ for _ in ()).throw(AssertionError("must not run")))
+    out = json.loads(mod.handle_create({"title": "T", "assignee": "dev", "body": "b"}))
+    assert out["success"] is False and "cannot create workspace" in out["error"]
+
+
+def test_workspaces_root_is_absolute(monkeypatch):
+    monkeypatch.setenv("AOS_WORKSPACES_ROOT", "relative/root")
+    mod = load()
+    assert mod._workspaces_root().is_absolute()
+
+
+def test_handlers_reject_non_dict_params():
+    mod = load()
+    for handler in (mod.handle_create, mod.handle_list):
+        out = json.loads(handler("nope"))
+        assert out == {"success": False, "error": "params must be an object"}
+
+
+def test_list_rejects_invalid_status_without_cli_call(monkeypatch):
+    mod = load()
+    monkeypatch.setattr(mod, "_run", lambda args: (_ for _ in ()).throw(AssertionError("must not run")))
+    out = json.loads(mod.handle_list({"status": "--json"}))
+    assert out["success"] is False and "status" in out["error"]
+
+
+def test_list_uses_equals_form_for_filters(monkeypatch):
+    mod = load()
+    calls = []
+    monkeypatch.setattr(mod, "_run", lambda args: (calls.append(args) or (0, "", "")))
+    mod.handle_list({"status": "ready", "assignee": "researcher"})
+    assert calls == [["kanban", "list", "--status=ready", "--assignee=researcher"]]
+
+
+def test_run_converts_timeout_to_error_tuple(monkeypatch):
+    mod = load()
+    monkeypatch.setattr(mod.shutil, "which", lambda name: "hermes")
+
+    def boom(*a, **k):
+        raise subprocess.TimeoutExpired(cmd="hermes", timeout=60)
+
+    monkeypatch.setattr(mod.subprocess, "run", boom)
+    assert mod._run(["kanban", "list"]) == (124, "", "hermes timed out after 60s")
+    out = json.loads(mod.handle_list({}))
+    assert out == {"success": False, "error": "hermes timed out after 60s"}
+
+
+def test_run_converts_oserror_to_error_tuple(monkeypatch):
+    mod = load()
+    monkeypatch.setattr(mod.shutil, "which", lambda name: "hermes")
+
+    def boom(*a, **k):
+        raise OSError("exec failed")
+
+    monkeypatch.setattr(mod.subprocess, "run", boom)
+    assert mod._run(["kanban", "list"]) == (1, "", "exec failed")
