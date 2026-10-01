@@ -8,7 +8,8 @@ export async function checkRouter(
   fetchFn: typeof fetch = fetch,
   requiredModels: readonly string[] = REQUIRED_COMBOS,
 ): Promise<CheckResult[]> {
-  const url = `${baseUrl.replace(/\/$/, '')}/models`;
+  const base = baseUrl.replace(/\/$/, '');
+  const url = `${base}/models`;
   let authed: Response;
   try {
     authed = await fetchFn(url, { headers: { Authorization: `Bearer ${apiKey}` } });
@@ -35,14 +36,19 @@ export async function checkRouter(
     }
   }
   try {
-    const anon = await fetchFn(url);
+    const probeUrl = `${base}/chat/completions`;
+    const anon = await fetchFn(probeUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: 'aos-auth-probe', messages: [{ role: 'user', content: 'x' }], max_tokens: 1 }),
+    });
     results.push({
       name: 'router-auth-required',
       ok: anon.status === 401 || anon.status === 403,
-      detail: `anonymous GET -> ${anon.status} (expected 401/403; set REQUIRE_API_KEY=true)`,
+      detail: `anonymous POST /chat/completions -> ${anon.status} (expected 401/403; enable "Require API key" in 9Router)`,
     });
   } catch (err) {
-    results.push({ name: 'router-auth-required', ok: false, detail: `anonymous GET failed: ${(err as Error).message}` });
+    results.push({ name: 'router-auth-required', ok: false, detail: `anonymous POST failed: ${(err as Error).message}` });
   }
   return results;
 }

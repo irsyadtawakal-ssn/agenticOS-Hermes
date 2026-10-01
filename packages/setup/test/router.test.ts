@@ -4,10 +4,15 @@ import { checkRouter } from '../src/router.js';
 
 const BASE = 'http://127.0.0.1:20128/v1';
 
-function fakeFetch(opts: { models: string[]; anonStatus: number }): typeof fetch {
-  return (async (_url: string | URL | Request, init?: RequestInit) => {
+type Seen = { url: string; method: string; auth: string | null; body: string | undefined };
+
+function fakeFetch(opts: { models: string[]; anonStatus: number }, seen: Seen[] = []): typeof fetch {
+  return (async (url: string | URL | Request, init?: RequestInit) => {
     const auth = new Headers(init?.headers).get('authorization');
-    if (!auth) return new Response('unauthorized', { status: opts.anonStatus });
+    seen.push({ url: String(url), method: init?.method ?? 'GET', auth, body: init?.body as string | undefined });
+    const isProbe = String(url).endsWith('/chat/completions') && init?.method === 'POST' && !auth;
+    if (isProbe) return new Response('probe', { status: opts.anonStatus });
+    if (!auth) return new Response('public', { status: 200 });
     if (auth !== 'Bearer good-key') return new Response('bad key', { status: 401 });
     return new Response(JSON.stringify({ data: opts.models.map((id) => ({ id })) }), { status: 200 });
   }) as typeof fetch;
@@ -34,6 +39,27 @@ describe('checkRouter', () => {
     const results = await checkRouter(BASE, 'good-key', fakeFetch({ models: ['os-brain'], anonStatus: 200 }));
     expect(results.find((r) => r.name === 'combo:os-private')?.ok).toBe(false);
     expect(results.find((r) => r.name === 'router-auth-required')?.ok).toBe(false);
+  });
+
+  it('treats an anonymous chat/completions 401 as auth required and 200/404 as not', async () => {
+    for (const [status, ok] of [[401, true], [403, true], [200, false], [404, false]] as const) {
+      const results = await checkRouter(BASE, 'good-key', fakeFetch({ models: ['os-brain'], anonStatus: status }));
+      const row = results.find((r) => r.name === 'router-auth-required');
+      expect(row?.ok).toBe(ok);
+      expect(row?.detail).toBe(
+        `anonymous POST /chat/completions -> ${status} (expected 401/403; enable "Require API key" in 9Router)`,
+      );
+    }
+  });
+
+  it('probes chat/completions with a fake model and no Authorization header', async () => {
+    const seen: Seen[] = [];
+    await checkRouter(BASE, 'good-key', fakeFetch({ models: [], anonStatus: 401 }, seen));
+    const probe = seen.find((r) => r.url === `${BASE}/chat/completions`);
+    expect(probe?.method).toBe('POST');
+    expect(probe?.auth).toBeNull();
+    expect(JSON.parse(probe?.body ?? '{}')).toMatchObject({ model: 'aos-auth-probe' });
+    expect(seen.some((r) => r.url === `${BASE}/models` && r.auth === null)).toBe(false);
   });
 
   it('reports an unreachable router without throwing', async () => {
@@ -67,7 +93,7 @@ describe('checkRouter', () => {
     expect(results.find((r) => r.name === 'router-auth-required')).toEqual({
       name: 'router-auth-required',
       ok: false,
-      detail: 'anonymous GET failed: socket hang up',
+      detail: 'anonymous POST failed: socket hang up',
     });
   });
 });
