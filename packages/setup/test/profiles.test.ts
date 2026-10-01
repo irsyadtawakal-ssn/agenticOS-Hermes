@@ -55,7 +55,7 @@ describe('buildOverlay', () => {
     expect(buildOverlay(roster[1], roster, BASE).terminal).toEqual({
       backend: 'docker',
       docker_network: false,
-      docker_mount_cwd_to_workspace: true,
+      docker_mount_cwd_to_workspace: false,
       container_cpu: 1,
       container_memory: 2048,
     });
