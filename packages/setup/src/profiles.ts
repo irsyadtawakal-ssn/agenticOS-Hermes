@@ -62,7 +62,7 @@ export function buildOverlay(
     terminal: {
       backend: 'docker',
       docker_network: spec.dockerNetwork,
-      docker_mount_cwd_to_workspace: isDev,
+      docker_mount_cwd_to_workspace: !spec.gateway,
       container_cpu: isDev ? 2 : 1,
       container_memory: isDev ? 4096 : 2048,
     },

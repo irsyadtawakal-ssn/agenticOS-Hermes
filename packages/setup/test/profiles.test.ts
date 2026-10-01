@@ -55,7 +55,7 @@ describe('buildOverlay', () => {
     expect(buildOverlay(roster[1], roster, BASE).terminal).toEqual({
       backend: 'docker',
       docker_network: false,
-      docker_mount_cwd_to_workspace: false,
+      docker_mount_cwd_to_workspace: true,
       container_cpu: 1,
       container_memory: 2048,
     });
@@ -65,6 +65,10 @@ describe('buildOverlay', () => {
       docker_mount_cwd_to_workspace: true,
       container_cpu: 2,
       container_memory: 4096,
+    });
+    expect(roster[0].gateway).toBe(true);
+    expect(buildOverlay(roster[0], roster, BASE).terminal).toMatchObject({
+      docker_mount_cwd_to_workspace: false,
     });
   });
   it('enables the dispatcher and cron catch-up only on the gateway profile', () => {

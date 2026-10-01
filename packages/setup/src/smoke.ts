@@ -51,6 +51,16 @@ export function chiefPrompt(stamp: string): string {
   ].join('\n');
 }
 
+async function findCardByTitle(exec: Exec, title: string): Promise<string> {
+  const list = await exec('hermes', ['kanban', 'list'], { timeoutMs: 60_000 });
+  for (const line of list.stdout.split(/\r?\n/)) {
+    if (!line.includes(title)) continue;
+    const m = line.match(/\bt_[A-Za-z0-9]+\b/);
+    if (m) return m[0];
+  }
+  throw new Error(`chief created no card titled "${title}"`);
+}
+
 export async function smokeChief(
   exec: Exec,
   log: (s: string) => void = console.log,
@@ -60,7 +70,12 @@ export async function smokeChief(
   const json = await supportsJson(exec);
   const r = await exec('hermes', ['-p', 'chief', 'chat', '-q', chiefPrompt(stamp)], { timeoutMs: 5 * 60_000 });
   if (r.code !== 0) throw new Error(`chief chat failed: ${(r.stderr || r.stdout).trim()}`);
-  const taskId = parseLastTaskId(r.stdout);
+  let taskId: string;
+  try {
+    taskId = parseLastTaskId(r.stdout);
+  } catch {
+    taskId = await findCardByTitle(exec, `SMOKE-CHIEF ${stamp}`);
+  }
   log(`chief created ${taskId}`);
   const created = await showTask(exec, taskId, json);
   if (created.assignee && created.assignee !== 'researcher') {

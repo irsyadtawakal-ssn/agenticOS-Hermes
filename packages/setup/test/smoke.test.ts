@@ -64,6 +64,35 @@ describe('smokeChief', () => {
     expect(await smokeChief(exec, () => {}, 'S5', 0)).toEqual({ ok: true, taskId: 't_real9', status: 'done' });
   });
 
+  it('falls back to locating the card by its title when chief reply has no id', async () => {
+    const statuses = ['ready', 'running', 'done'];
+    const calls: string[][] = [];
+    const exec: Exec = async (_cmd, args) => {
+      calls.push(args);
+      if (args[0] === '-p') return { code: 0, stdout: 'Sudah saya delegasikan.', stderr: '' };
+      if (args[1] === 'list') {
+        return {
+          code: 0,
+          stdout: 't_other1  ready  researcher  SMOKE-KANBAN x\nt_found7  ready  researcher  SMOKE-CHIEF S5\n',
+          stderr: '',
+        };
+      }
+      if (args[2] === '--help') return { code: 0, stdout: '', stderr: '' };
+      return { code: 0, stdout: `Task t_found7\nStatus: ${statuses.shift() ?? 'done'}\nAssignee: researcher\n`, stderr: '' };
+    };
+    expect(await smokeChief(exec, () => {}, 'S5', 0)).toEqual({ ok: true, taskId: 't_found7', status: 'done' });
+    expect(calls.some((a) => a[0] === 'kanban' && a[1] === 'list')).toBe(true);
+  });
+
+  it('rejects when chief reply has no id and no card carries the smoke title', async () => {
+    const exec: Exec = async (_cmd, args) => {
+      if (args[0] === '-p') return { code: 0, stdout: 'Maaf, tidak bisa.', stderr: '' };
+      if (args[1] === 'list') return { code: 0, stdout: 't_other1  ready  researcher  SMOKE-KANBAN x\n', stderr: '' };
+      return { code: 0, stdout: '', stderr: '' };
+    };
+    await expect(smokeChief(exec, () => {}, 'S6', 0)).rejects.toThrow(/created no card/);
+  });
+
   it('keeps id-like tokens out of the chief prompt', () => {
     expect(chiefPrompt('S')).not.toMatch(/\bt_[A-Za-z0-9]+\b/);
   });
