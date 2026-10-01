@@ -3,13 +3,13 @@
 
 | Field | Value |
 |---|---|
-| Status | Draft v1.0 (hasil sesi grilling, 22 keputusan) |
+| Status | Draft v1.1 — disinkronkan dengan hasil M1 (2026-10-01) |
 | Owner | Single owner (personal, self-hosted) |
 | Tanggal | 2026-09-30 |
 | Decision log | [`grill-decisions.md`](grill-decisions.md) |
 | Target platform F1 | Windows 11 native, localhost |
 
-> **Konvensi:** item bertanda **[VERIFY]** adalah asumsi teknis tentang komponen upstream (nama tool, key config, path) yang harus dikonfirmasi di Milestone M1 sebelum dijadikan kontrak kode.
+> **Konvensi:** asumsi teknis tentang komponen upstream (nama tool, key config, path) sudah diverifikasi di Milestone M1 pada mesin owner (Hermes Agent v0.21.5, 9Router 0.5.86); jawabannya ada di [`runbook.md`](runbook.md) §1 (baris V1–V16). Hanya item di §16 yang masih terbuka.
 
 ---
 
@@ -54,7 +54,7 @@ Developer/entrepreneur solo, memakai Windows, nyaman dengan terminal dan monorep
 
 | Profile | Peran | Tier 9Router | Kanal | Toolset utama | Catatan |
 |---|---|---|---|---|---|
-| `chief` | Chief of Staff / orchestrator / PA front-desk | `os-brain` | Telegram + office | kanban (create/assign), memory, cron, web search ringan, send_message (approval) | Satu-satunya yang terhubung ke Telegram |
+| `chief` | Chief of Staff / orchestrator / PA front-desk | `os-brain` | Telegram + office | `office_create_task` / `office_list_tasks` (plugin), memory, cron, web search ringan | Satu-satunya yang terhubung ke Telegram; pengiriman keluar lewat delivery gateway/cron (tidak ada tool `send_message`) |
 | `researcher` | Riset web, ringkasan, perbandingan | `os-worker` | office | web search, browser, file write di workspace | Output = dokumen di workspace kartu |
 | `secretary` | Reminder, catatan, kerapian kanban, jadwal | `os-private` | office | cron, memory, kanban (update), notes | Menyentuh data pribadi → tier private |
 | `content` | Riset tren, ide & draft konten | `os-worker` | office | web search, file write | F1: draft saja. F2: MCP postit |
@@ -106,17 +106,17 @@ flowchart LR
   end
 
   subgraph PC["PC Windows (localhost)"]
-    subgraph Hermes["Hermes Agent (upstream, pinned)"]
-      GW[Gateway process<br/>Telegram adapter + cron + kanban dispatcher]
+    subgraph Hermes["Hermes Agent v0.21.5 (upstream, pinned)<br/>HERMES_HOME Agentic OS = D:\agentic-os\hermes-home"]
+      GW[Host gateway - satu per HERMES_HOME<br/>Telegram → chief + cron semua profile + kanban dispatcher]
       SERVE[hermes serve<br/>tui_gateway JSON-RPC/WS]
       RUNS[Kanban runs<br/>hermes -p &lt;agent&gt; chat -q]
-      KB[(Kanban SQLite)]
-      HH[(HERMES_HOME<br/>profiles, memory, skills, sessions)]
+      KB[(kanban.db — board default)]
+      HH[(HERMES_HOME Agentic OS<br/>profiles, memory, skills, sessions)]
       BRIDGE[[os-bridge plugin<br/>events + policy + cost]]
     end
     CORE[OS Core<br/>Fastify + WS + SQLite]
     CDB[(core.db)]
-    R9[9Router :20128/v1<br/>os-brain / os-worker / os-private]
+    R9[9Router 127.0.0.1:20128/v1<br/>tier os-brain / os-worker / os-private<br/>M1: semua → COMBO-SS]
     OLL[Ollama :11434]
     DOCK[Docker sandbox<br/>dev workspaces]
     OPS[Ops Telegram bot<br/>approvals & alerts]
@@ -140,7 +140,7 @@ flowchart LR
   CORE -- read-only --> KB
   CORE --- CDB
   CORE --> OPS
-  CORE -- usage API --> R9
+  CORE -- "read-only usageHistory (data.sqlite)" --> R9
   GW & SERVE & RUNS -- OpenAI-compatible --> R9
   R9 --> OLL
   R9 --> Cloud
@@ -151,20 +151,20 @@ flowchart LR
 
 | Komponen | Tanggung jawab | Bukan tanggung jawab |
 |---|---|---|
-| **Hermes (upstream)** | Agent loop, memory, skills, profile, gateway Telegram, cron, kanban + dispatcher, `hermes serve` untuk chat interaktif, terminal backend Docker | UI kantor, approval lintas-kanal, ledger biaya |
-| **os-bridge (plugin Python)** | Memancarkan event lifecycle/tool/LLM ke Core; policy engine di `pre_tool_call`; menunggu/menolak approval; mencatat usage via `post_llm_call`; circuit breaker lokal | Menyimpan state jangka panjang (itu Core) |
-| **OS Core (Node)** | Event store, approval service + token, cost ledger & rekonsiliasi 9Router, snapshot kanban (read-only), WebSocket fan-out ke UI, Ops bot Telegram, deteksi briefing terlewat, health check | Menjalankan agent, mengubah kanban secara langsung di SQLite |
-| **9Router** | Routing OpenAI-compatible ke semua provider; combo/fallback; key rotation; quota; usage | Kebijakan approval |
+| **Hermes (upstream)** | Agent loop, memory, skills, profile, **satu host gateway per `HERMES_HOME`** (melayani Telegram → `chief`, dispatcher kanban, dan cron untuk semua profile), `hermes serve` untuk chat interaktif, terminal backend Docker | UI kantor, approval lintas-kanal, ledger biaya |
+| **os-bridge (plugin Python)** | Memancarkan event lifecycle/tool/LLM ke Core; policy engine di `pre_tool_call`; menunggu/menolak approval; circuit breaker lokal (usage token **tidak** dari `post_llm_call` — lihat §5.3.1) | Menyimpan state jangka panjang (itu Core) |
+| **OS Core (Node)** | Event store, approval service + token, cost ledger (sumber token usage: `usageHistory` 9Router), snapshot kanban (read-only), WebSocket fan-out ke UI, Ops bot Telegram, deteksi briefing terlewat, health check | Menjalankan agent, mengubah kanban secara langsung di SQLite |
+| **9Router** | Routing OpenAI-compatible ke semua provider; combo/fallback; key rotation; quota; usage (disimpan di `data.sqlite`, tabel `usageHistory`) | Kebijakan approval |
 | **Pixel Office (React)** | Kanvas pixel, dock chat (client `tui_gateway`), laci kanban, approval inbox, HUD biaya, layout editor | Logika bisnis (semua via Core/Hermes) |
 
 ### 4.3 Keputusan arsitektur penting (ADR ringkas)
 
-1. **ADR-01 Tidak fork Hermes.** Semua ekstensi via plugin (`~/.hermes/plugins/` atau pip entry point) dan API publik (`tui_gateway`). Versi Hermes **di-pin**; upgrade hanya setelah contract test lulus (§12).
-2. **ADR-02 Kanban Hermes = sumber kebenaran task.** Core **tidak menulis** langsung ke SQLite kanban. Mutasi kartu (pindah kolom, re-queue setelah approval) dilakukan lewat CLI/API resmi Hermes **[VERIFY: `hermes kanban ...` subcommands / dashboard plugin API]**.
-3. **ADR-03 Dua kanal Telegram.** Bot utama dimiliki Hermes gateway (percakapan dengan `chief`). Approval & alert memakai **bot kedua (Ops bot)** milik Core, karena dua proses tidak bisa sama-sama melakukan polling update pada satu bot, dan callback inline button harus diterima Core.
+1. **ADR-01 Tidak fork Hermes.** Semua ekstensi via plugin (per profile: `<HERMES_HOME>\profiles\<profile>\plugins\<nama>\`, diaktifkan dengan `hermes -p <profile> plugins enable <nama>`) dan API publik (`tui_gateway`). Versi Hermes **di-pin**; upgrade hanya setelah contract test lulus (§12). Agentic OS memakai `HERMES_HOME` sendiri (`D:\agentic-os\hermes-home`) berdampingan dengan instalasi Hermes owner (`%LOCALAPPDATA%\hermes`): **source checkout dipakai bersama, venv terpisah**; satu **host gateway per `HERMES_HOME`** (multiplex Hermes v0.21.5) melayani Telegram → `chief`, dispatcher kanban, dan cron semua profile, bukan gateway khusus `chief`.
+2. **ADR-02 Kanban Hermes = sumber kebenaran task.** Core **tidak menulis** langsung ke SQLite kanban. Mutasi kartu (pindah kolom, re-queue setelah approval) dilakukan lewat CLI resmi Hermes: `hermes kanban create "<title>" --assignee <p> --body … --workspace dir:<abs>`, `list`, `show <id>`, `assign`, `complete`, `block`, `unblock`, `archive` (`show` tidak punya `--json`; outputnya teks `status: …`).
+3. **ADR-03 Dua kanal Telegram.** Bot utama dimiliki **host gateway Agentic OS** (profile `chief`; konfigurasi Telegram di `profiles\chief\.env`, percakapan dengan `chief`). Approval & alert memakai **bot kedua (Ops bot)** milik Core, karena dua proses tidak bisa sama-sama melakukan polling update pada satu bot, dan callback inline button harus diterima Core.
 4. **ADR-04 Fail-closed.** Jika Core tidak dapat dihubungi, os-bridge **menolak** semua tool berisiko (tool non-berisiko tetap jalan). Event di-buffer lokal (file JSONL) dan dikirim ulang saat Core kembali.
 5. **ADR-05 Tier, bukan model.** Profile Hermes hanya mengenal nama combo (`os-brain`/`os-worker`/`os-private`). Penggantian model dilakukan di 9Router. Toolset/model tidak diganti di tengah percakapan (menjaga prompt cache Hermes).
-6. **ADR-06 Chat UI = client `tui_gateway`.** Pixel office memakai ulang paket client `apps/shared` Hermes (MIT) **[VERIFY: apakah dipublish sebagai package atau perlu di-vendor]**.
+6. **ADR-06 Chat UI = client `tui_gateway`.** Pixel office memakai ulang paket client `apps/shared` Hermes (MIT). `@hermes/shared` adalah paket **private** yang mengekspor source TS langsung (`./src/index.ts`), jadi di M5 di-vendor/di-link sebagai path, bukan install npm.
 
 ### 4.4 Alur utama
 
@@ -174,8 +174,8 @@ flowchart LR
 3. os-bridge (dimuat di proses serve) mengirim event `tool.started/finished` ke Core → Core broadcast ke kanvas → karakter beranimasi.
 
 **B. Delegasi via Telegram**
-1. Owner: "riset 5 kompetitor postiz" → Hermes gateway → `chief`.
-2. `chief` membuat kartu kanban (assignee `researcher`, status `ready`, acceptance criteria).
+1. Owner: "riset 5 kompetitor postiz" → host gateway Agentic OS → `chief`.
+2. `chief` membuat kartu kanban lewat tool plugin `office_create_task` (assignee `researcher`, status `ready`, acceptance criteria). Tool `kanban_*` bawaan Hermes **hanya aktif di dalam worker yang di-spawn dispatcher**, bukan untuk `chief`. Tiap kartu mendapat workspace permanen `dir:` (`…\profiles\chief\workspaces\<stamp>-<slug>\`) tempat hasil kerja worker tersimpan.
 3. Dispatcher (tick 60 dtk) menjalankan `hermes -p researcher chat -q <prompt>` dengan env `HERMES_KANBAN_TASK`, `HERMES_KANBAN_WORKSPACE`.
 4. os-bridge di proses run → event `run.started`, `tool.*`, `llm.usage` ke Core (dengan `task_id`).
 5. Selesai → kartu `done` → Core notifikasi ringkas ke Ops bot; `chief` dapat merangkum hasil ke Telegram utama.
@@ -193,8 +193,8 @@ flowchart LR
 4. Run ulang: `pre_tool_call` menemukan token cocok → tool lolos, token dikonsumsi. Args berbeda → approval baru.
 
 **E. Biaya**
-1. `post_llm_call` → event `llm.usage` (profile, task_id, session_id, combo, model aktual jika tersedia, token in/out/cache).
-2. Core menghitung biaya dari price table + melakukan rekonsiliasi harian dengan usage 9Router **[VERIFY: endpoint usage 9Router]**.
+1. `post_llm_call` **tidak membawa token usage** (hanya teks & history), jadi usage tidak diambil dari hook. Core membaca tabel `usageHistory` di `%APPDATA%\9router\db\data.sqlite` (read-only; kolom `timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta`) dan menulis event `llm.usage` (profile, combo, model aktual, token in/out/cache).
+2. Pencocokan baris ke agent/profile lewat hash/suffix kolom `apiKey` (berisi key mentah — **tidak pernah ditampilkan** di Core/office/log). Core menghitung biaya dari price table + rekonsiliasi harian dengan agregat 9Router `usageDaily`.
 
 ---
 
@@ -203,18 +203,19 @@ flowchart LR
 ### 5.1 Hermes Layer
 
 **5.1.1 Instalasi & versi**
-- Instal via Hermes Desktop (MSIX) di Windows native; `HERMES_HOME = %LOCALAPPDATA%\hermes`.
-- Versi Hermes di-pin di `infra/hermes.lock` (tag/commit). Upgrade = PR tersendiri + contract test (§12).
+- Instal memakai Hermes milik owner yang sudah ada (`install.ps1` / Hermes Desktop) di Windows native. Agentic OS memakai `HERMES_HOME` sendiri, `D:\agentic-os\hermes-home` (`AOS_HERMES_HOME`), berdampingan dengan instalasi owner di `%LOCALAPPDATA%\hermes`: runtime (venv) dipasang ulang di folder Agentic OS (~2,5 GB), **source checkout tetap dipakai bersama** di `%LOCALAPPDATA%\hermes\hermes-agent`.
+- Pin = commit source bersama di `infra/hermes.lock` (M1: Hermes Agent v0.21.5, `e85706c`); `doctor` membaca `Install directory` dari `hermes --version`. Update Hermes Desktop menggeser commit ini: `doctor` FAIL `hermes-pin` = sinyal untuk uji ulang lalu bump lock (PR tersendiri + contract test, §12). Jangan menjalankan `hermes update` dari folder Agentic OS.
 
 **5.1.2 Profile**
 - 5 profile: `chief`, `researcher`, `secretary`, `content`, `dev` (`hermes -p <name>`), masing-masing punya config, memory, skills, sessions sendiri.
 - Tiap profile punya **persona file** (SOUL/system prompt) yang berisi: peran, batasan, format output, aturan eskalasi, dan aturan menangani `PENDING_APPROVAL` / `DENIED_BY_OWNER`.
-- Provider model tiap profile: custom OpenAI-compatible → `base_url: http://127.0.0.1:20128/v1`, `model: os-brain|os-worker|os-private` **[VERIFY: key config provider custom Hermes]**.
+- Provider model tiap profile (custom OpenAI-compatible): `model: {provider: custom, base_url: http://127.0.0.1:20128/v1, default: <model 9Router>, key_env: OPENAI_API_KEY}`. Nama model per tier diatur lewat `AOS_TIER_MODEL_OS_BRAIN|OS_WORKER|OS_PRIVATE` di `.env.local` (saat ini semuanya `COMBO-SS`; lihat §5.2). Panggilan auxiliary (`title_generation`, compression, vision auto-detect) juga memakai provider utama ini, jadi ikut lewat 9Router.
+- Plugin per profile, bukan global: `<HERMES_HOME>\profiles\<profile>\plugins\<nama>\`; tool dimuat lazy lewat tool search, jadi persona harus menyebut nama tool secara eksplisit (mis. `office_create_task`).
 
 **5.1.3 Gateway & Telegram**
-- Gateway dijalankan sebagai Windows Scheduled Task saat login (mekanisme bawaan Hermes, tanpa admin).
-- Hanya `chief` yang terhubung ke bot Telegram utama; whitelist user ID owner saja.
-- `kanban.dispatch_in_gateway: true` pada satu-satunya gateway.
+- Satu **host gateway per `HERMES_HOME`** (multiplex Hermes v0.21.5) melayani Telegram → `chief`, dispatcher kanban, dan cron semua profile. Autostart lewat `shell:startup\Hermes_Gateway_787a7c01.vbs` (Startup folder, tanpa UAC). Gateway dan data Hermes lama milik owner berjalan berdampingan dan tidak disentuh.
+- Hanya `chief` yang terhubung ke bot Telegram utama; konfigurasi Telegram (token, whitelist user ID owner) berada di `profiles\chief\.env`.
+- Dispatcher berjalan di dalam host gateway ini; log di `D:\agentic-os\hermes-home\logs\gateway.log`.
 
 **5.1.4 Cron (profile-scoped)**
 
@@ -226,13 +227,14 @@ flowchart LR
 | Daily cost digest | Core (bukan Hermes) | 23:55 | Disertakan di briefing esok |
 
 **5.1.5 Kanban**
-- Satu board: `office`. Kolom: `todo → ready → running → done`, cabang `blocked`, `archived`.
+- M1 memakai board **default** (`kanban.db` di `HERMES_HOME`, mode WAL, aman dibuka read-only saat gateway jalan); board `office` tidak dibuat. Status: `triage → todo → ready → running → blocked/review/done/archived`.
+- Workspace: kartu dari `chief` memakai workspace permanen `dir:` (hasil kerja tersimpan); kartu manual tanpa `--workspace` memakai workspace *scratch* yang **dihapus saat kartu selesai**.
 - Konvensi kartu (disimpan di body kartu, markdown): `Goal`, `Acceptance criteria`, `Inputs`, `Risk: low|external`, `Parent` (jika hasil pecahan brief).
 - Label wajib: `agent:<profile>`, `source:telegram|office|cron`, `risk:low|external`.
 
 ### 5.2 9Router Layer
 
-**5.2.1 Deployment**: `npm install -g 9router`, jalan di `127.0.0.1:20128` (bind localhost saja), dashboard di port yang sama. Dijalankan saat login via Scheduled Task.
+**5.2.1 Deployment**: 9Router 0.5.86 (`npm install -g 9router`), jalan di `127.0.0.1:20128`, dashboard di port yang sama. Autostart lewat launcher `shell:startup\9router.vbs` dengan `--tray --skip-update --host 127.0.0.1` (bind localhost saja; bukan Scheduled Task). **Require API key: ON** — melindungi `/v1/chat/completions` (`GET /v1/models` memang tetap publik); Hermes memakai key 9Router khusus ("HERMES"), aplikasi lain butuh key sendiri. Data di `%APPDATA%\9router\db\data.sqlite` (WAL). Semua panggilan LLM Agentic OS (agent, auxiliary) lewat endpoint ini.
 
 **5.2.2 Combo**
 
@@ -242,7 +244,9 @@ flowchart LR
 | `os-worker` | `researcher`, `content` | provider murah (DeepSeek/Qwen/GLM/Kimi) → API key mid-tier | Volume tinggi, biaya rendah |
 | `os-private` | `secretary` | Ollama lokal → API dengan zero-data-retention | Data pribadi; tidak boleh ke provider tanpa kebijakan retensi jelas |
 
-**5.2.3 Kebijakan langganan konsumen**: akun langganan (Claude/ChatGPT/Gemini/Copilot via OAuth) **tidak dimasukkan** ke combo yang dipakai kanban run/cron. Hanya boleh untuk combo interaktif terpisah (`os-brain-interactive`, opsional) — mitigasi risiko ToS/pembatasan akun.
+> **Status M1:** combo `os-*` belum dibuat. Sementara **semua tier** (`os-brain`, `os-worker`, `os-private`) diarahkan ke satu combo `COMBO-SS` (model akun langganan konsumen) lewat `AOS_TIER_MODEL_*`. Tabel di atas adalah target, bukan kondisi terpasang; `os-private` belum lokal.
+
+**5.2.3 Kebijakan langganan konsumen**: akun langganan (Claude/ChatGPT/Gemini/Copilot via OAuth) **tidak dimasukkan** ke combo yang dipakai kanban run/cron. Hanya boleh untuk combo interaktif terpisah (`os-brain-interactive`, opsional) — mitigasi risiko ToS/pembatasan akun. **Pengecualian M1:** `COMBO-SS` (model langganan konsumen) dipakai untuk semua tier termasuk kanban run/cron; pengecualian ini diterima owner dengan sadar akan risiko ToS/limit, dan harus diganti setelah combo `os-*` / API key / Ollama tersedia (§16).
 
 **5.2.4 Kebutuhan**: timeout & retry di 9Router harus lebih pendek dari timeout tool Hermes; kegagalan seluruh fallback → error jelas ke agent (bukan hang).
 
@@ -253,34 +257,39 @@ flowchart LR
 | Hook | Tujuan |
 |---|---|
 | `on_session_start` / `on_session_end` | Event `session.started/ended` (profile, session_id, task_id dari env `HERMES_KANBAN_TASK` bila ada, mode `interactive|kanban|cron`) |
-| `pre_llm_call` / `post_llm_call` | Event `llm.started` (→ animasi "berpikir") dan `llm.usage` (token, latency) |
-| `pre_auxiliary_call` / `post_auxiliary_call` | Usage untuk panggilan tambahan (titling, compression, vision) — ikut ledger |
+| `pre_llm_call` / `post_llm_call` | Event `llm.started` (→ animasi "berpikir") dan latency. **`post_llm_call` tidak membawa token usage** (hanya teks & history); event `llm.usage` diisi Core dari `usageHistory` 9Router (§4.4-E, §5.4.1) |
+| `pre_auxiliary_call` / `post_auxiliary_call` | Event panggilan tambahan (titling, compression, vision); payload `pre_auxiliary_call`: `aux_task, model, provider, base_url, approx_input_tokens…`. Usage-nya ikut ledger lewat `usageHistory` |
 | `pre_tool_call` | Policy check → allow / wait-approval / park / deny; event `tool.started` |
 | `post_tool_call` | Event `tool.finished` (durasi, status, ringkasan hasil ter-redaksi) |
 
+Kontrak hook (terverifikasi, runbook V6): semua hook dipanggil dengan **keyword-only args**. Field per hook:
+- `pre_tool_call`: `tool_name`, `args` (dict), `task_id`, `session_id`, `tool_call_id`, `turn_id`, `api_request_id`.
+- `post_tool_call`: field `pre_tool_call` + `result`, `duration_ms`, `status`, `error_type`, `error_message`.
+- `on_session_start`: `session_id`, `model`, `platform`.
+- Membatalkan tool: return `{'action': 'block', 'message': …}`.
+
 **5.3.2 Deteksi mode**
-- `kanban` jika env `HERMES_KANBAN_TASK` ada; `cron` jika dipicu scheduler **[VERIFY: penanda konteks cron]**; selain itu `interactive`.
+- `kanban` jika env `HERMES_KANBAN_TASK` ada; `cron` jika dipicu scheduler (penanda konteks cron belum dikonfirmasi; verifikasi bersama uji catch-up, §16); selain itu `interactive`.
 
 **5.3.3 Policy file** (`policy.yaml`, dibaca saat start; perubahan berlaku di sesi baru)
 
 ```yaml
 version: 1
-default: allow            # tool tidak terdaftar = allow, kecuali cocok rule di bawah
+default: allow            # tool tidak terdaftar = allow, kecuali cocok rule di bawah (nama tool aktual: runbook V2)
 fail_mode: closed         # Core tak terjangkau → rule 'approve' diperlakukan sebagai 'deny'
 rules:
-  - id: outbound-message
-    match: { tool: [send_message] }          # [VERIFY nama tool]
-    except: { target: owner }                 # pesan ke owner sendiri tidak perlu approval
+  - id: external-interaction
+    match: { tool: [browser_*, computer_use] }   # interaksi eksternal lewat browser / desktop
     action: approve
   - id: terminal-write
-    match: { tool: [terminal, execute_code] }
+    match: { tool: [terminal, process_manage, execute_code] }
     unless: { profile: dev, command_matches: ["^(ls|cat|pwd|git (status|diff|log)|npm test|pnpm test)\\b"] }
     action: approve
   - id: git-push
     match: { tool: [terminal], command_matches: ["git push", "gh pr (create|merge)"] }
     action: approve
   - id: destructive-fs
-    match: { tool: [terminal, write_file, patch], path_outside: "${HERMES_KANBAN_WORKSPACE}" }
+    match: { tool: [terminal, process_manage, write_file, patch], path_outside: "${HERMES_KANBAN_WORKSPACE}" }
     action: approve
   - id: delete
     match: { command_matches: ["\\brm\\b", "Remove-Item", "del "] , tool: [terminal] }
@@ -289,10 +298,12 @@ rules:
     match: { tool_tags: [payment, purchase] }
     action: deny                              # F1: tidak pernah
   - id: cron-create
-    match: { tool: [cronjob], op: [create, update] }
+    match: { tool: [cronjob_manage], op: [create, update] }
     unless: { profile: [secretary, chief] }
     action: approve
 ```
+
+> Tidak ada tool `send_message` yang bisa dipanggil agent di Hermes v0.21.5: pengiriman keluar terjadi lewat delivery gateway/cron, bukan tool agent, sehingga tidak perlu rule per-tool. Nama tool aktual untuk policy (runbook V2): `terminal`, `process_manage`, `read_file`, `write_file`, `patch`, `search_files`, `web_search`, `web_extract`, `execute_code`, `delegate_task`, `cronjob_manage`, `memory`, `browser_*`, `computer_use`, `kanban_*`; plugin Agentic OS: `office_create_task`, `office_list_tasks`.
 
 **5.3.4 Approval**
 - Request berisi: `agent`, `task_id`, `session_id`, `tool`, `args` (disanitasi, secret di-mask), `args_hash`, `reason` (teks penjelasan dari agent jika tersedia), `rule_id`, `mode`.
@@ -316,9 +327,9 @@ rules:
 |---|---|
 | `ingest` | `POST /v1/events` (batch), validasi Zod, simpan ke `events`, proyeksikan ke `agent_state` |
 | `approvals` | CRUD approval, long-poll wait, token sekali pakai, integrasi Ops bot (inline keyboard + callback) |
-| `kanban-reader` | Watch/poll SQLite kanban Hermes (read-only, `mode=ro`), snapshot ke memori + diff event `kanban.changed` |
-| `kanban-actions` | Mutasi kartu via CLI/API resmi Hermes (child process), bukan tulis langsung ke DB |
-| `costs` | Ledger per event `llm.usage`, price table, agregasi harian, rekonsiliasi dengan 9Router, alert anomali |
+| `kanban-reader` | Watch/poll `<HERMES_HOME>\kanban.db` (read-only, `mode=ro`; WAL aman dibaca saat gateway jalan), snapshot ke memori + diff event `kanban.changed` |
+| `kanban-actions` | Mutasi kartu via CLI resmi `hermes kanban …` (child process, dengan `HERMES_HOME` Agentic OS), bukan tulis langsung ke DB |
+| `costs` | Ledger dari tabel `usageHistory` 9Router (`data.sqlite`, dibuka read-only; baris dicocokkan ke agent via hash/suffix `apiKey`, key tidak pernah ditampilkan) karena `post_llm_call` tak punya usage; price table, agregasi harian, rekonsiliasi dengan `usageDaily`, alert anomali |
 | `realtime` | WebSocket `/v1/stream` → broadcast `agent_state`, `kanban`, `approvals`, `costs` ke office |
 | `health` | Status Hermes gateway, `hermes serve`, 9Router, Ollama, Docker; tampil di HUD |
 | `catchup` | Saat start: jika briefing hari ini belum terkirim dan jam < 12:00 → trigger cron briefing sekarang (label "terlambat") |
@@ -533,7 +544,7 @@ Tipe event F1: `session.started`, `session.ended`, `llm.started`, `llm.usage`, `
 
 ### 8.2 Secrets
 - API key provider hanya disimpan di 9Router; profile Hermes hanya punya kredensial ke `127.0.0.1:20128`.
-- Token Telegram bot utama: `HERMES_HOME\.env`; token Ops bot & token bridge: `%LOCALAPPDATA%\agentic-os\.env` (ACL user saja).
+- Token Telegram bot utama: `profiles\chief\.env` di `HERMES_HOME` Agentic OS; token Ops bot & token bridge: `%LOCALAPPDATA%\agentic-os\.env` (ACL user saja).
 - Sanitizer: mask pola `sk-...`, `ghp_...`, `xox...`, JWT, nomor kartu, dan nilai env yang dikenal sebelum event keluar dari bridge.
 
 ### 8.3 Privasi data
@@ -541,11 +552,12 @@ Tipe event F1: `session.started`, `session.ended`, `llm.started`, `llm.usage`, `
 - Log tool dipangkas 14 hari; approval disimpan selamanya sebagai audit trail.
 
 ### 8.4 Sandbox `dev`
-- Terminal backend Docker Hermes **[VERIFY: konfigurasi `terminal.backend: docker` & opsi mount]**.
-- Mount: hanya `HERMES_KANBAN_WORKSPACE` (atau folder repo yang ditunjuk per kartu) sebagai read-write. Tidak ada mount ke `HERMES_HOME`, `%LOCALAPPDATA%\agentic-os`, `~/.ssh`, atau drive lain.
-- Kredensial git: deploy key/fine-grained token per repo, disuntikkan hanya saat approval `git-push` disetujui **[VERIFY mekanisme injeksi]**; default tanpa kredensial push.
-- Egress: registry npm/pnpm/PyPI allowlist; lainnya approval.
-- Resource: CPU/RAM dibatasi (mis. 2 vCPU / 4 GB), container dihapus setelah kartu `done`.
+- Terminal backend Docker Hermes (terverifikasi di M1, runbook V7): image `nousresearch/hermes-sandbox:desktop`, satu container per task id (label `hermes-task-id`, persisten). Opsi `docker_mount_cwd_to_workspace: true` me-mount **cwd** proses ke `/workspace` (read-write).
+- Mount hanya untuk **worker** (`researcher`, `secretary`, `content`, `dev`): cwd = workspace kartu. `chief` tidak me-mount (cwd gateway = folder berisi `.env`). `.env` profile tidak di-mount; tidak ada mount ke `HERMES_HOME`, `%LOCALAPPDATA%\agentic-os`, `~/.ssh`, atau drive lain. Karena cwd yang di-mount, jangan memulai sesi interaktif worker dari folder yang berisi rahasia.
+- Network: `none` untuk semua profile kecuali `dev` (`bridge`).
+- Kredensial git: deploy key/fine-grained token per repo, disuntikkan hanya saat approval `git-push` disetujui (mekanisme injeksi diputuskan di M3); default tanpa kredensial push.
+- Egress `dev` (target M3): registry npm/pnpm/PyPI allowlist; lainnya approval.
+- Resource: CPU/RAM dibatasi (mis. 2 vCPU / 4 GB); container per task id bersifat persisten, pembersihan setelah kartu `done` dijadwalkan di M6.
 
 ---
 
@@ -554,7 +566,7 @@ Tipe event F1: `session.started`, `session.ended`, `llm.started`, `llm.usage`, `
 | Skenario | Perilaku yang diharapkan |
 |---|---|
 | PC sleep/mati | Agent berhenti; data aman di `HERMES_HOME` & `core.db`. Known limitation F1. Rekomendasi: atur power plan agar tidak sleep di jam cron penting |
-| PC menyala kembali | Scheduled Task menyalakan 9Router, Hermes gateway, Core; Core `catchup` mengirim briefing yang terlewat (≤12:00) |
+| PC menyala kembali | Launcher Startup menyalakan 9Router dan host gateway Hermes, Scheduled Task menyalakan Core; Core `catchup` mengirim briefing yang terlewat (≤12:00) |
 | Core mati | Tool berisiko ditolak (fail-closed); event di-spool; office menampilkan banner "Core offline" |
 | 9Router mati | Semua agent gagal panggil LLM → error jelas; Core alert via Ops bot (Core memantau health 9Router) |
 | Ollama mati | `os-private` fallback ke API ZDR sesuai combo |
@@ -570,30 +582,32 @@ Tipe event F1: `session.started`, `session.ended`, `llm.started`, `llm.usage`, `
 ## 10. Deployment (F1, Windows 11 native)
 
 ### 10.1 Prasyarat
-- Windows 11, Node LTS + pnpm, Hermes Desktop (MSIX) atau installer CLI Windows native, Docker Desktop (untuk `dev`), Ollama (opsional, GPU), dua bot Telegram (utama + Ops).
+- Windows 11, Node LTS + pnpm, Hermes (instalasi owner: `install.ps1` / Hermes Desktop; Agentic OS memakai `HERMES_HOME` terpisah), Docker Desktop (untuk `dev`), Ollama (opsional, GPU), dua bot Telegram (utama + Ops).
 
 ### 10.2 Proses & port
 
 | Proses | Port | Start |
 |---|---|---|
-| 9Router | 127.0.0.1:20128 | Scheduled Task (login) |
-| Hermes gateway (Telegram + cron + dispatcher) | — | Scheduled Task bawaan Hermes |
-| `hermes serve` (untuk chat office) | **[VERIFY port default]** | Dikelola Core (spawn & supervise) atau Desktop |
+| 9Router | 127.0.0.1:20128 | Launcher Startup `shell:startup\9router.vbs` (`--tray --skip-update --host 127.0.0.1`); bukan Scheduled Task |
+| Host gateway Hermes Agentic OS (Telegram + cron + dispatcher) | — | `shell:startup\Hermes_Gateway_787a7c01.vbs` (satu per `HERMES_HOME`) |
+| `hermes serve` (untuk chat office; JSON-RPC/WebSocket) | 127.0.0.1:9119 (default; bind publik selalu butuh auth) | Dikelola Core (spawn & supervise) atau Desktop; client `@hermes/shared` di-vendor/di-link di M5 |
 | OS Core | 127.0.0.1:7400 | Scheduled Task (login) |
 | Pixel office | dev: 5173 / prod: disajikan Core di 7400 | — |
 | Ollama | 127.0.0.1:11434 | Service Ollama |
 
-### 10.3 Environment (`%LOCALAPPDATA%\agentic-os\.env`)
+### 10.3 Environment (`%LOCALAPPDATA%\agentic-os\.env`; variabel M1 `AOS_ROUTER_*`, `AOS_TIER_MODEL_*`, `AOS_HERMES_HOME`, `AOS_TIMEZONE` saat ini ada di `.env.local` repo, tidak di-commit)
 ```ini
 AOS_CORE_PORT=7400
 AOS_BRIDGE_TOKEN=<random 32 bytes hex>
 AOS_UI_TOKEN=<random 32 bytes hex>
 AOS_OPS_BOT_TOKEN=<telegram bot token (Ops)>
 AOS_OWNER_TELEGRAM_ID=<numeric id>
-AOS_HERMES_HOME=%LOCALAPPDATA%\hermes
-AOS_KANBAN_DB=<path SQLite kanban Hermes>      # [VERIFY]
-AOS_ROUTER_URL=http://127.0.0.1:20128
-AOS_ROUTER_ADMIN_KEY=<jika 9Router butuh key untuk usage API>
+AOS_HERMES_HOME=D:\agentic-os\hermes-home
+AOS_ROUTER_URL=http://127.0.0.1:20128/v1
+AOS_ROUTER_KEY=<key 9Router "HERMES" (Require API key ON)>
+AOS_TIER_MODEL_OS_BRAIN=COMBO-SS               # sementara; ganti ke combo os-brain
+AOS_TIER_MODEL_OS_WORKER=COMBO-SS              # sementara; ganti ke combo os-worker
+AOS_TIER_MODEL_OS_PRIVATE=COMBO-SS             # sementara; ganti ke combo os-private (lokal)
 AOS_BRIEFING_TIME=07:00
 AOS_TIMEZONE=Asia/Jakarta
 ```
@@ -643,7 +657,7 @@ agentic-os/
 | Unit | Policy matcher, sanitizer, token approval, circuit breaker, cost calc, state projector |
 | Contract | (a) `tui_gateway` JSON-RPC: connect, kirim pesan, stream, tool events; (b) hook payload os-bridge per event; (c) CLI/API kanban: list, move, create; (d) 9Router usage API. Wajib lulus sebelum bump `hermes.lock` |
 | Integration | Alur §4.4 A–E end-to-end dengan model murah/lokal |
-| **Red-team (gate)** | ≥30 skenario: injection di halaman web, di file repo, di pesan Telegram yang diteruskan; percobaan `send_message` ke pihak lain, `git push`, `rm`, akses di luar workspace, eksfiltrasi via `curl`; Core dimatikan saat aksi berisiko (harus deny). Kriteria: **0 aksi berisiko tereksekusi tanpa approval** |
+| **Red-team (gate)** | ≥30 skenario: injection di halaman web, di file repo, di pesan Telegram yang diteruskan; percobaan mengirim pesan ke pihak lain (lewat browser/tool eksternal), `git push`, `rm`, akses di luar workspace, eksfiltrasi via `curl`; Core dimatikan saat aksi berisiko (harus deny). Kriteria: **0 aksi berisiko tereksekusi tanpa approval** |
 | Reliability | 14 hari dogfooding: log keberhasilan briefing; simulasi PC mati 06:00–08:00 → catch-up |
 | UI | Playwright untuk dock/HUD/laci; snapshot state-to-animation mapping |
 
@@ -653,7 +667,7 @@ agentic-os/
 
 | Milestone | Isi | Exit criteria |
 |---|---|---|
-| **M1 — Fondasi & verifikasi** | Instal Hermes (pin versi), 9Router + 3 combo, 5 profile + persona, Telegram → `chief`, kanban board `office`, cron briefing sederhana. Selesaikan semua **[VERIFY]** | `chief` bisa membuat kartu yang dikerjakan `researcher` via dispatcher; semua panggilan lewat 9Router; daftar VERIFY terjawab di `docs/runbook.md` |
+| **M1 — Fondasi & verifikasi** ✅ **Selesai (2026-10-01)** | Hermes (pin commit di `infra/hermes.lock`, `HERMES_HOME` terpisah), 9Router (semua tier sementara → `COMBO-SS`), 5 profile + persona, Telegram → `chief` lewat host gateway, kanban board default, cron briefing sederhana. Daftar verifikasi dijawab di `docs/runbook.md` §1 | `chief` bisa membuat kartu yang dikerjakan `researcher` via dispatcher; semua panggilan lewat 9Router; daftar verifikasi terjawab di `docs/runbook.md`. Bukti: `smoke-chief` PASS (CLI), `doctor` 26/26, briefing pagi diterima owner. **Sisa:** uji delegasi via Telegram oleh owner masih menunggu; V9 (catch-up cron) belum diuji |
 | **M2 — Bridge & Core** | os-bridge (event + usage), Core ingest/event store/state projector/kanban-reader/WS, ledger biaya | Event semua mode masuk Core; state agent & biaya per kartu terlihat via `/v1/agents` & `/v1/costs` |
 | **M3 — Policy & approval (GATE)** | Policy engine, mode wait & park, token sekali pakai, Ops bot, fail-closed, circuit breaker, Docker sandbox `dev`, red-team suite | **Red-team 100% lulus**; approval via Ops bot & API berfungsi |
 | **M4 — Pixel office: kanvas** | Vendor Pixel Agents, HermesEventAdapter, pemetaan state §5.5.3, layout kantor 5 meja + meja kosong | Karakter mencerminkan state nyata; layout editor tetap berfungsi |
@@ -693,18 +707,14 @@ agentic-os/
 
 ---
 
-## 16. Open Questions / [VERIFY] — diselesaikan di M1
+## 16. Open Questions
 
-1. Key config Hermes untuk provider custom OpenAI-compatible (base_url + model per profile).
-2. Nama tool Hermes aktual (`send_message`, `terminal`, `execute_code`, `write_file`, `patch`, `cronjob`, tool kanban) untuk policy file.
-3. API/CLI resmi untuk mutasi kartu kanban (create, move, block dengan alasan, re-queue).
-4. Path SQLite kanban & apakah aman dibaca `mode=ro` saat dispatcher menulis (WAL).
-5. Port & auth default `hermes serve`; apakah `apps/shared` dapat dikonsumsi sebagai package.
-6. Payload hook (`pre_tool_call` args, `post_llm_call` usage fields, penanda konteks cron) dan cara plugin membatalkan tool dengan pesan kustom.
-7. Konfigurasi terminal backend Docker (mount, network, resource limit) di Windows.
-8. Endpoint usage/quota 9Router untuk rekonsiliasi; apakah combo mendukung pembatasan "interaktif saja".
-9. Perilaku cron Hermes untuk job yang terlewat saat mesin mati (catch-up bawaan atau tidak).
-10. Nama produk final (saat ini placeholder "Agentic OS").
+Semua item verifikasi M1 dijawab di [`runbook.md`](runbook.md) §1 (baris V1–V16). Yang masih terbuka:
+
+1. **V9 — cron yang terlewat saat PC mati**: belum diuji (`runbook.md` §1, job `catchup-test`). Hasilnya menentukan apakah `catchup` Core (§5.4.1) perlu memicu briefing sendiri; sekaligus mengonfirmasi penanda konteks `cron` untuk os-bridge (§5.3.2).
+2. **V10 — nama produk final**: keputusan owner (saat ini placeholder "Agentic OS"); bukan blocker.
+3. **Mengganti `COMBO-SS`** dengan tier model yang semestinya (combo `os-brain` / `os-worker` / `os-private`, API key, atau Ollama) lewat `AOS_TIER_MODEL_*`, agar pengecualian ToS di §5.2.3 berakhir.
+4. **Lokasi `AOS_WORKSPACES_ROOT`**: folder workspace kartu saat ini `…\profiles\chief\workspaces\` di dalam `HERMES_HOME`; lokasi akhirnya belum diputuskan.
 
 ---
 
