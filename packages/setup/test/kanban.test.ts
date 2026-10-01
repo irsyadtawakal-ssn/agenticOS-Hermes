@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Exec } from '../src/exec.js';
-import { createTask, parseTaskId, parseTaskShow, supportsJson, waitForStatus } from '../src/kanban.js';
+import { createTask, parseLastTaskId, parseTaskId, parseTaskShow, supportsJson, waitForStatus } from '../src/kanban.js';
 
 describe('parseTaskId', () => {
   it('extracts the first t_ id', () => {
@@ -8,6 +8,15 @@ describe('parseTaskId', () => {
   });
   it('throws when there is no id', () => {
     expect(() => parseTaskId('nothing here')).toThrow(/No kanban task id/);
+  });
+});
+
+describe('parseLastTaskId', () => {
+  it('picks the last t_ id when several are present', () => {
+    expect(parseLastTaskId('Query: contoh t_aaa1\nBalasan: t_real9')).toBe('t_real9');
+  });
+  it('throws when there is no id', () => {
+    expect(() => parseLastTaskId('nothing here')).toThrow(/No kanban task id/);
   });
 });
 

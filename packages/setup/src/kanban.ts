@@ -15,6 +15,12 @@ export function parseTaskId(text: string): string {
   return match[0];
 }
 
+export function parseLastTaskId(text: string): string {
+  const matches = text.match(new RegExp(ID_RE.source, 'g'));
+  if (!matches) throw new Error(`No kanban task id (t_...) found in: ${text.slice(0, 200)}`);
+  return matches[matches.length - 1];
+}
+
 export function parseTaskShow(stdout: string): KanbanTask {
   const trimmed = stdout.trim();
   if (trimmed.startsWith('{')) {

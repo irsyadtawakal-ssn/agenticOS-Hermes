@@ -1,5 +1,5 @@
 import type { Exec } from './exec.js';
-import { createTask, parseTaskId, showTask, supportsJson, waitForStatus } from './kanban.js';
+import { createTask, parseLastTaskId, showTask, supportsJson, waitForStatus } from './kanban.js';
 
 export const TERMINAL_STATUSES = ['done', 'blocked', 'review', 'archived'];
 
@@ -46,7 +46,8 @@ export function chiefPrompt(stamp: string): string {
     `Delegasikan ke researcher: buat SATU kartu kanban berjudul "SMOKE-CHIEF ${stamp}".`,
     'Goal: tulis 3 fakta singkat tentang WebSocket ke file notes.md di workspace, tanpa web.',
     'Risk: low. Jangan kerjakan sendiri.',
-    'Setelah kartu dibuat, balas HANYA dengan id kartunya (format t_xxx).',
+    'Gunakan tool office_create_task untuk membuat kartu.',
+    'Setelah kartu dibuat, balas HANYA dengan id kartunya (diawali huruf t dan garis bawah).',
   ].join('\n');
 }
 
@@ -59,7 +60,7 @@ export async function smokeChief(
   const json = await supportsJson(exec);
   const r = await exec('hermes', ['-p', 'chief', 'chat', '-q', chiefPrompt(stamp)], { timeoutMs: 5 * 60_000 });
   if (r.code !== 0) throw new Error(`chief chat failed: ${(r.stderr || r.stdout).trim()}`);
-  const taskId = parseTaskId(r.stdout);
+  const taskId = parseLastTaskId(r.stdout);
   log(`chief created ${taskId}`);
   const created = await showTask(exec, taskId, json);
   if (created.assignee && created.assignee !== 'researcher') {

@@ -54,4 +54,17 @@ describe('smokeChief', () => {
     };
     expect(await smokeChief(exec, () => {}, 'S4', 0)).toEqual({ ok: false, taskId: 't_wrong1', status: 'wrong assignee dev' });
   });
+
+  it('ignores the echoed prompt line and reads the last id from chief reply', async () => {
+    const exec: Exec = async (_cmd, args) => {
+      if (args[0] === '-p') return { code: 0, stdout: 'Query: Delegasikan ... contoh t_echo1\nt_real9', stderr: '' };
+      if (args[2] === '--help') return { code: 0, stdout: '', stderr: '' };
+      return { code: 0, stdout: 'Task t_real9\nStatus: done\nAssignee: researcher\n', stderr: '' };
+    };
+    expect(await smokeChief(exec, () => {}, 'S5', 0)).toEqual({ ok: true, taskId: 't_real9', status: 'done' });
+  });
+
+  it('keeps id-like tokens out of the chief prompt', () => {
+    expect(chiefPrompt('S')).not.toMatch(/\bt_[A-Za-z0-9]+\b/);
+  });
 });
