@@ -107,11 +107,38 @@ export function checkProfile(
     },
     { name: `${label}:soul`, ok: existsSync(join(dir, 'SOUL.md')), detail: existsSync(join(dir, 'SOUL.md')) ? 'SOUL.md present' : 'SOUL.md missing' },
   ];
-  if (spec.gateway) {
-    const ok = cfg.kanban?.dispatch_in_gateway === true;
-    results.push({ name: `${label}:dispatcher`, ok, detail: ok ? 'dispatch_in_gateway: true' : 'gateway profile must set kanban.dispatch_in_gateway: true' });
-  }
   return results;
+}
+
+export function checkRootConfig(home: string, routerBaseUrl: string, tierModels: TierModels = DEFAULT_TIER_MODELS): CheckResult[] {
+  const path = join(home, 'config.yaml');
+  if (!existsSync(path)) return [{ name: 'root:config', ok: false, detail: `missing ${path}` }];
+  let cfg: Record<string, Record<string, unknown> | undefined>;
+  try {
+    cfg = (YAML.parse(readFileSync(path, 'utf8')) ?? {}) as Record<string, Record<string, unknown> | undefined>;
+  } catch (err) {
+    return [{ name: 'root:config', ok: false, detail: `config.yaml is not valid YAML: ${(err as Error).message.split('\n')[0]}` }];
+  }
+  const model = cfg.model ?? {};
+  const kanban = cfg.kanban ?? {};
+  const cron = cfg.cron ?? {};
+  const modelOk = model.provider === 'custom' && model.base_url === routerBaseUrl && model.default === tierModels['os-worker'];
+  const dispatcherOk = kanban.dispatch_in_gateway === true && kanban.max_in_progress === 2 && kanban.failure_limit === 2;
+  return [
+    { name: 'root:model', ok: modelOk, detail: modelOk ? `${tierModels['os-worker']} via ${routerBaseUrl}` : `model=${JSON.stringify(model)}` },
+    { name: 'root:dispatcher', ok: dispatcherOk, detail: dispatcherOk ? 'dispatch_in_gateway, max_in_progress=2, failure_limit=2' : `kanban=${JSON.stringify(kanban)}` },
+    { name: 'root:cron-catch-up', ok: cron.catch_up_missed === true, detail: `cron.catch_up_missed=${String(cron.catch_up_missed)}` },
+  ];
+}
+
+export async function checkGatewayRunning(exec: Exec): Promise<CheckResult> {
+  try {
+    const r = await exec('hermes', ['gateway', 'status'], { timeoutMs: 60_000 });
+    const ok = /Gateway process running/.test(r.stdout + r.stderr);
+    return { name: 'gateway-running', ok, detail: ok ? 'host gateway process running' : 'gateway not running - start Hermes_Gateway_787a7c01.vbs' };
+  } catch (err) {
+    return { name: 'gateway-running', ok: false, detail: `hermes not runnable: ${(err as Error).message}` };
+  }
 }
 
 export async function runDoctor(cfg: DoctorConfig, deps: DoctorDeps): Promise<CheckResult[]> {
@@ -119,6 +146,8 @@ export async function runDoctor(cfg: DoctorConfig, deps: DoctorDeps): Promise<Ch
   return [
     await checkHermesPin(cfg.lockText, deps.exec),
     checkEnvFile(join(cfg.home, '.env'), 'root-env'),
+    ...checkRootConfig(cfg.home, cfg.routerBaseUrl, cfg.tierModels),
+    await checkGatewayRunning(deps.exec),
     ...cfg.roster.flatMap((spec) => checkProfile(cfg.home, spec, cfg.routerBaseUrl, cfg.routerKey, tierModels)),
     ...(await checkRouter(cfg.routerBaseUrl, cfg.routerKey, deps.fetchFn, Object.values(tierModels))),
   ];

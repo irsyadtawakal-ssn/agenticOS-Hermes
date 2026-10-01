@@ -2,7 +2,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from
 import { join } from 'node:path';
 import YAML from 'yaml';
 import type { Exec } from './exec.js';
-import { DEFAULT_TIER_MODELS, buildOverlay, buildSoul, deepMerge, mergeEnv, type ProfileSpec, type TierModels } from './profiles.js';
+import { DEFAULT_TIER_MODELS, buildOverlay, buildRootOverlay, buildSoul, deepMerge, mergeEnv, type ProfileSpec, type TierModels } from './profiles.js';
 
 export interface ApplyOptions {
   home: string;
@@ -24,6 +24,18 @@ function backup(path: string, stamp: string): void {
   if (existsSync(path)) copyFileSync(path, `${path}.bak-${stamp}`);
 }
 
+function writeConfig(path: string, overlay: Record<string, unknown>, stamp: string): void {
+  const current = existsSync(path) ? ((YAML.parse(readFileSync(path, 'utf8')) ?? {}) as Record<string, unknown>) : {};
+  backup(path, stamp);
+  writeFileSync(path, YAML.stringify(deepMerge(current, overlay)), 'utf8');
+}
+
+function writeEnv(path: string, updates: Record<string, string>, stamp: string): void {
+  const text = existsSync(path) ? readFileSync(path, 'utf8') : '';
+  backup(path, stamp);
+  writeFileSync(path, mergeEnv(text, updates), 'utf8');
+}
+
 export async function applyProfiles(o: ApplyOptions): Promise<string[]> {
   const log: string[] = [];
   for (const spec of o.roster) {
@@ -36,19 +48,19 @@ export async function applyProfiles(o: ApplyOptions): Promise<string[]> {
     mkdirSync(dir, { recursive: true });
 
     const configPath = join(dir, 'config.yaml');
-    const current = existsSync(configPath) ? ((YAML.parse(readFileSync(configPath, 'utf8')) ?? {}) as Record<string, unknown>) : {};
-    backup(configPath, o.stamp);
-    writeFileSync(configPath, YAML.stringify(deepMerge(current, buildOverlay(spec, o.roster, o.routerBaseUrl, o.tierModels ?? DEFAULT_TIER_MODELS))), 'utf8');
+    writeConfig(configPath, buildOverlay(spec, o.roster, o.routerBaseUrl, o.tierModels ?? DEFAULT_TIER_MODELS), o.stamp);
 
     const envPath = join(dir, '.env');
-    const envText = existsSync(envPath) ? readFileSync(envPath, 'utf8') : '';
-    backup(envPath, o.stamp);
-    writeFileSync(envPath, mergeEnv(envText, { OPENAI_API_KEY: o.routerKey, HERMES_TIMEZONE: o.timezone }), 'utf8');
+    writeEnv(envPath, { OPENAI_API_KEY: o.routerKey, HERMES_TIMEZONE: o.timezone }, o.stamp);
 
     const soulPath = join(dir, 'SOUL.md');
     backup(soulPath, o.stamp);
     writeFileSync(soulPath, buildSoul(spec, o.templatesDir), 'utf8');
     log.push(`configured profile ${spec.name} (tier ${spec.tier})`);
   }
+  mkdirSync(o.home, { recursive: true });
+  writeConfig(join(o.home, 'config.yaml'), buildRootOverlay(o.roster, o.routerBaseUrl, o.tierModels ?? DEFAULT_TIER_MODELS), o.stamp);
+  writeEnv(join(o.home, '.env'), { OPENAI_API_KEY: o.routerKey, HERMES_TIMEZONE: o.timezone }, o.stamp);
+  log.push('configured root (dispatcher + cron)');
   return log;
 }

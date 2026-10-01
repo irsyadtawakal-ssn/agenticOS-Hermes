@@ -4,9 +4,9 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import YAML from 'yaml';
 import { profileDir } from '../src/apply.js';
-import { checkEnvFile, checkHermesPin, checkProfile, runDoctor } from '../src/doctor.js';
+import { checkEnvFile, checkGatewayRunning, checkHermesPin, checkProfile, checkRootConfig, runDoctor } from '../src/doctor.js';
 import type { Exec } from '../src/exec.js';
-import { buildOverlay, loadRoster } from '../src/profiles.js';
+import { buildOverlay, buildRootOverlay, loadRoster } from '../src/profiles.js';
 
 const BASE = 'http://127.0.0.1:20128/v1';
 const SHA = '0123456789abcdef0123456789abcdef01234567';
@@ -21,6 +21,7 @@ function healthyHome(): string {
     writeFileSync(join(dir, '.env'), 'OPENAI_API_KEY=rk\nTELEGRAM_BOT_TOKEN=tg\n');
     writeFileSync(join(dir, 'SOUL.md'), '# x\n');
   }
+  writeFileSync(join(home, 'config.yaml'), YAML.stringify(buildRootOverlay(roster, BASE)));
   writeFileSync(join(home, '.env'), '');
   return home;
 }
@@ -111,7 +112,6 @@ describe('checkProfile', () => {
       ['profile:chief:no-direct-keys', true],
       ['profile:chief:router-key', true],
       ['profile:chief:soul', true],
-      ['profile:chief:dispatcher', true],
     ]);
   });
 
@@ -152,6 +152,41 @@ describe('checkProfile', () => {
   });
 });
 
+describe('checkRootConfig', () => {
+  it('passes for the applied root overlay', () => {
+    const home = healthyHome();
+    expect(checkRootConfig(home, BASE).map((r) => [r.name, r.ok])).toEqual([
+      ['root:model', true],
+      ['root:dispatcher', true],
+      ['root:cron-catch-up', true],
+    ]);
+  });
+  it('reports a missing root config as one failing row', () => {
+    const home = mkdtempSync(join(tmpdir(), 'aos-doc-'));
+    expect(checkRootConfig(home, BASE)).toEqual([
+      { name: 'root:config', ok: false, detail: `missing ${join(home, 'config.yaml')}` },
+    ]);
+  });
+  it('flags dispatcher limits that are not applied', () => {
+    const home = healthyHome();
+    writeFileSync(join(home, 'config.yaml'), YAML.stringify({ ...buildRootOverlay(roster, BASE), kanban: { dispatch_in_gateway: true } }));
+    expect(checkRootConfig(home, BASE).find((r) => r.name === 'root:dispatcher')?.ok).toBe(false);
+  });
+});
+
+describe('checkGatewayRunning', () => {
+  it('passes when hermes reports a running gateway process', async () => {
+    const exec: Exec = async () => ({ code: 0, stdout: '✓ Gateway process running (PID: 1)\n', stderr: '' });
+    expect((await checkGatewayRunning(exec)).ok).toBe(true);
+  });
+  it('fails when the gateway is not running or hermes cannot run', async () => {
+    const down: Exec = async () => ({ code: 1, stdout: '✗ Gateway is not running\n', stderr: '' });
+    const broken: Exec = async () => { throw new Error('ENOENT'); };
+    expect((await checkGatewayRunning(down)).ok).toBe(false);
+    expect(await checkGatewayRunning(broken)).toMatchObject({ ok: false, detail: expect.stringMatching(/hermes not runnable/) });
+  });
+});
+
 describe('checkEnvFile', () => {
   it('treats a missing file as clean', () => {
     expect(checkEnvFile(join(tmpdir(), 'nope-aos.env'), 'root').ok).toBe(true);
@@ -165,13 +200,18 @@ describe('runDoctor', () => {
       new Headers(init?.headers).get('authorization')
         ? new Response(JSON.stringify({ data: [{ id: 'os-brain' }, { id: 'os-worker' }, { id: 'os-private' }] }), { status: 200 })
         : new Response('', { status: 401 })) as unknown as typeof fetch;
+    const baseExec = fakeExec(SHA);
+    const exec: Exec = async (cmd, args, opts) =>
+      cmd === 'hermes' && args[0] === 'gateway' ? { code: 0, stdout: 'Gateway process running (PID: 1)\n', stderr: '' } : baseExec(cmd, args, opts);
     const results = await runDoctor(
       { home, roster, lockText: `commit=${SHA}\n`, routerBaseUrl: BASE, routerKey: 'rk' },
-      { exec: fakeExec(SHA), fetchFn },
+      { exec, fetchFn },
     );
     expect(results.every((r) => r.ok)).toBe(true);
     expect(results.map((r) => r.name)).toContain('hermes-pin');
     expect(results.map((r) => r.name)).toContain('root-env:no-direct-keys');
     expect(results.map((r) => r.name)).toContain('combo:os-private');
+    expect(results.map((r) => r.name)).toContain('gateway-running');
+    expect(results.map((r) => r.name)).toContain('root:dispatcher');
   });
 });

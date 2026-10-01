@@ -68,18 +68,24 @@ export function buildOverlay(
       container_cpu: isDev ? 2 : 1,
       container_memory: isDev ? 4096 : 2048,
     },
-    kanban: spec.gateway
-      ? {
-          dispatch_in_gateway: true,
-          dispatch_interval_seconds: 60,
-          dispatch_profiles: roster.map((p) => p.name),
-          max_in_progress: 2,
-          failure_limit: 2,
-        }
-      : { dispatch_in_gateway: false },
+    kanban: { dispatch_in_gateway: false },
   };
-  if (spec.gateway) overlay.cron = { catch_up_missed: true };
   return overlay;
+}
+
+export function buildRootOverlay(roster: ProfileSpec[], routerBaseUrl: string, tierModels: TierModels = DEFAULT_TIER_MODELS): Obj {
+  return {
+    model: { provider: 'custom', base_url: routerBaseUrl, default: tierModels['os-worker'], key_env: 'OPENAI_API_KEY' },
+    auxiliary: { compression: { model: tierModels['os-worker'], base_url: routerBaseUrl } },
+    kanban: {
+      dispatch_in_gateway: true,
+      dispatch_interval_seconds: 60,
+      dispatch_profiles: roster.map((p) => p.name),
+      max_in_progress: 2,
+      failure_limit: 2,
+    },
+    cron: { catch_up_missed: true },
+  };
 }
 
 export function deepMerge(base: Obj, overlay: Obj): Obj {

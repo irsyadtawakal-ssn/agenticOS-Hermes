@@ -2,7 +2,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_TIER_MODELS, buildOverlay, buildSoul, deepMerge, loadRoster, mergeEnv, parseEnv, tierModelsFromEnv } from '../src/profiles.js';
+import { DEFAULT_TIER_MODELS, buildOverlay, buildRootOverlay, buildSoul, deepMerge, loadRoster, mergeEnv, parseEnv, tierModelsFromEnv } from '../src/profiles.js';
 
 const ROSTER = `
 profiles:
@@ -77,19 +77,36 @@ describe('buildOverlay', () => {
       docker_mount_cwd_to_workspace: false,
     });
   });
-  it('enables the dispatcher and cron catch-up only on the gateway profile', () => {
-    const chief = buildOverlay(roster[0], roster, BASE);
-    expect(chief.kanban).toEqual({
-      dispatch_in_gateway: true,
-      dispatch_interval_seconds: 60,
-      dispatch_profiles: ['chief', 'researcher', 'secretary', 'dev'],
-      max_in_progress: 2,
-      failure_limit: 2,
+  it('keeps dispatcher and cron settings out of every profile', () => {
+    for (const spec of roster) {
+      const o = buildOverlay(spec, roster, BASE);
+      expect(o.kanban).toEqual({ dispatch_in_gateway: false });
+      expect(o.cron).toBeUndefined();
+    }
+  });
+});
+
+describe('buildRootOverlay', () => {
+  const roster = loadRoster(ROSTER);
+  it('routes the root profile through 9Router and owns the dispatcher and cron settings', () => {
+    expect(buildRootOverlay(roster, BASE)).toEqual({
+      model: { provider: 'custom', base_url: BASE, default: 'os-worker', key_env: 'OPENAI_API_KEY' },
+      auxiliary: { compression: { model: 'os-worker', base_url: BASE } },
+      kanban: {
+        dispatch_in_gateway: true,
+        dispatch_interval_seconds: 60,
+        dispatch_profiles: ['chief', 'researcher', 'secretary', 'dev'],
+        max_in_progress: 2,
+        failure_limit: 2,
+      },
+      cron: { catch_up_missed: true },
     });
-    expect(chief.cron).toEqual({ catch_up_missed: true });
-    const researcher = buildOverlay(roster[1], roster, BASE);
-    expect(researcher.kanban).toEqual({ dispatch_in_gateway: false });
-    expect(researcher.cron).toBeUndefined();
+  });
+  it('uses the mapped worker model', () => {
+    const map = { 'os-brain': 'B', 'os-worker': 'W', 'os-private': 'P' };
+    const o = buildRootOverlay(roster, BASE, map) as { model: { default: string }; auxiliary: { compression: { model: string } } };
+    expect(o.model.default).toBe('W');
+    expect(o.auxiliary.compression.model).toBe('W');
   });
 });
 

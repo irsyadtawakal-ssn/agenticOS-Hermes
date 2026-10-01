@@ -37,11 +37,15 @@ describe('applyProfiles', () => {
     const cfg = YAML.parse(readFileSync(join(dir, 'config.yaml'), 'utf8'));
     expect(cfg.agent).toEqual({ max_turns: 50 });
     expect(cfg.model).toEqual({ default: 'os-brain', provider: 'custom', base_url: BASE, key_env: 'OPENAI_API_KEY' });
-    expect(cfg.kanban.dispatch_in_gateway).toBe(true);
+    expect(cfg.kanban).toEqual({ dispatch_in_gateway: false });
     expect(existsSync(join(dir, 'config.yaml.bak-20260930'))).toBe(true);
     expect(readFileSync(join(dir, '.env'), 'utf8')).toBe('OPENAI_API_KEY=rk-123\nHERMES_TIMEZONE=Asia/Jakarta\n');
     expect(readFileSync(join(dir, 'SOUL.md'), 'utf8')).toBe('CHIEF\n\nCOMMON\n');
-    expect(log).toEqual(['created profile chief', 'configured profile chief (tier os-brain)']);
+    expect(log).toEqual(['created profile chief', 'configured profile chief (tier os-brain)', 'configured root (dispatcher + cron)']);
+    const root = YAML.parse(readFileSync(join(home, 'config.yaml'), 'utf8'));
+    expect(root.kanban.dispatch_in_gateway).toBe(true);
+    expect(root.cron).toEqual({ catch_up_missed: true });
+    expect(readFileSync(join(home, '.env'), 'utf8')).toBe('OPENAI_API_KEY=rk-123\nHERMES_TIMEZONE=Asia/Jakarta\n');
   });
 
   it('reuses an existing profile and keeps unrelated env keys', async () => {
