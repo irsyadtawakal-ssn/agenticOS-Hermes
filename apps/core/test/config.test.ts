@@ -3,10 +3,10 @@ import { describe, expect, it } from 'vitest';
 import { loadCoreConfig } from '../src/config.js';
 
 const BASE_ENV = {
-  AOS_HERMES_HOME: 'D:\agentic-os\hermes-home',
+  AOS_HERMES_HOME: 'D:\\agentic-os\\hermes-home',
   AOS_BRIDGE_TOKEN: 'bt',
   AOS_UI_TOKEN: 'ut',
-  APPDATA: 'C:\Users\me\AppData\Roaming',
+  APPDATA: 'C:\\Users\\me\\AppData\\Roaming',
 };
 
 describe('loadCoreConfig', () => {
@@ -14,9 +14,9 @@ describe('loadCoreConfig', () => {
     const c = loadCoreConfig(BASE_ENV);
     expect(c.host).toBe('127.0.0.1');
     expect(c.port).toBe(7400);
-    expect(c.kanbanDbPath).toBe(join('D:\agentic-os\hermes-home', 'kanban.db'));
-    expect(c.dbPath).toBe(join('D:\agentic-os\hermes-home', '..', 'core', 'core.db'));
-    expect(c.routerDbPath).toBe(join('C:\Users\me\AppData\Roaming', '9router', 'db', 'data.sqlite'));
+    expect(c.kanbanDbPath).toBe(join('D:\\agentic-os\\hermes-home', 'kanban.db'));
+    expect(c.dbPath).toBe(join('D:\\agentic-os\\hermes-home', '..', 'core', 'core.db'));
+    expect(c.routerDbPath).toBe(join('C:\\Users\\me\\AppData\\Roaming', '9router', 'db', 'data.sqlite'));
   });
 
   it('maps router keys to profiles without exposing them elsewhere', () => {
