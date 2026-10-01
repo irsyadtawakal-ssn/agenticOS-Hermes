@@ -34,12 +34,30 @@ export function loadRoster(yamlText: string): ProfileSpec[] {
   return roster;
 }
 
-export function buildOverlay(spec: ProfileSpec, roster: ProfileSpec[], routerBaseUrl: string): Obj {
+export type TierModels = Record<Tier, string>;
+
+export const DEFAULT_TIER_MODELS: TierModels = { 'os-brain': 'os-brain', 'os-worker': 'os-worker', 'os-private': 'os-private' };
+
+export function tierModelsFromEnv(env: NodeJS.ProcessEnv): TierModels {
+  const pick = (name: string, tier: Tier): string => env[name]?.trim() || DEFAULT_TIER_MODELS[tier];
+  return {
+    'os-brain': pick('AOS_TIER_MODEL_OS_BRAIN', 'os-brain'),
+    'os-worker': pick('AOS_TIER_MODEL_OS_WORKER', 'os-worker'),
+    'os-private': pick('AOS_TIER_MODEL_OS_PRIVATE', 'os-private'),
+  };
+}
+
+export function buildOverlay(
+  spec: ProfileSpec,
+  roster: ProfileSpec[],
+  routerBaseUrl: string,
+  tierModels: TierModels = DEFAULT_TIER_MODELS,
+): Obj {
   const isDev = spec.name === 'dev';
   const overlay: Obj = {
-    model: { provider: 'custom', base_url: routerBaseUrl, default: spec.tier, key_env: 'OPENAI_API_KEY' },
+    model: { provider: 'custom', base_url: routerBaseUrl, default: tierModels[spec.tier], key_env: 'OPENAI_API_KEY' },
     auxiliary: {
-      compression: { model: spec.tier === 'os-private' ? 'os-private' : 'os-worker', base_url: routerBaseUrl },
+      compression: { model: tierModels[spec.tier === 'os-private' ? 'os-private' : 'os-worker'], base_url: routerBaseUrl },
     },
     terminal: {
       backend: 'docker',

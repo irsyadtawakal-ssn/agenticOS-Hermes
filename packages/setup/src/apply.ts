@@ -2,7 +2,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from
 import { join } from 'node:path';
 import YAML from 'yaml';
 import type { Exec } from './exec.js';
-import { buildOverlay, buildSoul, deepMerge, mergeEnv, type ProfileSpec } from './profiles.js';
+import { DEFAULT_TIER_MODELS, buildOverlay, buildSoul, deepMerge, mergeEnv, type ProfileSpec, type TierModels } from './profiles.js';
 
 export interface ApplyOptions {
   home: string;
@@ -13,6 +13,7 @@ export interface ApplyOptions {
   timezone: string;
   exec: Exec;
   stamp: string;
+  tierModels?: TierModels;
 }
 
 export function profileDir(home: string, name: string): string {
@@ -37,7 +38,7 @@ export async function applyProfiles(o: ApplyOptions): Promise<string[]> {
     const configPath = join(dir, 'config.yaml');
     const current = existsSync(configPath) ? ((YAML.parse(readFileSync(configPath, 'utf8')) ?? {}) as Record<string, unknown>) : {};
     backup(configPath, o.stamp);
-    writeFileSync(configPath, YAML.stringify(deepMerge(current, buildOverlay(spec, o.roster, o.routerBaseUrl))), 'utf8');
+    writeFileSync(configPath, YAML.stringify(deepMerge(current, buildOverlay(spec, o.roster, o.routerBaseUrl, o.tierModels ?? DEFAULT_TIER_MODELS))), 'utf8');
 
     const envPath = join(dir, '.env');
     const envText = existsSync(envPath) ? readFileSync(envPath, 'utf8') : '';

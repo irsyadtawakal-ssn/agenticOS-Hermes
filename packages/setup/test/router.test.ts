@@ -25,6 +25,11 @@ describe('checkRouter', () => {
     ]);
   });
 
+  it('checks each unique required model once', async () => {
+    const results = await checkRouter(BASE, 'good-key', fakeFetch({ models: ['COMBO-SS'], anonStatus: 401 }), ['COMBO-SS', 'COMBO-SS']);
+    expect(results.filter((r) => r.name.startsWith('combo:')).map((r) => [r.name, r.ok])).toEqual([['combo:COMBO-SS', true]]);
+  });
+
   it('flags a missing combo and open anonymous access', async () => {
     const results = await checkRouter(BASE, 'good-key', fakeFetch({ models: ['os-brain'], anonStatus: 200 }));
     expect(results.find((r) => r.name === 'combo:os-private')?.ok).toBe(false);

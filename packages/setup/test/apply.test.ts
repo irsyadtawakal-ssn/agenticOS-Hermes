@@ -59,6 +59,13 @@ describe('applyProfiles', () => {
     expect(readFileSync(join(dir, 'SOUL.md.bak-20260930'), 'utf8')).toBe('OLD\n');
   });
 
+  it('writes the mapped model name when tierModels is given', async () => {
+    const { home, opts } = setup();
+    await applyProfiles({ ...opts, tierModels: { 'os-brain': 'COMBO-SS', 'os-worker': 'COMBO-SS', 'os-private': 'COMBO-SS' } });
+    const cfg = YAML.parse(readFileSync(join(profileDir(home, 'chief'), 'config.yaml'), 'utf8'));
+    expect(cfg.model.default).toBe('COMBO-SS');
+  });
+
   it('throws when hermes profile create fails', async () => {
     const { opts } = setup();
     const failing: Exec = async () => ({ code: 1, stdout: '', stderr: 'boom' });

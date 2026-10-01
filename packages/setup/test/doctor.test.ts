@@ -126,6 +126,15 @@ describe('checkProfile', () => {
     expect(byName['profile:researcher:router-key'].ok).toBe(false);
   });
 
+  it('expects model.default to match the tier->model map', () => {
+    const home = healthyHome();
+    const combo = { 'os-brain': 'COMBO-SS', 'os-worker': 'COMBO-SS', 'os-private': 'COMBO-SS' };
+    writeFileSync(join(profileDir(home, 'researcher'), 'config.yaml'), YAML.stringify(buildOverlay(roster[1], roster, BASE, combo)));
+    const model = (tm?: typeof combo) => checkProfile(home, roster[1], BASE, 'rk', tm).find((r) => r.name === 'profile:researcher:model');
+    expect(model(combo)).toMatchObject({ ok: true, detail: `os-worker -> COMBO-SS via ${BASE}` });
+    expect(model()?.ok).toBe(false);
+  });
+
   it('reports malformed config.yaml as a single failed row', () => {
     const home = healthyHome();
     writeFileSync(join(profileDir(home, 'researcher'), 'config.yaml'), 'model: [unclosed\n');

@@ -2,7 +2,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { buildOverlay, buildSoul, deepMerge, loadRoster, mergeEnv, parseEnv } from '../src/profiles.js';
+import { DEFAULT_TIER_MODELS, buildOverlay, buildSoul, deepMerge, loadRoster, mergeEnv, parseEnv, tierModelsFromEnv } from '../src/profiles.js';
 
 const ROSTER = `
 profiles:
@@ -80,6 +80,26 @@ describe('buildOverlay', () => {
     const researcher = buildOverlay(roster[1], roster, BASE);
     expect(researcher.kanban).toEqual({ dispatch_in_gateway: false });
     expect(researcher.cron).toBeUndefined();
+  });
+});
+
+describe('tier models', () => {
+  const COMBO = { 'os-brain': 'COMBO-SS', 'os-worker': 'COMBO-SS', 'os-private': 'COMBO-SS' };
+
+  it('buildOverlay uses the tier->model map for model.default and compression', () => {
+    const roster = loadRoster(ROSTER);
+    const overlay = buildOverlay(roster[1], roster, BASE, COMBO);
+    expect((overlay.model as Record<string, unknown>).default).toBe('COMBO-SS');
+    expect(overlay.auxiliary).toEqual({ compression: { model: 'COMBO-SS', base_url: BASE } });
+  });
+
+  it('tierModelsFromEnv defaults each tier to itself', () => {
+    expect(tierModelsFromEnv({})).toEqual(DEFAULT_TIER_MODELS);
+    expect(tierModelsFromEnv({ AOS_TIER_MODEL_OS_WORKER: '   ' })).toEqual(DEFAULT_TIER_MODELS);
+  });
+
+  it('tierModelsFromEnv trims overrides and keeps other tiers at default', () => {
+    expect(tierModelsFromEnv({ AOS_TIER_MODEL_OS_BRAIN: ' X ' })).toEqual({ ...DEFAULT_TIER_MODELS, 'os-brain': 'X' });
   });
 });
 

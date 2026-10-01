@@ -5,7 +5,7 @@ import { profileDir } from './apply.js';
 import type { CheckResult } from './check.js';
 import type { Exec } from './exec.js';
 import { parseInstallDir, parseLock } from './hermesHome.js';
-import { parseEnv, type ProfileSpec } from './profiles.js';
+import { DEFAULT_TIER_MODELS, parseEnv, type ProfileSpec, type TierModels } from './profiles.js';
 import { checkRouter } from './router.js';
 
 export const FORBIDDEN_ENV_KEYS = [
@@ -27,6 +27,7 @@ export interface DoctorConfig {
   lockText: string;
   routerBaseUrl: string;
   routerKey: string;
+  tierModels?: TierModels;
 }
 
 export interface DoctorDeps {
@@ -76,7 +77,13 @@ export function checkEnvFile(path: string, label: string): CheckResult {
   };
 }
 
-export function checkProfile(home: string, spec: ProfileSpec, routerBaseUrl: string, routerKey: string): CheckResult[] {
+export function checkProfile(
+  home: string,
+  spec: ProfileSpec,
+  routerBaseUrl: string,
+  routerKey: string,
+  tierModels: TierModels = DEFAULT_TIER_MODELS,
+): CheckResult[] {
   const dir = profileDir(home, spec.name);
   const label = `profile:${spec.name}`;
   if (!existsSync(dir)) return [{ name: label, ok: false, detail: `missing ${dir}` }];
@@ -88,10 +95,10 @@ export function checkProfile(home: string, spec: ProfileSpec, routerBaseUrl: str
     return [{ name: `${label}:config`, ok: false, detail: `config.yaml is not valid YAML: ${(err as Error).message}` }];
   }
   const model = cfg.model ?? {};
-  const modelOk = model.provider === 'custom' && model.base_url === routerBaseUrl && model.default === spec.tier;
+  const modelOk = model.provider === 'custom' && model.base_url === routerBaseUrl && model.default === tierModels[spec.tier];
   const env = parseEnv(readText(join(dir, '.env')));
   const results: CheckResult[] = [
-    { name: `${label}:model`, ok: modelOk, detail: modelOk ? `${spec.tier} via ${routerBaseUrl}` : `model=${JSON.stringify(model)}` },
+    { name: `${label}:model`, ok: modelOk, detail: modelOk ? `${spec.tier} -> ${tierModels[spec.tier]} via ${routerBaseUrl}` : `model=${JSON.stringify(model)}` },
     checkEnvFile(join(dir, '.env'), label),
     {
       name: `${label}:router-key`,
@@ -108,10 +115,11 @@ export function checkProfile(home: string, spec: ProfileSpec, routerBaseUrl: str
 }
 
 export async function runDoctor(cfg: DoctorConfig, deps: DoctorDeps): Promise<CheckResult[]> {
+  const tierModels = cfg.tierModels ?? DEFAULT_TIER_MODELS;
   return [
     await checkHermesPin(cfg.lockText, deps.exec),
     checkEnvFile(join(cfg.home, '.env'), 'root-env'),
-    ...cfg.roster.flatMap((spec) => checkProfile(cfg.home, spec, cfg.routerBaseUrl, cfg.routerKey)),
-    ...(await checkRouter(cfg.routerBaseUrl, cfg.routerKey, deps.fetchFn)),
+    ...cfg.roster.flatMap((spec) => checkProfile(cfg.home, spec, cfg.routerBaseUrl, cfg.routerKey, tierModels)),
+    ...(await checkRouter(cfg.routerBaseUrl, cfg.routerKey, deps.fetchFn, Object.values(tierModels))),
   ];
 }

@@ -4,13 +4,14 @@ import { applyProfiles } from './apply.js';
 import { formatResults } from './check.js';
 import { realExec } from './exec.js';
 import { resolveHermesHome } from './hermesHome.js';
-import { loadRoster } from './profiles.js';
+import { loadRoster, tierModelsFromEnv } from './profiles.js';
 import { runDoctor } from './doctor.js';
 import { smokeKanban, smokeChief } from './smoke.js';
 
 const repoRoot = resolve(import.meta.dirname, '../../..');
 const envFile = join(repoRoot, '.env.local');
 if (existsSync(envFile)) process.loadEnvFile(envFile);
+const tierModels = tierModelsFromEnv(process.env);
 
 function required(name: string): string {
   const value = process.env[name];
@@ -40,6 +41,7 @@ async function main(cmd: string | undefined): Promise<number> {
         timezone: process.env.AOS_TIMEZONE ?? 'Asia/Jakarta',
         exec: realExec,
         stamp: new Date().toISOString().replace(/[:.]/g, '-'),
+        tierModels,
       });
       for (const line of log) console.log(line);
       return 0;
@@ -52,6 +54,7 @@ async function main(cmd: string | undefined): Promise<number> {
           lockText: readFileSync(join(repoRoot, 'infra/hermes.lock'), 'utf8'),
           routerBaseUrl,
           routerKey: required('AOS_ROUTER_KEY'),
+          tierModels,
         },
         { exec: realExec, fetchFn: fetch },
       );

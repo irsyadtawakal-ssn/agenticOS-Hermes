@@ -2,7 +2,12 @@ import type { CheckResult } from './check.js';
 
 export const REQUIRED_COMBOS = ['os-brain', 'os-worker', 'os-private'] as const;
 
-export async function checkRouter(baseUrl: string, apiKey: string, fetchFn: typeof fetch = fetch): Promise<CheckResult[]> {
+export async function checkRouter(
+  baseUrl: string,
+  apiKey: string,
+  fetchFn: typeof fetch = fetch,
+  requiredModels: readonly string[] = REQUIRED_COMBOS,
+): Promise<CheckResult[]> {
   const url = `${baseUrl.replace(/\/$/, '')}/models`;
   let authed: Response;
   try {
@@ -20,7 +25,7 @@ export async function checkRouter(baseUrl: string, apiKey: string, fetchFn: type
     }
     if (body) {
       const ids = new Set((body.data ?? []).map((m) => m.id));
-      for (const combo of REQUIRED_COMBOS) {
+      for (const combo of new Set(requiredModels)) {
         results.push({
           name: `combo:${combo}`,
           ok: ids.has(combo),
