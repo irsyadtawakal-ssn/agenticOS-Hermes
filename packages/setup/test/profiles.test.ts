@@ -54,7 +54,8 @@ describe('buildOverlay', () => {
   it('sandboxes the terminal in docker with network only when allowed', () => {
     expect(buildOverlay(roster[1], roster, BASE).terminal).toEqual({
       backend: 'docker',
-      container_persistent: false,
+      container_persistent: true,
+      docker_persist_across_processes: false,
       docker_network: false,
       docker_mount_cwd_to_workspace: true,
       container_cpu: 1,
@@ -62,7 +63,8 @@ describe('buildOverlay', () => {
     });
     expect(buildOverlay(roster[3], roster, BASE).terminal).toEqual({
       backend: 'docker',
-      container_persistent: false,
+      container_persistent: true,
+      docker_persist_across_processes: false,
       docker_network: true,
       docker_mount_cwd_to_workspace: true,
       container_cpu: 2,
@@ -70,8 +72,8 @@ describe('buildOverlay', () => {
     });
     expect(roster[0].gateway).toBe(true);
     expect(buildOverlay(roster[0], roster, BASE).terminal).toMatchObject({
-      backend: 'docker',
-      container_persistent: false,
+      container_persistent: true,
+      docker_persist_across_processes: false,
       docker_mount_cwd_to_workspace: false,
     });
   });
