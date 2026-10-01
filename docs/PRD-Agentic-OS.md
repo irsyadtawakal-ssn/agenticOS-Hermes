@@ -725,6 +725,7 @@ V9 (cron yang terlewat) **terverifikasi**: satu run susulan untuk beberapa slot 
 7. **Lokasi `AOS_WORKSPACES_ROOT`**: saat ini `D:\agentic-os\hermes-home\workspaces\` (plugin mengunci ke `HERMES_HOME` Agentic OS); kartu smoke awal ada di `…\profiles\chief\workspaces\`. Apakah root ini dipindah ke luar `HERMES_HOME` belum diputuskan.
 
 ---
+- **File hasil worker belum persisten** (lihat runbook §4): perbaiki di awal M2 — telusuri kunci environment Docker untuk worker dispatcher di Hermes (`tools/terminal_tool.py`) atau pakai `kanban_attach`/tool file sisi host; sementara hasil kerja dibaca dari ringkasan `kanban_complete`.
 
 ## Appendix A — Ringkasan keputusan grilling
 Lihat [`grill-decisions.md`](grill-decisions.md) (22 keputusan).

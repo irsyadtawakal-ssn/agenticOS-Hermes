@@ -90,6 +90,8 @@ Gateway & data Hermes lama milik owner (`%LOCALAPPDATA%\hermes`, `Hermes_Gateway
 - **Belum ada atribusi biaya per profile**: kelima profile memakai SATU key 9Router ("HERMES"), jadi `usageHistory.apiKey` hanya memisahkan trafik Hermes dari aplikasi lain, bukan profile atau task. Atribusi per profile butuh satu key 9Router per profile (perubahan apply-profiles) atau join berdasarkan jendela waktu + event task.
 - **Risiko injeksi workspace sampai M3**: `kanban_create` milik worker menerima `workspace_kind`/`workspace_path`, dan cwd worker di-mount read-write ke sandbox Docker. Worker yang terkena prompt injection bisa membuat kartu (mis. untuk `dev`, yang punya network) dengan workspace menunjuk folder sensitif (home Hermes berisi semua `.env`, atau repo berisi `.env.local`). Akan jadi skenario red-team + aturan policy di M3 (deny/approve `kanban_create` dengan workspace di luar root yang diizinkan).
 
+- **File hasil worker belum tersimpan (masalah terbuka, awal M2)**: dengan `container_persistent: false` (dipakai agar kartu tidak saling menulis ke workspace kartu lain), sesi worker dispatcher membuat dua environment Docker; `terminal`/`write_file` jalan di environment yang **tidak** me-mount workspace kartu, sehingga file seperti `notes.md` hilang saat sesi selesai. Hasil kerja tetap tersimpan sebagai ringkasan `kanban_complete` (`hermes kanban show <id>`). Dengan `container_persistent: true` lebih buruk: semua kartu berikutnya menulis ke workspace kartu pertama.
+
 ## 5. Bukti exit M1
 
 | Kriteria (PRD §13) | Bukti | Status |
