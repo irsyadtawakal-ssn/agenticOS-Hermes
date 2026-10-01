@@ -29,12 +29,15 @@ export function loadCoreConfig(env: NodeJS.ProcessEnv): CoreConfig {
     const key = env[`AOS_ROUTER_KEY_${profile.toUpperCase()}`]?.trim();
     if (key) routerKeyProfiles.set(key, profile);
   }
+  const bridgeToken = required(env, 'AOS_BRIDGE_TOKEN');
+  const uiToken = required(env, 'AOS_UI_TOKEN');
+  if (bridgeToken === uiToken) throw new Error('AOS_BRIDGE_TOKEN and AOS_UI_TOKEN must differ');
   return {
     host: '127.0.0.1',
     port: Number(env.AOS_CORE_PORT ?? 7400),
     dbPath: env.AOS_CORE_DB?.trim() || join(hermesHome, '..', 'core', 'core.db'),
-    bridgeToken: required(env, 'AOS_BRIDGE_TOKEN'),
-    uiToken: required(env, 'AOS_UI_TOKEN'),
+    bridgeToken,
+    uiToken,
     hermesHome,
     kanbanDbPath: join(hermesHome, 'kanban.db'),
     routerDbPath: env.AOS_ROUTER_DB?.trim() || join(env.APPDATA ?? '', '9router', 'db', 'data.sqlite'),

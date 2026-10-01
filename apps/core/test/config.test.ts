@@ -31,4 +31,8 @@ describe('loadCoreConfig', () => {
     expect(() => loadCoreConfig({ ...BASE_ENV, AOS_UI_TOKEN: undefined })).toThrow(/AOS_UI_TOKEN/);
     expect(() => loadCoreConfig({ ...BASE_ENV, AOS_HERMES_HOME: '' })).toThrow(/AOS_HERMES_HOME/);
   });
+
+  it('rejects identical bridge and UI tokens', () => {
+    expect(() => loadCoreConfig({ ...BASE_ENV, AOS_BRIDGE_TOKEN: 'same', AOS_UI_TOKEN: 'same' })).toThrow('AOS_BRIDGE_TOKEN and AOS_UI_TOKEN must differ');
+  });
 });
