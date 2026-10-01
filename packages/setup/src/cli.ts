@@ -4,7 +4,7 @@ import { applyProfiles } from './apply.js';
 import { formatResults } from './check.js';
 import { realExec } from './exec.js';
 import { resolveHermesHome } from './hermesHome.js';
-import { loadRoster, tierModelsFromEnv } from './profiles.js';
+import { loadRoster, routerKeysFromEnv, tierModelsFromEnv } from './profiles.js';
 import { runDoctor } from './doctor.js';
 import { smokeKanban, smokeChief } from './smoke.js';
 
@@ -21,6 +21,12 @@ function required(name: string): string {
 
 async function main(cmd: string | undefined): Promise<number> {
   const roster = loadRoster(readFileSync(join(repoRoot, 'infra/profiles/roster.yaml'), 'utf8'));
+  const routerKeys = routerKeysFromEnv(process.env, roster);
+  const coreUrl = process.env.AOS_CORE_URL ?? 'http://127.0.0.1:7400';
+  const pluginSources = {
+    'os-bridge': join(repoRoot, 'packages/hermes-os-bridge/os-bridge'),
+    'aos-office-tools': join(repoRoot, 'packages/hermes-office-tools/aos-office-tools'),
+  };
   const rawRouterUrl = (process.env.AOS_ROUTER_URL ?? 'http://127.0.0.1:20128/v1').replace(/\/+$/, '');
   const routerBaseUrl = rawRouterUrl.endsWith('/v1') ? rawRouterUrl : `${rawRouterUrl}/v1`;
   const useHermesHome = (): string => {
@@ -42,6 +48,9 @@ async function main(cmd: string | undefined): Promise<number> {
         exec: realExec,
         stamp: new Date().toISOString().replace(/[:.]/g, '-'),
         tierModels,
+        routerKeys,
+        pluginSources,
+        bridge: { coreUrl, token: required('AOS_BRIDGE_TOKEN') },
       });
       for (const line of log) console.log(line);
       return 0;
@@ -55,6 +64,7 @@ async function main(cmd: string | undefined): Promise<number> {
           routerBaseUrl,
           routerKey: required('AOS_ROUTER_KEY'),
           tierModels,
+          routerKeys,
         },
         { exec: realExec, fetchFn: fetch },
       );

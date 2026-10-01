@@ -129,3 +129,16 @@ export function buildSoul(spec: ProfileSpec, templatesDir: string): string {
   const common = readFileSync(join(templatesDir, '_common.md'), 'utf8').trimEnd();
   return `${own}\n\n${common}\n`;
 }
+
+export function routerKeysFromEnv(env: NodeJS.ProcessEnv, roster: ProfileSpec[]): Record<string, string> {
+  const keys: Record<string, string> = {};
+  for (const spec of roster) {
+    const value = env[`AOS_ROUTER_KEY_${spec.name.toUpperCase()}`]?.trim();
+    if (value) keys[spec.name] = value;
+  }
+  return keys;
+}
+
+export function pluginsFor(spec: ProfileSpec): string[] {
+  return spec.gateway ? ['os-bridge', 'aos-office-tools'] : ['os-bridge'];
+}

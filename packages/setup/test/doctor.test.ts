@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -6,7 +6,7 @@ import YAML from 'yaml';
 import { profileDir } from '../src/apply.js';
 import { checkEnvFile, checkGatewayRunning, checkHermesPin, checkProfile, checkRootConfig, runDoctor } from '../src/doctor.js';
 import type { Exec } from '../src/exec.js';
-import { buildOverlay, buildRootOverlay, loadRoster } from '../src/profiles.js';
+import { buildOverlay, buildRootOverlay, loadRoster, pluginsFor } from '../src/profiles.js';
 
 const BASE = 'http://127.0.0.1:20128/v1';
 const SHA = '0123456789abcdef0123456789abcdef01234567';
@@ -20,6 +20,11 @@ function healthyHome(): string {
     writeFileSync(join(dir, 'config.yaml'), YAML.stringify(buildOverlay(spec, roster, BASE)));
     writeFileSync(join(dir, '.env'), 'OPENAI_API_KEY=rk\nTELEGRAM_BOT_TOKEN=tg\n');
     writeFileSync(join(dir, 'SOUL.md'), '# x\n');
+    for (const plugin of pluginsFor(spec)) {
+      mkdirSync(join(dir, 'plugins', plugin), { recursive: true });
+      writeFileSync(join(dir, 'plugins', plugin, '__init__.py'), '#\n');
+    }
+    writeFileSync(join(dir, 'plugins', 'os-bridge', 'config.json'), JSON.stringify({ core_url: 'http://127.0.0.1:7400', token: 'bt' }));
   }
   writeFileSync(join(home, 'config.yaml'), YAML.stringify(buildRootOverlay(roster, BASE)));
   writeFileSync(join(home, '.env'), '');
@@ -112,7 +117,25 @@ describe('checkProfile', () => {
       ['profile:chief:no-direct-keys', true],
       ['profile:chief:router-key', true],
       ['profile:chief:soul', true],
+      ['profile:chief:plugins', true],
     ]);
+  });
+
+  it('uses the per-profile router key when one is configured', () => {
+    const home = healthyHome();
+    writeFileSync(join(profileDir(home, 'chief'), '.env'), 'OPENAI_API_KEY=rk-chief\n');
+    const byName = Object.fromEntries(checkProfile(home, roster[0], BASE, 'rk', undefined, { chief: 'rk-chief' }).map((r) => [r.name, r]));
+    expect(byName['profile:chief:router-key'].ok).toBe(true);
+  });
+
+  it('flags a missing plugin and an empty bridge token without printing it', () => {
+    const home = healthyHome();
+    writeFileSync(join(profileDir(home, 'chief'), 'plugins', 'os-bridge', 'config.json'), JSON.stringify({ core_url: 'u', token: '' }));
+    rmSync(join(profileDir(home, 'chief'), 'plugins', 'aos-office-tools'), { recursive: true });
+    const row = checkProfile(home, roster[0], BASE, 'rk').find((r) => r.name === 'profile:chief:plugins');
+    expect(row).toMatchObject({ ok: false });
+    expect(row?.detail).toMatch(/aos-office-tools/);
+    expect(row?.detail).toMatch(/bridge token/);
   });
 
   it('flags direct provider keys, a wrong router key and a wrong tier', () => {

@@ -2,7 +2,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_TIER_MODELS, buildOverlay, buildRootOverlay, buildSoul, deepMerge, loadRoster, mergeEnv, parseEnv, tierModelsFromEnv } from '../src/profiles.js';
+import { DEFAULT_TIER_MODELS, buildOverlay, buildRootOverlay, buildSoul, deepMerge, loadRoster, mergeEnv, parseEnv, pluginsFor, routerKeysFromEnv, tierModelsFromEnv } from '../src/profiles.js';
 
 const ROSTER = `
 profiles:
@@ -166,5 +166,16 @@ describe('buildSoul', () => {
     writeFileSync(join(dir, '_common.md'), '## Aturan bersama\n');
     const [spec] = loadRoster('profiles:\n  - {name: researcher, tier: os-worker, gateway: true}\n');
     expect(buildSoul(spec, dir)).toBe('# Researcher\n\nRiset.\n\n## Aturan bersama\n');
+  });
+});
+
+describe('routerKeysFromEnv / pluginsFor', () => {
+  const roster = loadRoster(ROSTER);
+  it('reads per-profile router keys by upper-cased profile name', () => {
+    expect(routerKeysFromEnv({ AOS_ROUTER_KEY_CHIEF: ' kc ', AOS_ROUTER_KEY_DEV: '', OTHER: 'x' }, roster)).toEqual({ chief: 'kc' });
+  });
+  it('gives every profile os-bridge and the gateway profile the office tools', () => {
+    expect(pluginsFor(roster[0])).toEqual(['os-bridge', 'aos-office-tools']);
+    expect(pluginsFor(roster[1])).toEqual(['os-bridge']);
   });
 });

@@ -5,7 +5,7 @@ import { profileDir } from './apply.js';
 import type { CheckResult } from './check.js';
 import type { Exec } from './exec.js';
 import { parseInstallDir, parseLock } from './hermesHome.js';
-import { DEFAULT_TIER_MODELS, parseEnv, type ProfileSpec, type TierModels } from './profiles.js';
+import { DEFAULT_TIER_MODELS, parseEnv, pluginsFor, type ProfileSpec, type TierModels } from './profiles.js';
 import { checkRouter } from './router.js';
 
 export const FORBIDDEN_ENV_KEYS = [
@@ -28,6 +28,7 @@ export interface DoctorConfig {
   routerBaseUrl: string;
   routerKey: string;
   tierModels?: TierModels;
+  routerKeys?: Record<string, string>;
 }
 
 export interface DoctorDeps {
@@ -83,8 +84,10 @@ export function checkProfile(
   routerBaseUrl: string,
   routerKey: string,
   tierModels: TierModels = DEFAULT_TIER_MODELS,
+  routerKeys: Record<string, string> = {},
 ): CheckResult[] {
   const dir = profileDir(home, spec.name);
+  const expectedKey = routerKeys[spec.name] ?? routerKey;
   const label = `profile:${spec.name}`;
   if (!existsSync(dir)) return [{ name: label, ok: false, detail: `missing ${dir}` }];
 
@@ -102,11 +105,28 @@ export function checkProfile(
     checkEnvFile(join(dir, '.env'), label),
     {
       name: `${label}:router-key`,
-      ok: env.OPENAI_API_KEY === routerKey,
-      detail: env.OPENAI_API_KEY === routerKey ? 'OPENAI_API_KEY is the 9Router key' : 'OPENAI_API_KEY is not the 9Router key',
+      ok: env.OPENAI_API_KEY === expectedKey,
+      detail: env.OPENAI_API_KEY === expectedKey ? 'OPENAI_API_KEY is the 9Router key' : 'OPENAI_API_KEY is not the 9Router key',
     },
     { name: `${label}:soul`, ok: existsSync(join(dir, 'SOUL.md')), detail: existsSync(join(dir, 'SOUL.md')) ? 'SOUL.md present' : 'SOUL.md missing' },
   ];
+
+  const pluginProblems: string[] = [];
+  for (const plugin of pluginsFor(spec)) {
+    if (!existsSync(join(dir, 'plugins', plugin, '__init__.py'))) pluginProblems.push(`missing ${plugin}`);
+  }
+  try {
+    const bridgeCfg = JSON.parse(readText(join(dir, 'plugins', 'os-bridge', 'config.json')) || '{}') as { core_url?: string; token?: string };
+    if (!bridgeCfg.core_url) pluginProblems.push('bridge core_url missing');
+    if (!bridgeCfg.token) pluginProblems.push('bridge token missing');
+  } catch {
+    pluginProblems.push('bridge config.json unreadable');
+  }
+  results.push({
+    name: `${label}:plugins`,
+    ok: pluginProblems.length === 0,
+    detail: pluginProblems.length ? pluginProblems.join('; ') : `${pluginsFor(spec).join(', ')} installed`,
+  });
   return results;
 }
 
@@ -148,7 +168,7 @@ export async function runDoctor(cfg: DoctorConfig, deps: DoctorDeps): Promise<Ch
     checkEnvFile(join(cfg.home, '.env'), 'root-env'),
     ...checkRootConfig(cfg.home, cfg.routerBaseUrl, cfg.tierModels),
     await checkGatewayRunning(deps.exec),
-    ...cfg.roster.flatMap((spec) => checkProfile(cfg.home, spec, cfg.routerBaseUrl, cfg.routerKey, tierModels)),
+    ...cfg.roster.flatMap((spec) => checkProfile(cfg.home, spec, cfg.routerBaseUrl, cfg.routerKey, tierModels, cfg.routerKeys)),
     ...(await checkRouter(cfg.routerBaseUrl, cfg.routerKey, deps.fetchFn, Object.values(tierModels))),
   ];
 }
