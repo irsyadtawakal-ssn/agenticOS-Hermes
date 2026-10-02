@@ -22,9 +22,10 @@ foreach ($p in "CHIEF", "RESEARCHER", "SECRETARY", "CONTENT", "DEV") {
   $v = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($s))
   if ($v) { Set-EnvLine "AOS_ROUTER_KEY_$p" $v }
 }
-foreach ($t in "AOS_BRIDGE_TOKEN", "AOS_UI_TOKEN", "AOS_APPROVER_TOKEN") {
+foreach ($t in "AOS_BRIDGE_TOKEN", "AOS_UI_TOKEN", "AOS_APPROVER_TOKEN", "AOS_SERVE_TOKEN") {
   $has = (Test-Path $EnvFile) -and (Select-String -Path $EnvFile -Pattern "^$t=.+" -Quiet)
   if (-not $has) { Set-EnvLine $t (New-Token) }
 }
 if (-not (Select-String -Path $EnvFile -Pattern "^AOS_CORE_URL=" -Quiet)) { Set-EnvLine "AOS_CORE_URL" "http://127.0.0.1:7400" }
+if (-not (Select-String -Path $EnvFile -Pattern "^AOS_SERVE_PORT=" -Quiet)) { Set-EnvLine "AOS_SERVE_PORT" "9129" }
 Write-Output "OK: $EnvFile diperbarui (nilai tidak ditampilkan)."
