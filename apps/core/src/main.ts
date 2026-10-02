@@ -41,6 +41,6 @@ safely('costs', refreshCosts);
 setInterval(() => safely('kanban', refreshKanban), 2_000);
 setInterval(() => safely('costs', refreshCosts), 30_000);
 
-const app = await buildServer({ db, bridgeToken: config.bridgeToken, uiToken: config.uiToken, hub, kanban: () => snapshot });
+const app = await buildServer({ db, bridgeToken: config.bridgeToken, uiToken: config.uiToken, approverToken: config.approverToken, hub, kanban: () => snapshot });
 await app.listen({ host: config.host, port: config.port });
 console.log(`[aos-core] listening on http://${config.host}:${config.port} (db ${config.dbPath})`);

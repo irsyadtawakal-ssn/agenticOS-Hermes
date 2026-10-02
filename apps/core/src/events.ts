@@ -1,8 +1,17 @@
 import { z } from 'zod';
+import { recordNativeApproval } from './approvals.js';
 import type { Db } from './db.js';
 import { projectState } from './state.js';
 
-export const EVENT_TYPES = ['session.started', 'session.ended', 'llm.started', 'llm.finished', 'tool.started', 'tool.finished'] as const;
+export const EVENT_TYPES = [
+  'session.started',
+  'session.ended',
+  'llm.started',
+  'llm.finished',
+  'tool.started',
+  'tool.finished',
+  'breaker.tripped',
+] as const;
 
 export const EventSchema = z.object({
   id: z.string().min(8).max(64),
@@ -45,6 +54,7 @@ export function ingestEvents(db: Db, raw: unknown): { accepted: AosEvent[]; inse
         result.inserted += 1;
         result.accepted.push(ev);
         projectState(db, ev);
+        recordNativeApproval(db, ev);
       } else {
         result.duplicates += 1;
       }

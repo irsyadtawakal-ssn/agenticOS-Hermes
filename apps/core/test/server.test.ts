@@ -21,6 +21,7 @@ async function make() {
     db: openCoreDb(':memory:'),
     bridgeToken: 'bt',
     uiToken: 'ut',
+    approverToken: 'at',
     hub,
     kanban: () => ({ tasks: [{ id: 't_1', title: 'x', assignee: 'researcher', status: 'ready', created_at: 1, started_at: null, completed_at: null, workspace_kind: null, workspace_path: null }], runs: [] }),
     now: () => 1790000000000,
@@ -73,5 +74,82 @@ describe('buildServer', () => {
     await app.ready();
     await expect(app.injectWS('/v1/stream?token=wrong')).rejects.toThrow();
     expect(hub.size()).toBe(0);
+  });
+});
+
+async function makeWith(extra: Partial<Parameters<typeof buildServer>[0]> = {}) {
+  const hub = createHub();
+  const db = openCoreDb(':memory:');
+  app = await buildServer({
+    db, bridgeToken: 'bt', uiToken: 'ut', approverToken: 'at', hub,
+    kanban: () => ({ tasks: [], runs: [] }), now: () => 1790000000000, ...extra,
+  });
+  return { app, hub, db };
+}
+
+const request = {
+  profile: 'dev', task_id: 't_1', session_id: 's1', rule_id: 'git-push', tool: 'terminal',
+  args_hash: 'a'.repeat(64), args_preview: '{"command": "git push"}', reason: 'git push',
+};
+
+describe('approval routes', () => {
+  it('lets the bridge create and dedupe park requests and notifies once', async () => {
+    const created: string[] = [];
+    const { app, hub } = await makeWith({ onApprovalCreated: (a) => created.push(a.id) });
+    const topics: string[] = [];
+    hub.subscribe((m) => topics.push(JSON.parse(m).topic));
+    expect((await app.inject({ method: 'POST', url: '/v1/approvals', payload: request })).statusCode).toBe(401);
+    expect((await app.inject({ method: 'POST', url: '/v1/approvals', payload: request, headers: { authorization: 'Bearer at' } })).statusCode).toBe(401);
+    const first = await app.inject({ method: 'POST', url: '/v1/approvals', payload: request, headers: { 'x-aos-bridge-token': 'bt' } });
+    expect(first.json()).toMatchObject({ status: 'pending', created: true });
+    const second = await app.inject({ method: 'POST', url: '/v1/approvals', payload: request, headers: { 'x-aos-bridge-token': 'bt' } });
+    expect(second.json()).toEqual({ id: first.json().id, status: 'pending', created: false });
+    expect(created).toEqual([first.json().id]);
+    expect(topics).toEqual(['approvals']);
+    const bad = await app.inject({ method: 'POST', url: '/v1/approvals', payload: { ...request, args_hash: 'x' }, headers: { 'x-aos-bridge-token': 'bt' } });
+    expect(bad.statusCode).toBe(400);
+  });
+
+  it('lets the owner list and decide, and the bridge consume the grant once', async () => {
+    const decided: string[] = [];
+    const { app } = await makeWith({ onApprovalDecided: (a) => decided.push(`${a.id}:${a.status}`) });
+    const { id } = (await app.inject({ method: 'POST', url: '/v1/approvals', payload: request, headers: { 'x-aos-bridge-token': 'bt' } })).json();
+    expect((await app.inject({ method: 'GET', url: '/v1/approvals?status=pending', headers: { 'x-aos-bridge-token': 'bt' } })).statusCode).toBe(401);
+    const list = await app.inject({ method: 'GET', url: '/v1/approvals?status=pending', headers: { authorization: 'Bearer at' } });
+    expect(list.json().map((a: { id: string }) => a.id)).toEqual([id]);
+    expect((await app.inject({ method: 'GET', url: '/v1/approvals?status=bogus&token=ut' })).statusCode).toBe(400);
+    expect((await app.inject({ method: 'GET', url: `/v1/approvals/${id}`, headers: { 'x-aos-bridge-token': 'bt' } })).json().id).toBe(id);
+    expect((await app.inject({ method: 'GET', url: '/v1/approvals/zzzzzz?token=ut' })).statusCode).toBe(404);
+    const byBridge = await app.inject({ method: 'POST', url: `/v1/approvals/${id}/decision`, payload: { decision: 'approve' }, headers: { 'x-aos-bridge-token': 'bt' } });
+    expect(byBridge.statusCode).toBe(401);
+    const ok = await app.inject({ method: 'POST', url: `/v1/approvals/${id}/decision`, payload: { decision: 'approve', note: 'boleh', by: 'chief' }, headers: { authorization: 'Bearer at' } });
+    expect(ok.json()).toMatchObject({ id, status: 'approved', instruction: 'boleh', decided_by: 'chief' });
+    expect(decided).toEqual([`${id}:approved`]);
+    const again = await app.inject({ method: 'POST', url: `/v1/approvals/${id}/decision`, payload: { decision: 'deny' }, headers: { authorization: 'Bearer ut' } });
+    expect(again.statusCode).toBe(409);
+    const match = { task_id: 't_1', tool: 'terminal', args_hash: 'a'.repeat(64) };
+    expect((await app.inject({ method: 'POST', url: '/v1/approvals/consume', payload: match, headers: { 'x-aos-bridge-token': 'bt' } })).json()).toEqual({ status: 'consumed', id });
+    expect((await app.inject({ method: 'POST', url: '/v1/approvals/consume', payload: match, headers: { 'x-aos-bridge-token': 'bt' } })).json()).toEqual({ status: 'none' });
+    expect((await app.inject({ method: 'POST', url: '/v1/approvals/consume', payload: match, headers: { authorization: 'Bearer at' } })).statusCode).toBe(401);
+  });
+
+  it('accepts breaker events, records native approvals and hands accepted events to onEvents', async () => {
+    const seen: string[] = [];
+    const { app, db } = await makeWith({ onEvents: (evs) => seen.push(...evs.map((e) => e.type)) });
+    const base = { ts: 1790000000000, profile: 'chief', session_id: 's', task_id: null, mode: 'telegram' };
+    const events = [
+      { ...base, id: 'b'.repeat(32), type: 'breaker.tripped', payload: { tool: 'web_search', reason: 'repeat' } },
+      { ...base, id: 'c'.repeat(32), type: 'tool.started', payload: { tool: 'terminal', tool_call_id: 'c1', args_preview: '{}', policy: { decision: 'native', rule_id: 'delete', args_hash: 'a'.repeat(64) } } },
+    ];
+    const res = await app.inject({ method: 'POST', url: '/v1/events', payload: events, headers: { 'x-aos-bridge-token': 'bt' } });
+    expect(res.json()).toEqual({ inserted: 2, duplicates: 0, rejected: 0 });
+    expect(seen).toEqual(['breaker.tripped', 'tool.started']);
+    expect(db.prepare('SELECT status FROM approvals WHERE id = ?').get(`n_${'c'.repeat(32)}`)).toEqual({ status: 'pending' });
+  });
+
+  it('keeps ingesting when a reaction callback throws', async () => {
+    const { app } = await makeWith({ onEvents: () => { throw new Error('boom'); } });
+    const res = await app.inject({ method: 'POST', url: '/v1/events', payload: [event], headers: { 'x-aos-bridge-token': 'bt' } });
+    expect(res.json()).toEqual({ inserted: 1, duplicates: 0, rejected: 0 });
   });
 });

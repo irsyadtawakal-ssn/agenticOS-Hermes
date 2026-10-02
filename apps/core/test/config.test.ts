@@ -6,6 +6,7 @@ const BASE_ENV = {
   AOS_HERMES_HOME: 'D:\\agentic-os\\hermes-home',
   AOS_BRIDGE_TOKEN: 'bt',
   AOS_UI_TOKEN: 'ut',
+  AOS_APPROVER_TOKEN: 'at',
   APPDATA: 'C:\\Users\\me\\AppData\\Roaming',
 };
 
@@ -30,6 +31,17 @@ describe('loadCoreConfig', () => {
     expect(() => loadCoreConfig({ ...BASE_ENV, AOS_BRIDGE_TOKEN: '' })).toThrow(/AOS_BRIDGE_TOKEN/);
     expect(() => loadCoreConfig({ ...BASE_ENV, AOS_UI_TOKEN: undefined })).toThrow(/AOS_UI_TOKEN/);
     expect(() => loadCoreConfig({ ...BASE_ENV, AOS_HERMES_HOME: '' })).toThrow(/AOS_HERMES_HOME/);
+  });
+
+  it('requires a distinct approver token and derives chief env and hermes exe', () => {
+    const c = loadCoreConfig(BASE_ENV);
+    expect(c.approverToken).toBe('at');
+    expect(c.chiefEnvPath).toBe(join('D:\\agentic-os\\hermes-home', 'profiles', 'chief', '.env'));
+    expect(c.hermesExe).toBe('hermes');
+    expect(loadCoreConfig({ ...BASE_ENV, AOS_HERMES_EXE: ' C:\\h\\hermes.exe ' }).hermesExe).toBe('C:\\h\\hermes.exe');
+    expect(() => loadCoreConfig({ ...BASE_ENV, AOS_APPROVER_TOKEN: '' })).toThrow(/AOS_APPROVER_TOKEN/);
+    expect(() => loadCoreConfig({ ...BASE_ENV, AOS_APPROVER_TOKEN: 'bt' })).toThrow('AOS_APPROVER_TOKEN must differ from the bridge and UI tokens');
+    expect(() => loadCoreConfig({ ...BASE_ENV, AOS_APPROVER_TOKEN: 'ut' })).toThrow('AOS_APPROVER_TOKEN must differ from the bridge and UI tokens');
   });
 
   it('rejects identical bridge and UI tokens', () => {

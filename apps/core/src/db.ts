@@ -42,6 +42,28 @@ CREATE TABLE IF NOT EXISTS cursors (
   name TEXT PRIMARY KEY,
   value INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS approvals (
+  id TEXT PRIMARY KEY,
+  created_at INTEGER NOT NULL,
+  profile TEXT NOT NULL,
+  task_id TEXT,
+  session_id TEXT,
+  tool_call_id TEXT,
+  mode TEXT NOT NULL,
+  rule_id TEXT NOT NULL,
+  tool TEXT NOT NULL,
+  args_preview TEXT NOT NULL,
+  args_hash TEXT NOT NULL,
+  reason TEXT,
+  status TEXT NOT NULL,
+  decided_by TEXT,
+  decided_at INTEGER,
+  instruction TEXT,
+  token_expires_at INTEGER,
+  resumed_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_approvals_match ON approvals(task_id, tool, args_hash, status);
+CREATE INDEX IF NOT EXISTS idx_approvals_status ON approvals(status, created_at);
 `;
 
 export function migrate(db: Db): void {
