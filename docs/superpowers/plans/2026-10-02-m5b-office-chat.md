@@ -2234,4 +2234,16 @@ git commit -m "docs: record M5b office chat verification in runbook and PRD" -m 
 
 ## Catatan spike
 
-(Diisi di Task 1, Step 7.)
+Spike 2026-10-02, serve sementara di port 9139, profile `chief`, lewat 9Router:
+
+- **Start.** Serve siap dalam ±2 detik. Log: `HERMES_BACKEND_READY port=9139`. `GET /` → 200.
+- **`client.capabilities`** → `server_requests`: `approval, clarify, display.install.sudo, preview.act, preview.read, secret, sudo, terminal.read, tour, vault.code, vault.save_login, vault.unlock_prompt, window.read`. Selain `approval`/`clarify`, semuanya ditolak relay (sesuai rencana).
+- **`session.create`** → `{session_id, stored_session_id, message_count, messages, info}`. `info.cwd` = `cwd` yang dikirim (`…\workspaces\chat\chief`), `info.profile_name` = `chief`. **cwd dipatuhi.**
+- **`prompt.submit`** → `{status:"streaming", user_row_id}`.
+- **Urutan event:** `gateway.ready`, `sessions.changed`, `projects.changed`, `session.info`, `message.start`, `thinking.delta`, `message.delta`, `reasoning.available`, `message.complete`. Event yang tidak dikenal diabaikan reducer (cabang `default`).
+- **`message.delta.text` = potongan (incremental).** Contoh: `"1, 2, 3, 4, 5, 6,"` lalu `" 7, 8, …"`. **`message.complete.text` = teks penuh.** Payload complete: `text, usage, status, persisted_turn`. Model Task 5 sudah sesuai, tanpa perubahan.
+- **`session.list`** baris: `{id, title:"", preview, started_at: 1790937571.23606, message_count, source:"tui"}`. `started_at` dalam **detik (float)**, ditangani `startedAtMs`. `id` = `stored_session_id`.
+- **`session.resume`** (pakai stored id) → `messages: [{role:"user", text, timestamp, row_id}, {role:"assistant", text:"pong", …}]`, ditambah `session_id`, `running`, `status`, `resumed`.
+- **`shell.exec` DITERIMA serve** dengan token sesi, jadi allowlist relay adalah kontrol keamanan yang wajib.
+- **Isolasi lock dir terbukti.** `host-serve.json/.lock/.token` hanya muncul di dir spike. Dir bawaan tetap berisi `host-desktop-serve.*` (Hermes Desktop owner), `host-gateway.*`, dan lock token Telegram.
+- **Sisa spike.** Dua sesi uji (`source: tui`) tersimpan di `state.db` chief. Keduanya tidak tercatat di `chat_sessions`, jadi tidak muncul di kantor.
