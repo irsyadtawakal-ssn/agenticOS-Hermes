@@ -360,18 +360,28 @@ rules:
 | POST | `/v1/kanban/:taskId/move` | office | Pindah kolom (via Hermes API resmi) |
 | GET | `/v1/costs?since=&until=` | office | Agregasi biaya (default 24 jam terakhir; terpasang M2) |
 | GET | `/v1/health` | publik (tanpa auth) | Status Core (terpasang M2) |
+| GET / PUT | `/v1/office/state`, `/v1/office/state/:key` | office (UI) | Layout / kursi / setting kantor (`layout`, `seats`, `settings`) (M4) |
+| GET | `/office/login?token=` | browser | Token UI valid → cookie httpOnly `aos_ui` → redirect `/office/` (M4) |
+| GET | `/office/*` | publik | File statis build kantor (`apps/office/dist`), fallback `index.html` (M4) |
 | WS | `/v1/stream` | office | Push realtime; topik `events`, `agents`, `kanban`, `costs` (terpasang M2) |
 
 Rute UI (`/v1/agents`, `/v1/kanban`, `/v1/costs`, `/v1/stream`) di M2 memakai `Authorization: Bearer <AOS_UI_TOKEN>` atau `?token=`. Rute owner approval (list, decision) menerima `AOS_UI_TOKEN` atau `AOS_APPROVER_TOKEN` (dipasang hanya di plugin `aos-office-tools` chief). Ketiga token harus berbeda. Topik WS `approvals` ditambahkan di M3.
 
 **5.4.3 Keamanan Core**
-- Bind `127.0.0.1` saja. Auth: token bridge (header) & token UI (dibuat saat first-run, disimpan di cookie httpOnly untuk origin office).
+- Bind `127.0.0.1` saja. Auth: token bridge (header) & token UI (dibuat saat first-run, disimpan di cookie httpOnly untuk origin office). **M4:** cookie `aos_ui` (HttpOnly, SameSite=Strict, Path=/, 30 hari) dipasang lewat `/office/login`; rute UI menerima Bearer, `?token=`, atau cookie; JavaScript kantor tidak pernah memegang token.
 - CORS hanya origin office.
 - Payload approval & event disanitasi: mask pola secret (API key, token, password, nomor kartu).
 
 ### 5.5 Pixel Office (React 19 + Vite)
 
 **5.5.1 Basis**: vendor engine Pixel Agents (MIT) — renderer Canvas 2D, state machine karakter, layout editor (JSON, hingga 64×64 tile), asset bawaan. Adapter VS Code / pembaca transcript JSONL dihapus dan diganti `HermesEventAdapter` (sumber: WS Core + stream `tui_gateway`).
+
+**Terpasang M4 (2026-10-02):**
+- UI Pixel Agents (`webview-ui` + `core/src`, commit `3537e14`, v1.4.1) di-vendor ke `apps/office/vendor/pixel-agents/` dengan 5 patch kecil (`NOTICE.md`).
+- Transport bawaannya diganti `HermesTransport`: WS `/v1/stream` + REST Core, lalu `HermesAdapter` (`apps/office/src/hermes/`) menerjemahkan event, approval, dan state agent menjadi pesan Pixel Agents.
+- Asset di-decode di browser; tidak ada server Pixel Agents.
+- Core menyajikan build kantor di `http://127.0.0.1:7400/office/` (`pnpm aos office`). Layout, kursi, dan setting disimpan di tabel `office_state`.
+- Sumber `tui_gateway` (chat) menyusul di M5.
 
 **5.5.2 Layout layar (desktop-first, min 1280×720)**
 
@@ -405,6 +415,20 @@ Rute UI (`/v1/agents`, `/v1/kanban`, `/v1/costs`, `/v1/stream`) di M2 memakai `A
 | Meja tanpa profile | — | Meja kosong berlabel (untuk agent masa depan) |
 
 Target: perubahan state tampil < 2 dtk setelah event (target, bukan gate).
+
+**Status M4 (terpasang):**
+- Sesuai tabel:
+  - `thinking` → `llm.started` (duduk aktif).
+  - `typing`/`running` → animasi mengetik + label "Menulis …"/"Menjalankan …".
+  - `reading` → animasi membaca.
+  - `waiting_owner` → gelembung "…" + "Needs approval", bertahan selama izin `pending`, termasuk setelah run berhenti.
+  - `celebrate` → gelembung ✓ di akhir sesi.
+  - `spawn` → karakter sub-agent untuk `delegate_task`.
+  - `idle` → berkeliaran / ke lounge.
+- **Perkiraan / ditunda:**
+  - `stuck` memakai gelembung "…" (bukan "?" merah).
+  - `offline` hanya indikator koneksi Core (belum per agent).
+  - Meja kosong tanpa label. Layout bawaan punya ±8 meja kerja, jadi 3 meja kosong.
 
 **5.5.4 Dock**
 - Chat penuh dengan agent terpilih via client `tui_gateway`: streaming, ringkasan tool, lampiran file dari workspace, riwayat sesi (resume sesi lama).
@@ -641,10 +665,10 @@ AOS_TIMEZONE=Asia/Jakarta
 agentic-os/
 ├── apps/
 │   ├── office/                 # React 19 + Vite — pixel office (UI utama)
-│   │   ├── src/engine/         # vendored Pixel Agents (MIT) + NOTICE
-│   │   ├── src/adapters/       # HermesEventAdapter, tuiGatewayClient
-│   │   ├── src/features/       # dock, hud, kanban-drawer, approvals, costs, health
-│   │   └── public/assets/      # asset pixel (lihat LICENSES.md)
+│   │   ├── vendor/pixel-agents/ # M4: Pixel Agents (MIT) — core/src, webview-ui (engine, editor, asset) + NOTICE (patch P1–P5)
+│   │   ├── src/hermes/         # M4: HermesAdapter, HermesTransport, label aktivitas; tuiGatewayClient menyusul M5
+│   │   ├── src/features/       # M5: dock, hud, kanban-drawer, approvals, costs, health
+│   │   └── LICENSES.md         # atribusi Pixel Agents + sprite JIK-A-4
 │   └── core/                   # Node + Fastify + WS + SQLite (better-sqlite3)
 │       └── src/  (M3: config, db, events, state, kanban, costs, hub, server, approvals, notify, reactions, hermesCli, audit)
 ├── packages/
@@ -688,7 +712,7 @@ agentic-os/
 | **M1 — Fondasi & verifikasi** ✅ **Selesai (2026-10-01)** | Hermes (pin commit di `infra/hermes.lock`, `HERMES_HOME` terpisah), 9Router (semua tier sementara → `COMBO-SS`), 5 profile + persona, Telegram → `chief` lewat host gateway, kanban board default, cron briefing sederhana. Daftar verifikasi dijawab di `docs/runbook.md` §1 | `chief` bisa membuat kartu yang dikerjakan `researcher` via dispatcher; semua panggilan lewat 9Router; daftar verifikasi terjawab di `docs/runbook.md`. Bukti: `smoke-chief` PASS (CLI), `doctor` 26/26, briefing pagi diterima owner. V9 (catch-up cron) terverifikasi: gateway mati 09:44–09:57 melewati slot 09:49 & 09:54 → tepat satu run susulan pada 09:57:40; owner mengonfirmasi menerima briefing di Telegram (2026-10-01). **Sisa:** uji delegasi via Telegram oleh owner sendiri masih menunggu; lihat §16 |
 | **M2 — Bridge & Core** ✅ **Selesai (2026-10-02)** | os-bridge (event + usage), Core ingest/event store/state projector/kanban-reader/WS, ledger biaya | Event semua mode masuk Core; state agent & biaya per kartu terlihat via `/v1/agents` & `/v1/costs`. Bukti (runbook §5): sesi interaktif → rantai event lengkap di `core.db`; `smoke-kanban` `t_388dd80b` → 16 event `mode=kanban` ber-`task_id`; `/v1/kanban` mengembalikan 9 kartu; uji spool (Core mati → 4 event ter-spool → terkirim ulang, spool kosong); klien WebSocket menerima keempat topik; file worker persisten per kartu; dispatcher/cron di config root. **Catatan biaya:** owner memilih tidak membuat key per profile, jadi seluruh usage tercatat sebagai profile `shared` dan `byTask` kosong (impor pertama key HERMES: 258 panggilan, ≈ $4,36 total, ≈ $0,81 / 24 jam); atribusi per profile/kartu aktif setelah key `AOS_ROUTER_KEY_<PROFILE>` dibuat (§16) |
 | **M3 — Policy & approval (GATE)** ✅ **Selesai (2026-10-02)** | Policy engine, approval native (gate Hermes) & park, grant sekali pakai, approval lewat chief + tombol Hermes (pengganti Ops bot, keputusan owner), fail-closed, circuit breaker, egress `dev` via proxy allowlist, red-team suite | **Red-team 100% lulus**; approval via Telegram/chief & API berfungsi. Bukti (runbook §5): red-team 58/58 (46 skenario berisiko + 11 kontrol + meta; uji mutasi membuktikan tidak vakum); `doctor` 42/42; uji live L0–L7: deny lewat tombol, park → setujui → push berhasil (`t_1be6dcd0`), park → tolak (`t_ed26d4dd`), Core mati → ditolak (`t_a977443c`), injeksi di file tanpa aksi berisiko, egress diblok proxy walau disetujui; audit `risk-audit` 0 pelanggaran |
-| **M4 — Pixel office: kanvas** | Vendor Pixel Agents, HermesEventAdapter, pemetaan state §5.5.3, layout kantor 5 meja + meja kosong | Karakter mencerminkan state nyata; layout editor tetap berfungsi |
+| **M4 — Pixel office: kanvas** ✅ **Selesai (2026-10-02)** | Vendor Pixel Agents, HermesEventAdapter, pemetaan state §5.5.3, layout kantor 5 meja + meja kosong | Karakter mencerminkan state nyata; layout editor tetap berfungsi. Bukti (runbook §5): label "Membaca README.md" live dari run `researcher`; gelembung izin pada `dev` bertahan selama izin `sq983k` pending dan hilang setelah owner menolak, lalu ✓; layout editor menyimpan ke `office_state` dan bertahan setelah reload; reconnect otomatis saat Core mati/hidup; build produksi disajikan Core di `/office/` dengan cookie httpOnly |
 | **M5 — Pixel office: kerja** | Dock (chat via `tui_gateway`, kartu, log), HUD (approval, biaya, health), laci kanban, shortcut | Semua user story US-01…US-12 dapat didemokan dari office/Telegram |
 | **M6 — Hardening & dogfooding** | Catch-up briefing, backup, runbook, reduced-motion, 14 hari pemakaian nyata | Gate rilis F1 (§14) terpenuhi |
 
@@ -740,6 +764,7 @@ V9 (cron yang terlewat) **terverifikasi**: satu run susulan untuk beberapa slot 
 7. **Lokasi `AOS_WORKSPACES_ROOT`**: saat ini `D:\agentic-os\hermes-home\workspaces\` (plugin mengunci ke `HERMES_HOME` Agentic OS); kartu smoke awal ada di `…\profiles\chief\workspaces\`. Apakah root ini dipindah ke luar `HERMES_HOME` belum diputuskan.
 
 8. **Ops bot opsional (F2)**: bot Telegram kedua untuk approval/alert bila chat chief jadi terlalu ramai (ADR-03).
+9. **Kantor pixel — sisa pemetaan state (§5.5.3)**: gelembung "?" merah untuk `stuck`, tanda offline per agent (butuh modul health Core), label meja kosong; tombol Export/Import layout bawaan Pixel Agents belum tersambung ke Core.
 
 Sudah selesai di M2 (bukan lagi open): penanda konteks cron (§5.3.2), config dispatcher & cron di root home (§5.1.3), file hasil worker persisten per kartu (§5.1.3, runbook V7).
 Sudah selesai di M3: mode event `tool.*` mengikuti platform sesi (§5.3.2), red-team & rule injeksi workspace (§8.1), egress `dev` (§8.4).

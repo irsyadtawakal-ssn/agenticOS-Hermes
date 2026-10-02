@@ -25,7 +25,7 @@ Status: `✅ terverifikasi` (dicoba di mesin ini) · `📄 dari docs/source` · 
 | V15 | Pin versi | Pin = commit source bersama di `infra/hermes.lock`; `doctor` membaca `Install directory` dari `hermes --version`. **Update Hermes Desktop menggeser commit ini** → `doctor` FAIL `hermes-pin` = sinyal untuk uji ulang lalu bump lock. Jangan jalankan `hermes update` dari folder Agentic OS. | ✅ | `pnpm aos doctor` |
 | V16 | Lokasi plugin | **Per profile**: `<HERMES_HOME>\profiles\<profile>\plugins\<nama>\` (bukan `<HERMES_HOME>\plugins`). Aktifkan: `hermes -p <profile> plugins enable <nama>`. Tool dimuat lazy lewat tool search — sebut nama tool secara eksplisit di persona. | ✅ | `aos-office-tools` aktif untuk `chief` |
 
-## 2. Arsitektur yang terpasang (M1 + M2 + M3)
+## 2. Arsitektur yang terpasang (M1 + M2 + M3 + M4)
 
 ```
 Telegram ──► host gateway Agentic OS (Hermes_Gateway_787a7c01, HERMES_HOME=D:\agentic-os\hermes-home)
@@ -47,6 +47,12 @@ M3 — izin aksi berisiko (policy di os-bridge, pre_tool_call):
                                           Core ──► Telegram (sendMessage bot utama): "🔐 Izin diminta: <id>"
   owner ──"setujui <id>"──► chief office_approve ──► tombol Hermes ──► Core decision ──► hermes kanban unblock
   dev sandbox ──► network internal aos-egress ──► proxy aos-egress-proxy (hanya registry npm/PyPI)
+
+M4 — kantor pixel (browser):
+  pnpm aos office ──► 127.0.0.1:7400/office/login (cookie httpOnly aos_ui) ──► /office/ (build apps/office/dist)
+  kantor ──WS /v1/stream + REST /v1/agents, /v1/approvals, /v1/office/state──► OS Core
+  HermesTransport → HermesAdapter (event Hermes → pesan Pixel Agents) → engine Pixel Agents (vendored)
+  dev: pnpm office:dev (127.0.0.1:5173, proxy Vite menyisipkan token UI dari .env.local)
 ```
 Gateway & data Hermes lama milik owner (`%LOCALAPPDATA%\hermes`, `Hermes_Gateway`) berjalan berdampingan dan tidak disentuh.
 
@@ -64,6 +70,9 @@ Gateway & data Hermes lama milik owner (`%LOCALAPPDATA%\hermes`, `Hermes_Gateway
 | Uji dispatcher | `pnpm aos smoke-kanban` |
 | Uji delegasi chief | `pnpm aos smoke-chief` |
 | Perintah Hermes untuk Agentic OS | selalu set dulu `$env:HERMES_HOME = "D:\agentic-os\hermes-home"` |
+| Buka kantor pixel | `pnpm aos office` (browser terbuka di `http://127.0.0.1:7400/office/`; token tidak dicetak) |
+| Build ulang kantor setelah ubah `apps/office` | `pnpm office:build` (Core menyajikan `apps/office/dist`; refresh browser) |
+| Kantor mode dev | `pnpm office:dev` → http://127.0.0.1:5173 |
 
 ### 9Router
 - Autostart: `shell:startup\9router.vbs` dengan `--tray --skip-update --host 127.0.0.1` (launcher duplikat `start_9router.bat` sudah dihapus). Skrip `infra/windows/register-9router-task.ps1` tidak dipakai (alternatif).
@@ -127,6 +136,13 @@ Gateway & data Hermes lama milik owner (`%LOCALAPPDATA%\hermes`, `Hermes_Gateway
 - Pasang/ulang: `powershell -ExecutionPolicy Bypass -File infra/windows/egress-proxy.ps1` (idempoten). Cek: `pnpm aos doctor` (`egress-proxy`) atau `docker inspect -f "{{.State.Running}}" aos-egress-proxy`. Log akses: `docker exec aos-egress-proxy tail /var/log/squid/access.log`.
 - Mengubah allowlist: edit `squid.conf`, lalu `docker restart aos-egress-proxy`.
 
+### Pixel office (M4)
+- **Kode**: `apps/office` (`@aos/office`). Engine, editor layout, dan asset = Pixel Agents (MIT) yang di-vendor di `apps/office/vendor/pixel-agents/` (commit `3537e14`, v1.4.1); patch P1–P5 tercatat di `NOTICE.md`; atribusi sprite JIK-A-4 di `apps/office/LICENSES.md`. Kode Agentic OS: `apps/office/src/hermes/` (`labels.ts`, `adapter.ts`, `transport.ts`, `assets.ts`).
+- **Akses**: `pnpm aos office` membuka `/office/login?token=…` di browser default → Core memasang cookie `aos_ui` (HttpOnly, SameSite=Strict, 30 hari) → `/office/`. Tanpa cookie, halaman tetap termuat tetapi stream/REST 401 (indikator "Reconnecting…"). Mode dev: proxy Vite menyisipkan header token dari `.env.local` (browser tidak memegang token).
+- **Penyimpanan**: layout, kursi, dan setting kantor ada di tabel `office_state` `core.db` (`layout`, `seats`, `settings`); kursi disimpan otomatis saat kantor dimuat, layout saat tombol Save di editor. Reset ke layout bawaan: hapus baris `layout` dari `office_state` (Core boleh tetap jalan), lalu reload.
+- **Pemetaan state**: `llm.started` → duduk aktif; tool baca/web/browser → animasi membaca; tool tulis/terminal → animasi mengetik dengan label ("Membaca …", "Menulis …", "Menjalankan …"); keputusan policy `park`/`native` atau izin `pending` → gelembung "…" + label "Needs approval" (tetap ada sampai izin selesai, termasuk setelah run berhenti); `session.ended` → gelembung ✓; `breaker.tripped` → gelembung "…"; `delegate_task` → karakter sub-agent; tanpa aktivitas → karakter berkeliaran / ke lounge.
+- **Upgrade Pixel Agents**: clone commit baru upstream, salin ulang `core/src` dan `webview-ui` (tanpa `test/`), terapkan ulang P1–P5 (`NOTICE.md`), lalu `pnpm -F @aos/office test`, `typecheck`, dan `build`.
+
 ### Atribusi biaya (per profile / per kartu)
 - Saat ini semua usage tercatat sebagai profile `shared` dan `byTask` kosong, karena owner memilih tidak membuat key 9Router per profile. Impor pertama memuat seluruh riwayat key HERMES: 258 panggilan, total ≈ $4,36 (≈ $0,81 dalam 24 jam terakhir).
 - Untuk mengaktifkan atribusi per profile/kartu, ikuti urutan ini (urutan penting):
@@ -176,8 +192,16 @@ Gateway & data Hermes lama milik owner (`%LOCALAPPDATA%\hermes`, `Hermes_Gateway
 - **Plugin gagal dimuat = tanpa gate**: bila `os-bridge` sama sekali tidak dimuat Hermes, tidak ada policy. `doctor` memeriksa keberadaan plugin, `policy.py`, dan `policy.json`.
 - **Aksi yang Hermes sendiri tolak di mode `-q`** (`execute_code`, perintah berbahaya Tier-2 seperti `rm -rf` di sandbox ber-mount) tetap ditolak walau owner menyetujuinya.
 - **Spool dikirim oleh sesi berikutnya**: event yang ter-spool saat Core mati baru terkirim saat sesi berikutnya dari profile yang sama berjalan dan file spool berumur > 60 dtk.
+- **Kantor pixel (M4)**:
+  - `stuck` (breaker) memakai gelembung "…" yang sama dengan menunggu izin (gelembung "?" merah belum ada).
+  - Belum ada tanda offline per agent (hanya indikator koneksi Core).
+  - Meja kosong tanpa label.
+  - Tombol Export/Import layout dan pengaturan folder asset eksternal bawaan Pixel Agents belum berfungsi.
+  - Run yang sangat cepat (beberapa detik) bisa terlewat animasinya, tetapi label terakhir dan ✓ tetap muncul.
+  - Di mode dev (`office:dev`) asset terkirim dua kali karena React StrictMode; tidak memengaruhi tampilan.
+  - Chat, dock, dan HUD menyusul di M5.
 
-## 5. Bukti exit M1, M2 & M3
+## 5. Bukti exit M1, M2, M3 & M4
 
 ### Bukti exit M1
 
@@ -222,3 +246,17 @@ Diuji di mesin owner, 2026-10-02 (branch `m3-policy-approval`). Kriteria PRD §1
 | L8 — alur penuh dari Telegram | owner meminta chief → chief `office_create_task` kartu `dev` `t_bf84558b` → `git init`/commit jalan, `git push` ditahan (`87bmxi`) → owner "setujui 87bmxi" + tombol → unblock 2 dtk kemudian → grant `consumed`, commit `3f7a539` ada di `remote.git`, kartu `done` | ✅ |
 | L7 — egress `dev` | kartu `t_98515362`: `npm view lodash version` → `4.18.1` lewat proxy; `curl https://example.com` → izin `tfydd6`; setelah owner setuju, proxy tetap menolak (`CONNECT tunnel failed, response 403`) | ✅ |
 | Verifikasi proxy langsung | lewat proxy: npm 200, PyPI 200, example.com 403; tanpa proxy: DNS gagal, `1.1.1.1` tidak terjangkau | ✅ |
+
+### Bukti exit M4
+
+Diuji di mesin owner, 2026-10-02 (branch `m4-pixel-office`). Kriteria PRD §13: karakter mencerminkan state nyata; layout editor tetap berfungsi.
+
+| Kriteria | Bukti | Status |
+|---|---|---|
+| Test & build | `@aos/office` 15 test (adapter + transport), Core 62, setup 112; typecheck bersih; `pnpm office:build` sukses | ✅ |
+| Kantor tampil | 5 karakter berlabel `chief`, `researcher`, `secretary`, `content`, `dev` di area kerja; lounge + pantry; tanpa error console | ✅ |
+| V1 — aktivitas nyata | `researcher` (`-q`) membaca `README.md` lalu menulis ringkasan → label "Membaca README.md" tampil live; rantai event read → write → session.ended | ✅ |
+| V2 — menunggu izin | kartu `dev` `t_2327a5c8` `git push` → izin `sq983k` → gelembung "…" + "Needs approval", tetap ada setelah run berhenti; owner menolak lewat chief → gelembung hilang; run ulang selesai dengan ✓, remote tidak berubah | ✅ |
+| V3 — layout editor | BIN digeser kolom 2 → 4 dan Save → `office_state.layout` diperbarui (BIN 4,20); reload → posisi bertahan; kursi tersimpan otomatis | ✅ |
+| V4 — reconnect | Core dimatikan → "Reconnecting…"; Core hidup lagi → indikator hilang, roster utuh tanpa reload | ✅ |
+| Build produksi dari Core | `/office/`, `asset-index.json`, katalog furniture, sprite → 200; `/v1/agents` tanpa cookie → 401 | ✅ |
