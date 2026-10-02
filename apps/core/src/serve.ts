@@ -11,10 +11,11 @@ export function terminalBackend(configText: string): string {
 /**
  * Working directory for an office chat session. Serve runs with cwd = chat root, which docker
  * profiles (`docker_mount_cwd_to_workspace`) see as `/workspace`; a host path would be taken
- * as a relative path inside the container.
+ * as a relative path inside the container. A persistent (shared) container ignores sub-folders,
+ * so docker chats share the chat root (verified live, M5b).
  */
 export function sessionCwdFor(backend: string, chatRoot: string, profile: string): string {
-  return backend === 'docker' ? `/workspace/${profile}` : join(chatRoot, profile);
+  return backend === 'docker' ? '/workspace' : join(chatRoot, profile);
 }
 
 export interface ServeSettings {

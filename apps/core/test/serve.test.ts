@@ -10,7 +10,7 @@ describe('chat session cwd', () => {
   });
 
   it('uses the container mount for sandboxed profiles and the host folder otherwise', () => {
-    expect(sessionCwdFor('docker', 'D:\\ws\\chat', 'researcher')).toBe('/workspace/researcher');
+    expect(sessionCwdFor('docker', 'D:\\ws\\chat', 'researcher')).toBe('/workspace');
     expect(sessionCwdFor('local', 'D:\\ws\\chat', 'chief')).toBe(join('D:\\ws\\chat', 'chief'));
   });
 });
