@@ -1,6 +1,7 @@
 import { execFile, spawn } from 'node:child_process';
 import { existsSync, mkdirSync, openSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
+import { healthAlerts, newHealthAlertState, stuckCardAlerts } from './alerts.js';
 import { knownChatSessions, rememberChatSession } from './chatSessions.js';
 import { loadCoreConfig, PROFILES } from './config.js';
 import { syncUsage } from './costs.js';
@@ -23,11 +24,12 @@ const db = openCoreDb(config.dbPath);
 const hub = createHub();
 const log = (message: string) => console.error(`[aos-core] ${message}`);
 const runHermes = createHermesRunner(config.hermesHome, config.hermesExe);
+const notifier = createNotifierFromFile(config.chiefEnvPath);
 const reactions = createReactions({
   db,
   hub,
   runHermes,
-  notifier: createNotifierFromFile(config.chiefEnvPath),
+  notifier,
   now: Date.now,
   log,
 });
@@ -81,9 +83,18 @@ const healthDeps: HealthDeps = {
   servePort: config.servePort,
 };
 
+const healthAlertState = newHealthAlertState();
+const stuckNotified = new Set<string>();
+
+function sendAll(lines: string[]): void {
+  for (const line of lines) background('alert', notifier.send(line).then(() => undefined));
+}
+
 let lastHealth = '';
 async function refreshHealth(): Promise<void> {
   const components = await probeHealth(healthDeps);
+  sendAll(healthAlerts(healthAlertState, components, 3));
+  sendAll(stuckCardAlerts(snapshot.tasks, Date.now(), stuckNotified));
   const key = JSON.stringify(components);
   if (key !== lastHealth) {
     lastHealth = key;
