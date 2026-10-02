@@ -177,7 +177,7 @@ flowchart LR
 1. Owner: "riset 5 kompetitor postiz" → host gateway Agentic OS → `chief`.
 2. `chief` membuat kartu kanban lewat tool plugin `office_create_task` (assignee `researcher`, status `ready`, acceptance criteria). Tool `kanban_*` bawaan Hermes **hanya aktif di dalam worker yang di-spawn dispatcher**, bukan untuk `chief`. Tiap kartu mendapat workspace permanen `dir:` (`D:\agentic-os\hermes-home\workspaces\<stamp>-<slug>\`; root dikunci ke `HERMES_HOME` Agentic OS oleh plugin) tempat hasil kerja worker tersimpan. Kartu smoke awal M1 ada di `…\profiles\chief\workspaces\` (dibuat sebelum pengunciran ini).
 3. Dispatcher (tick 60 dtk, `max_in_progress` 2, sesuai config root; §5.1.3) menjalankan `hermes -p researcher chat -q <prompt>` dengan env `HERMES_KANBAN_TASK`, `HERMES_KANBAN_WORKSPACE`.
-4. os-bridge di proses run → event `run.started`, `tool.*`, `llm.usage` ke Core (dengan `task_id`).
+4. os-bridge di proses run → event `session.started`, `session.ended`, `llm.started`, `llm.finished`, `tool.started`, `tool.finished` ke Core (dengan `task_id`). Bridge tidak mengirim `run.started` maupun `llm.usage`; usage/biaya berasal dari `usageHistory` 9Router.
 5. Selesai → kartu `done` → Core notifikasi ringkas ke Ops bot; `chief` dapat merangkum hasil ke Telegram utama.
 
 **C. Approval — mode interaktif (sesi serve/gateway)**
@@ -194,7 +194,7 @@ flowchart LR
 
 **E. Biaya**
 1. `post_llm_call` **tidak membawa token usage** (hanya teks & history), jadi usage tidak diambil dari hook. Core membaca tabel `usageHistory` di `%APPDATA%\9router\db\data.sqlite` (read-only; kolom `timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta`) dan menulis event `llm.usage` (profile, combo, model aktual, token in/out/cache).
-2. Kolom `apiKey` (berisi key mentah — **tidak pernah ditampilkan** di Core/office/log) saat ini **tidak bisa membedakan profile atau task**: kelima profile memakai SATU key 9Router ("HERMES"), sehingga `apiKey` hanya memisahkan trafik Hermes dari aplikasi lain. Atribusi biaya per profile butuh salah satu dari dua opsi: (a) satu key 9Router per profile (perubahan `apply-profiles`), lalu cocokkan via hash/suffix `apiKey`; atau (b) join berdasarkan jendela waktu + event task. Core menghitung biaya dari price table + rekonsiliasi harian dengan agregat 9Router `usageDaily`.
+2. Kolom `apiKey` (berisi key mentah — **tidak pernah ditampilkan** di Core/office/log) saat ini **tidak bisa membedakan profile atau task**: kelima profile memakai SATU key 9Router ("HERMES"), sehingga `apiKey` hanya memisahkan trafik Hermes dari aplikasi lain. Atribusi biaya per profile butuh salah satu dari dua opsi: (a) satu key 9Router per profile (perubahan `apply-profiles`), lalu cocokkan `apiKey` persis (exact match) di memori terhadap nilai `AOS_ROUTER_KEY*` di `.env.local` (key tidak pernah disimpan, di-log, atau dikirim); atau (b) join berdasarkan jendela waktu + event task. Core menghitung biaya dari price table + rekonsiliasi harian dengan agregat 9Router `usageDaily`.
 
 ---
 
@@ -332,10 +332,10 @@ rules:
 |---|---|
 | `ingest` | `POST /v1/events` (batch), validasi Zod, simpan ke `events`, proyeksikan ke `agent_state` |
 | `approvals` | CRUD approval, long-poll wait, token sekali pakai, integrasi Ops bot (inline keyboard + callback) |
-| `kanban-reader` | Watch/poll `<HERMES_HOME>\kanban.db` (read-only, `mode=ro`; WAL aman dibaca saat gateway jalan), snapshot ke memori + diff event `kanban.changed` |
+| `kanban-reader` | Watch/poll `<HERMES_HOME>\kanban.db` (read-only, `mode=ro`; WAL aman dibaca saat gateway jalan), snapshot ke memori + diff yang di-broadcast ke topik `kanban` |
 | `kanban-actions` | Mutasi kartu via CLI resmi `hermes kanban …` (child process, dengan `HERMES_HOME` Agentic OS), bukan tulis langsung ke DB |
-| `costs` | Ledger dari tabel `usageHistory` 9Router (`data.sqlite`, dibuka read-only; baris dicocokkan via hash/suffix `apiKey`, key tidak pernah ditampilkan; **satu key bersama "HERMES" tidak membedakan profile/task → usage diatribusikan ke profile `shared` dan `byTask` kosong**; atribusi per profile/kartu aktif setelah key `AOS_ROUTER_KEY_<PROFILE>` dibuat, lihat §4.4-E dan §16) karena `post_llm_call` tak punya usage; price table, agregasi harian, rekonsiliasi dengan `usageDaily`, alert anomali |
-| `realtime` | WebSocket `/v1/stream` → broadcast `agent_state`, `kanban`, `approvals`, `costs` ke office |
+| `costs` | Ledger dari tabel `usageHistory` 9Router (`data.sqlite`, dibuka read-only; baris dicocokkan persis (exact match) di memori terhadap nilai `AOS_ROUTER_KEY*` di `.env.local`; key tidak pernah disimpan, di-log, atau dikirim; **satu key bersama "HERMES" tidak membedakan profile/task → usage diatribusikan ke profile `shared` dan `byTask` kosong**; atribusi per profile/kartu aktif setelah key `AOS_ROUTER_KEY_<PROFILE>` dibuat, lihat §4.4-E dan §16) karena `post_llm_call` tak punya usage; price table, agregasi harian, rekonsiliasi dengan `usageDaily`, alert anomali |
+| `realtime` | WebSocket `/v1/stream` → broadcast topik `events`, `agents`, `kanban`, `costs` ke office |
 | `health` | Status Hermes gateway, `hermes serve`, 9Router, Ollama, Docker; tampil di HUD |
 | `catchup` | Saat start: jika briefing hari ini belum terkirim dan jam < 12:00 → trigger cron briefing sekarang (label "terlambat") |
 | `ops-bot` | Bot Telegram kedua: approval, alert breaker, alert kesehatan, digest biaya |
@@ -725,7 +725,7 @@ V9 (cron yang terlewat) **terverifikasi**: satu run susulan untuk beberapa slot 
 1. **Mode event `tool.*` (minor, §5.3.2)**: event `tool.*` membawa `mode = interactive` sementara event session/llm pada sesi yang sama membawa platform (`cli`/`cron`), karena hook tool tidak punya field platform; perbaikan nanti: bridge mengingat platform per `session_id`.
 2. **V10 — nama produk final**: keputusan owner (saat ini placeholder "Agentic OS"); bukan blocker.
 3. **Mengganti `COMBO-SS`** dengan tier model yang semestinya (combo `os-brain` / `os-worker` / `os-private`, API key, atau Ollama) lewat `AOS_TIER_MODEL_*`, agar pengecualian ToS di §5.2.3 berakhir.
-4. **Atribusi biaya per profile/kartu**: owner memilih tidak membuat key per profile, jadi usage tercatat sebagai profile `shared` dan `byTask` kosong. Aktifkan dengan membuat key 9Router `AOS_ROUTER_KEY_<PROFILE>` (`aos-chief` … `aos-dev`), mengisinya lewat `infra/windows/set-local-secrets.ps1`, lalu `pnpm aos apply-profiles` (§4.4-E, runbook §3).
+4. **Atribusi biaya per profile/kartu**: owner memilih tidak membuat key per profile, jadi usage tercatat sebagai profile `shared` dan `byTask` kosong. Aktifkan dengan urutan berikut (§4.4-E, runbook §3): (1) buat key 9Router `aos-chief`, `aos-researcher`, `aos-secretary`, `aos-content`, `aos-dev` di dashboard 9Router; (2) jalankan `infra/windows/set-local-secrets.ps1`; (3) restart OS Core **sebelum** agent memakai key baru (matikan proses di port 7400, lalu klik dua kali `shell:startup\AgenticOS_Core.vbs`; Core hanya membaca `.env.local` saat start); (4) `pnpm aos apply-profiles`; (5) restart gateway Hermes (`$env:HERMES_HOME="D:\agentic-os\hermes-home"; hermes gateway stop`, lalu klik dua kali `Hermes_Gateway_787a7c01.vbs`). Catatan: usage dari key yang belum dikenal Core dilewati secara permanen (kursor sinkronisasi bergeser melewatinya).
 5. **Latensi model**: run `researcher` di `COMBO-SS` bisa mencapai ±10 menit; timeout smoke test ketat (terkait butir 3).
 6. **Red-team injeksi workspace (M3)**: skenario + rule policy untuk `kanban_create` worker dengan workspace di luar root yang diizinkan (§8.1, §8.4).
 7. **Lokasi `AOS_WORKSPACES_ROOT`**: saat ini `D:\agentic-os\hermes-home\workspaces\` (plugin mengunci ke `HERMES_HOME` Agentic OS); kartu smoke awal ada di `…\profiles\chief\workspaces\`. Apakah root ini dipindah ke luar `HERMES_HOME` belum diputuskan.
