@@ -22,7 +22,7 @@ import type { HealthComponent } from './health.js';
 import type { RunHermes } from './hermesCli.js';
 import type { Hub } from './hub.js';
 import type { KanbanSnapshot } from './kanban.js';
-import { planCreate, planMove } from './kanbanActions.js';
+import { localStamp, planCreate, planMove } from './kanbanActions.js';
 import {
   contentType,
   cookieToken,
@@ -199,7 +199,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
 
   app.post('/v1/kanban', { preHandler: requireUi }, async (req, reply) => {
     if (!deps.runHermes || !deps.workspacesRoot) return reply.code(503).send({ error: 'hermes runner unavailable' });
-    const stamp = new Date(now()).toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
+    const stamp = localStamp(now(), deps.timeZone ?? 'Asia/Jakarta');
     const plan = planCreate((req.body ?? {}) as Record<string, unknown>, deps.workspacesRoot, stamp);
     if ('error' in plan) return reply.code(400).send({ error: plan.error });
     mkdirSync(plan.workspace, { recursive: true });

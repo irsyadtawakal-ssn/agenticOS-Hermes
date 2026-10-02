@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { planCreate, planMove, slugify } from '../src/kanbanActions.js';
+import { localStamp, planCreate, planMove, slugify } from '../src/kanbanActions.js';
 
 describe('planMove', () => {
   it('maps allowed transitions to the official CLI', () => {
@@ -39,5 +39,13 @@ describe('planCreate', () => {
     expect(planCreate({ title: 'x', assignee: 'hacker' }, 'D:\\ws', 's')).toMatchObject({ error: expect.stringContaining('assignee') });
     const long = planCreate({ title: 'x'.repeat(120), assignee: 'dev' }, 'D:\\ws', 's') as { args: string[] };
     expect(long.args.at(-1)).toHaveLength(80);
+  });
+});
+
+describe('localStamp', () => {
+  it('formats the workspace stamp in the owner time zone', () => {
+    const ms = Date.parse('2026-10-02T10:08:47Z');
+    expect(localStamp(ms, 'Asia/Jakarta')).toBe('20261002-170847');
+    expect(localStamp(ms, 'UTC')).toBe('20261002-100847');
   });
 });

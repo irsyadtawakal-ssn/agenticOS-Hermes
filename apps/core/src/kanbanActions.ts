@@ -6,6 +6,22 @@ export type MoveTarget = (typeof MOVE_TARGETS)[number];
 
 export type Plan = { args: string[] } | { error: string };
 
+/** `YYYYMMDD-HHmmss` in the owner's time zone, matching the existing workspace folder names. */
+export function localStamp(ms: number, timeZone: string): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(new Date(ms));
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '00';
+  return `${get('year')}${get('month')}${get('day')}-${get('hour')}${get('minute')}${get('second')}`;
+}
+
 /** Office drag & drop → official `hermes kanban` command (ADR-02). The note always travels as data. */
 export function planMove(task: { id: string; status: string }, to: string, note: string): Plan {
   const reason = note.trim();
