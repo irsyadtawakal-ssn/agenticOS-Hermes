@@ -12,6 +12,7 @@ describe('includeInBackup', () => {
     const drop = [
       'tools', 'installs', 'cache', 'sandboxes', 'logs', 'backups', '.env', '.env.bak-1', 'profiles/chief/.env', 'kanban.db-wal', 'state.db-shm', 'gateway.lock', 'gateway.pid',
       'profiles/chief/cache', 'profiles/chief/sandboxes', 'profiles/chief/plugins/os-bridge/spool', 'skills/a/__pycache__',
+      'workspaces/_archive/x/D:', 'workspaces/odd:name.md', 'workspaces/_archive/y/D',
     ];
     for (const p of keep) expect([p, includeInBackup(p, !p.includes('.'))]).toEqual([p, true]);
     for (const p of drop) expect([p, includeInBackup(p, !p.includes('.') || p.endsWith('spool'))]).toEqual([p, false]);

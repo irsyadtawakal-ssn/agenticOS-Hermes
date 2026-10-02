@@ -114,6 +114,8 @@ setInterval(() => background('expire', reactions.expireTick()), 60_000);
 setInterval(() => background('health', refreshHealth()), 30_000);
 
 const backupsDir = process.env.AOS_BACKUP_DIR?.trim() || join(dirname(config.dbPath), '..', 'backups');
+// Windows bsdtar by absolute path: a GNU tar earlier on PATH (Git) reads "C:\..." as a remote host and cannot write zip.
+const windowsTar = join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe');
 let backupRunning: Promise<BackupResult> | null = null;
 function backupNow(): Promise<BackupResult> {
   backupRunning ??= runBackup({
@@ -124,8 +126,8 @@ function backupNow(): Promise<BackupResult> {
     timeZone: config.timeZone,
     zip: (staging, zipFile) =>
       new Promise((done, fail) => {
-        execFile('tar.exe', ['-a', '-c', '-f', zipFile, '-C', staging, '.'], { windowsHide: true, timeout: 600_000 }, (err) =>
-          err ? fail(err) : done(),
+        execFile(windowsTar, ['-a', '-c', '-f', zipFile, '-C', staging, '.'], { windowsHide: true, timeout: 600_000 }, (err, _stdout, stderr) =>
+          err ? fail(new Error(`${err.message.split('\n')[0]} ${String(stderr).trim().slice(0, 300)}`)) : done(),
         );
       }),
   })

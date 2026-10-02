@@ -18,7 +18,9 @@ export interface BackupResult {
 
 export function includeInBackup(rel: string, isDir: boolean): boolean {
   const parts = rel.split(/[\\/]/).filter(Boolean);
-  if (parts.some((p) => ANY_SKIP.has(p))) return false;
+  // ':' and its Cygwin/MSYS private-use mapping (U+F000–U+F0FF) only appear in debris like a "D:" folder
+  // made by a POSIX tool, and crash Windows tar.
+  if (parts.some((p) => ANY_SKIP.has(p) || /[:-]/.test(p))) return false;
   if (parts.length >= 1 && ROOT_SKIP.has(parts[0])) return false;
   if (parts[0] === 'profiles' && parts.length >= 3 && PROFILE_SKIP.has(parts[2])) return false;
   if (isDir) return true;
