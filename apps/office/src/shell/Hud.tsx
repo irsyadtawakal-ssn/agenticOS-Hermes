@@ -13,7 +13,7 @@ export function Hud() {
   const costsOpen = useShell((s) => s.costsOpen);
   const waiting = approvals.length > 0;
   return (
-    <div className="h-full flex items-center gap-16 px-12 bg-bg-dark border-t-2 border-border text-sm whitespace-nowrap overflow-x-auto [scrollbar-width:thin]">
+    <div className="relative h-full flex items-center gap-16 px-12 bg-bg-dark border-t-2 border-border text-sm whitespace-nowrap overflow-x-auto [scrollbar-width:thin]">
       <button
         type="button"
         onClick={() => shell.toggleApprovals()}

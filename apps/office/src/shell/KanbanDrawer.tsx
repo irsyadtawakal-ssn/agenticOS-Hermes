@@ -63,7 +63,7 @@ export function KanbanDrawer() {
 
   return (
     <section aria-label="Laci kanban" className="absolute left-0 right-0 bottom-0 h-[60%] z-30 bg-bg-dark border-t-2 border-border flex flex-col">
-      <div className="flex items-center gap-12 p-8 border-b-2 border-border text-sm">
+      <div className="flex flex-wrap items-center gap-12 p-8 border-b-2 border-border text-sm">
         <strong>Kanban</strong>
         <label className="flex items-center gap-6">
           Agent
