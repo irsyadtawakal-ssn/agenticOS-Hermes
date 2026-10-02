@@ -1,5 +1,5 @@
 import { timingSafeEqual } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmdirSync } from 'node:fs';
 import websocket from '@fastify/websocket';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import {
@@ -22,6 +22,7 @@ import type { HealthComponent } from './health.js';
 import type { RunHermes } from './hermesCli.js';
 import type { Hub } from './hub.js';
 import type { KanbanSnapshot } from './kanban.js';
+import { planCreate, planMove } from './kanbanActions.js';
 import {
   contentType,
   cookieToken,
@@ -181,6 +182,37 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     const q = req.query as Record<string, string | undefined>;
     if (!q.profile) return reply.code(400).send({ error: 'profile is required' });
     return recentEvents(deps.db, q.profile, Number(q.limit ?? 50) || 50);
+  });
+
+  app.post('/v1/kanban/:id/move', { preHandler: requireUi }, async (req, reply) => {
+    const id = (req.params as { id: string }).id;
+    const body = (req.body ?? {}) as { to?: unknown; note?: unknown };
+    const task = deps.kanban().tasks.find((t) => t.id === id);
+    if (!task) return reply.code(404).send({ error: 'kartu tidak ditemukan' });
+    const plan = planMove(task, String(body.to ?? ''), typeof body.note === 'string' ? body.note.slice(0, 500) : '');
+    if ('error' in plan) return reply.code(409).send({ error: plan.error });
+    if (!deps.runHermes) return reply.code(503).send({ error: 'hermes runner unavailable' });
+    const r = await deps.runHermes(plan.args);
+    if (r.code !== 0) return reply.code(502).send({ error: (r.stderr || r.stdout).trim().slice(0, 300) });
+    return { ok: true, output: r.stdout.trim().slice(0, 500) };
+  });
+
+  app.post('/v1/kanban', { preHandler: requireUi }, async (req, reply) => {
+    if (!deps.runHermes || !deps.workspacesRoot) return reply.code(503).send({ error: 'hermes runner unavailable' });
+    const stamp = new Date(now()).toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
+    const plan = planCreate((req.body ?? {}) as Record<string, unknown>, deps.workspacesRoot, stamp);
+    if ('error' in plan) return reply.code(400).send({ error: plan.error });
+    mkdirSync(plan.workspace, { recursive: true });
+    const r = await deps.runHermes(plan.args);
+    if (r.code !== 0) {
+      try {
+        rmdirSync(plan.workspace);
+      } catch {
+        // folder not empty or already gone: leave it
+      }
+      return reply.code(502).send({ error: (r.stderr || r.stdout).trim().slice(0, 300) });
+    }
+    return { ok: true, output: r.stdout.trim().slice(0, 500), workspace: plan.workspace };
   });
 
   app.get('/v1/office/state', { preHandler: requireUi }, async () => getOfficeState(deps.db));

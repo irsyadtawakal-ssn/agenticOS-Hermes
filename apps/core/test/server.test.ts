@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -217,5 +217,45 @@ describe('workspace routes (M5a)', () => {
     const recent = await app.inject({ method: 'GET', url: '/v1/events?profile=dev&limit=5&token=ut' });
     expect(recent.json().map((e: { id: string }) => e.id)).toEqual([event.id]);
     expect((await app.inject({ method: 'GET', url: '/v1/events?token=ut' })).statusCode).toBe(400);
+  });
+});
+
+describe('kanban actions (M5a)', () => {
+  const tasks = [
+    { id: 't_1', title: 'a', assignee: 'dev', status: 'blocked', created_at: 1, started_at: null, completed_at: null, workspace_kind: 'dir', workspace_path: null },
+    { id: 't_2', title: 'b', assignee: 'dev', status: 'done', created_at: 1, started_at: null, completed_at: null, workspace_kind: 'dir', workspace_path: null },
+  ];
+
+  it('moves cards through the CLI and reports refusals and CLI failures', async () => {
+    const calls: string[][] = [];
+    let code = 0;
+    const { app } = await makeWith({
+      kanban: () => ({ tasks, runs: [] }),
+      runHermes: async (args) => (calls.push(args), { code, stdout: code ? '' : 'Unblocked t_1', stderr: code ? 'boom' : '' }),
+    });
+    const ok = await app.inject({ method: 'POST', url: '/v1/kanban/t_1/move', payload: { to: 'ready', note: 'lanjut' }, headers: { authorization: 'Bearer ut' } });
+    expect(ok.json()).toEqual({ ok: true, output: 'Unblocked t_1' });
+    expect(calls).toEqual([['kanban', 'unblock', '--reason', 'lanjut', 't_1']]);
+    expect((await app.inject({ method: 'POST', url: '/v1/kanban/t_2/move', payload: { to: 'ready' }, headers: { authorization: 'Bearer ut' } })).statusCode).toBe(409);
+    expect((await app.inject({ method: 'POST', url: '/v1/kanban/t_9/move', payload: { to: 'ready' }, headers: { authorization: 'Bearer ut' } })).statusCode).toBe(404);
+    expect((await app.inject({ method: 'POST', url: '/v1/kanban/t_1/move', payload: { to: 'ready' } })).statusCode).toBe(401);
+    code = 1;
+    const failed = await app.inject({ method: 'POST', url: '/v1/kanban/t_1/move', payload: { to: 'ready' }, headers: { authorization: 'Bearer ut' } });
+    expect(failed.statusCode).toBe(502);
+    expect(failed.json()).toEqual({ error: 'boom' });
+  });
+
+  it('creates cards with a workspace folder and removes it when the CLI fails', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'aos-ws-'));
+    let code = 0;
+    const { app } = await makeWith({ workspacesRoot: root, runHermes: async () => ({ code, stdout: 'Created t_9', stderr: code ? 'no board' : '' }) });
+    const res = await app.inject({ method: 'POST', url: '/v1/kanban', payload: { title: 'Uji kartu', assignee: 'researcher', body: 'Goal: x' }, headers: { authorization: 'Bearer ut' } });
+    expect(res.json()).toMatchObject({ ok: true, output: 'Created t_9' });
+    expect(existsSync(res.json().workspace)).toBe(true);
+    code = 1;
+    const bad = await app.inject({ method: 'POST', url: '/v1/kanban', payload: { title: 'Gagal', assignee: 'dev' }, headers: { authorization: 'Bearer ut' } });
+    expect(bad.statusCode).toBe(502);
+    expect(readdirSync(root)).toHaveLength(1);
+    expect((await app.inject({ method: 'POST', url: '/v1/kanban', payload: { title: '', assignee: 'dev' }, headers: { authorization: 'Bearer ut' } })).statusCode).toBe(400);
   });
 });
