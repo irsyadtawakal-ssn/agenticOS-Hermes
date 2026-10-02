@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import YAML from 'yaml';
 import { profileDir } from '../src/apply.js';
-import { checkApprovals, checkCore, checkEnvFile, checkGatewayRunning, checkHermesPin, checkProfile, checkRootConfig, runDoctor } from '../src/doctor.js';
+import { checkApprovals, checkCore, checkEgressProxy, checkEnvFile, checkGatewayRunning, checkHermesPin, checkProfile, checkRootConfig, runDoctor } from '../src/doctor.js';
 import type { Exec } from '../src/exec.js';
 import { buildOverlay, buildRootOverlay, loadRoster, pluginsFor } from '../src/profiles.js';
 
@@ -274,6 +274,31 @@ describe('checkCore', () => {
   it('fails without throwing when Core is down', async () => {
     const fetchFn = (async () => { throw new Error('ECONNREFUSED'); }) as unknown as typeof fetch;
     expect(await checkCore('http://127.0.0.1:7400', fetchFn)).toMatchObject({ ok: false, detail: expect.stringMatching(/ECONNREFUSED/) });
+  });
+});
+
+describe('checkEgressProxy', () => {
+  it('checks the egress proxy container and internal network', async () => {
+    const exec: Exec = async () => ({ code: 0, stdout: 'true\n', stderr: '' });
+    expect((await checkEgressProxy(exec)).ok).toBe(true);
+    const down: Exec = async (_cmd, args) => ({ code: args.includes('network') ? 0 : 1, stdout: args.includes('network') ? 'false\n' : '', stderr: 'No such object' });
+    expect(await checkEgressProxy(down)).toMatchObject({ name: 'egress-proxy', ok: false });
+    const noDocker: Exec = async () => {
+      throw new Error('spawn docker ENOENT');
+    };
+    expect(await checkEgressProxy(noDocker)).toMatchObject({ ok: false, detail: expect.stringMatching(/docker not runnable/) });
+  });
+
+  it('runs in doctor only when a profile uses the egress proxy', async () => {
+    const egressRoster = loadRoster('profiles:\n  - {name: chief, tier: os-brain, gateway: true}\n  - {name: dev, tier: os-brain, egress_proxy: true}\n');
+    const calls: string[][] = [];
+    const exec: Exec = async (cmd, args) => (calls.push([cmd, ...args]), { code: 1, stdout: '', stderr: 'x' });
+    const fetchFn = (async () => new Response('', { status: 500 })) as unknown as typeof fetch;
+    const home = mkdtempSync(join(tmpdir(), 'aos-doc-'));
+    const names = (await runDoctor({ home, roster: egressRoster, lockText: `commit=${SHA}\n`, routerBaseUrl: BASE, routerKey: 'rk' }, { exec, fetchFn })).map((r) => r.name);
+    expect(names).toContain('egress-proxy');
+    const plain = (await runDoctor({ home, roster, lockText: `commit=${SHA}\n`, routerBaseUrl: BASE, routerKey: 'rk' }, { exec, fetchFn })).map((r) => r.name);
+    expect(plain).not.toContain('egress-proxy');
   });
 });
 

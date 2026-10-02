@@ -197,6 +197,17 @@ export async function checkGatewayRunning(exec: Exec): Promise<CheckResult> {
   }
 }
 
+export async function checkEgressProxy(exec: Exec): Promise<CheckResult> {
+  try {
+    const c = await exec('docker', ['inspect', '-f', '{{.State.Running}}', 'aos-egress-proxy'], { timeoutMs: 30_000 });
+    const n = await exec('docker', ['network', 'inspect', 'aos-egress', '-f', '{{.Internal}}'], { timeoutMs: 30_000 });
+    const ok = c.code === 0 && c.stdout.trim() === 'true' && n.code === 0 && n.stdout.trim() === 'true';
+    return { name: 'egress-proxy', ok, detail: ok ? 'aos-egress-proxy running on internal network aos-egress' : 'run infra/windows/egress-proxy.ps1' };
+  } catch (err) {
+    return { name: 'egress-proxy', ok: false, detail: `docker not runnable: ${(err as Error).message}` };
+  }
+}
+
 export async function checkCore(coreUrl: string, fetchFn: typeof fetch = fetch): Promise<CheckResult> {
   const url = `${coreUrl.replace(/\/+$/, '')}/v1/health`;
   try {
@@ -216,6 +227,7 @@ export async function runDoctor(cfg: DoctorConfig, deps: DoctorDeps): Promise<Ch
     checkEnvFile(join(cfg.home, '.env'), 'root-env'),
     ...checkRootConfig(cfg.home, cfg.routerBaseUrl, cfg.tierModels),
     await checkGatewayRunning(deps.exec),
+    ...(cfg.roster.some((s) => s.egressProxy) ? [await checkEgressProxy(deps.exec)] : []),
     ...cfg.roster.flatMap((spec) => checkProfile(cfg.home, spec, cfg.routerBaseUrl, cfg.routerKey, tierModels, cfg.routerKeys)),
     ...(await checkRouter(cfg.routerBaseUrl, cfg.routerKey, deps.fetchFn, Object.values(tierModels))),
     await checkCore(cfg.coreUrl ?? 'http://127.0.0.1:7400', deps.fetchFn),

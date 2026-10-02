@@ -11,7 +11,10 @@ export interface ProfileSpec {
   tier: Tier;
   dockerNetwork: boolean;
   gateway: boolean;
+  egressProxy: boolean;
 }
+
+export const EGRESS = { network: 'aos-egress', proxy: 'http://aos-egress-proxy:3128' } as const;
 
 type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -27,6 +30,7 @@ export function loadRoster(yamlText: string): ProfileSpec[] {
       tier,
       dockerNetwork: p.docker_network === true,
       gateway: p.gateway === true,
+      egressProxy: p.egress_proxy === true,
     };
   });
   const gateways = roster.filter((p) => p.gateway).length;
@@ -79,6 +83,19 @@ export function buildOverlay(
     kanban: { dispatch_in_gateway: false },
     approvals: { ...APPROVALS_CONFIG },
   };
+  if (spec.egressProxy) {
+    const terminal = overlay.terminal as Obj;
+    terminal.docker_network = true;
+    terminal.docker_extra_args = ['--network', EGRESS.network];
+    terminal.docker_env = {
+      HTTP_PROXY: EGRESS.proxy,
+      HTTPS_PROXY: EGRESS.proxy,
+      http_proxy: EGRESS.proxy,
+      https_proxy: EGRESS.proxy,
+      NO_PROXY: 'localhost,127.0.0.1',
+      no_proxy: 'localhost,127.0.0.1',
+    };
+  }
   return overlay;
 }
 

@@ -27,7 +27,20 @@ describe('loadRoster', () => {
   it('parses profiles and applies defaults', () => {
     const roster = loadRoster(ROSTER);
     expect(roster.map((p) => p.name)).toEqual(['chief', 'researcher', 'secretary', 'dev']);
-    expect(roster[1]).toEqual({ name: 'researcher', description: 'Riset', tier: 'os-worker', dockerNetwork: false, gateway: false });
+    expect(roster[1]).toEqual({ name: 'researcher', description: 'Riset', tier: 'os-worker', dockerNetwork: false, gateway: false, egressProxy: false });
+  });
+  it('routes the egress-proxy profile through the internal network and proxy', () => {
+    const r = loadRoster('profiles:\n  - {name: chief, description: c, tier: os-brain, gateway: true}\n  - {name: dev, description: d, tier: os-brain, docker_network: true, egress_proxy: true}\n');
+    expect(r[1].egressProxy).toBe(true);
+    const t = buildOverlay(r[1], r, BASE).terminal as Record<string, unknown>;
+    expect(t.docker_network).toBe(true);
+    expect(t.docker_extra_args).toEqual(['--network', 'aos-egress']);
+    expect(t.docker_env).toEqual({
+      HTTP_PROXY: 'http://aos-egress-proxy:3128', HTTPS_PROXY: 'http://aos-egress-proxy:3128',
+      http_proxy: 'http://aos-egress-proxy:3128', https_proxy: 'http://aos-egress-proxy:3128',
+      NO_PROXY: 'localhost,127.0.0.1', no_proxy: 'localhost,127.0.0.1',
+    });
+    expect((buildOverlay(r[0], r, BASE).terminal as Record<string, unknown>).docker_extra_args).toBeUndefined();
   });
   it('rejects an unknown tier', () => {
     expect(() => loadRoster('profiles:\n  - {name: x, tier: gpt-4, gateway: true}\n')).toThrow(/invalid tier/);

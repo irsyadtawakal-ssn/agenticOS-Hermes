@@ -21,3 +21,4 @@ profiles:
     description: Membaca, mengubah, dan menguji kode di sandbox Docker.
     tier: os-brain
     docker_network: true
+    egress_proxy: true
