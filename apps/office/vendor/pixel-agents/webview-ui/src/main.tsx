@@ -3,7 +3,8 @@ import './index.css';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
-import App from './App.tsx';
+// Agentic OS (NOTICE P6): the office is wrapped by the dock/HUD shell.
+import AosShell from '../../../../src/shell/AosShell.tsx';
 import { isBrowserRuntime } from './runtime';
 
 async function main() {
@@ -15,7 +16,7 @@ async function main() {
   }
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
-      <App />
+      <AosShell />
     </StrictMode>,
   );
 }

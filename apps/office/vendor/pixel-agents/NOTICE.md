@@ -9,5 +9,7 @@ Patch Agentic OS (selain ini, file identik dengan upstream):
 - P3 `webview-ui/src/main.tsx`: `initBrowserMock()` dijalankan di semua build browser (bukan hanya dev) agar asset di-decode di browser.
 - P4 `webview-ui/src/App.tsx`: efek `dispatchMockMessages()` dihapus (beserta import `isBrowserRuntime` yang jadi tak terpakai); asset dikirim `HermesTransport`.
 - P5 `webview-ui/src/browserMock.ts`: tambah `export function getMockPayload()` dan `export type { MockPayload }`.
+- P6 `webview-ui/src/main.tsx`: merender `AosShell` (`apps/office/src/shell`) yang membungkus `App` dengan dock, HUD, dan laci kanban.
+- P7 `webview-ui/src/index.css`: `@source "../../../../src"` agar Tailwind memindai kode Agentic OS di luar root Vite.
 
 Upgrade: clone commit baru upstream, salin ulang `core/src` dan `webview-ui` (tanpa `test/`), lalu terapkan ulang P1–P5.

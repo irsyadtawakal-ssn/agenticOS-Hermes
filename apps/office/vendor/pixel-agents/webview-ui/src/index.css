@@ -1,4 +1,6 @@
 @import 'tailwindcss';
+/* Agentic OS (NOTICE P7): also scan the dock/HUD shell outside the Vite root. */
+@source "../../../../src";
 
 @font-face {
   font-family: 'FS Pixel Sans';
