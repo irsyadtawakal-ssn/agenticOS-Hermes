@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { openCoreDb } from '../src/db.js';
 import { createHub } from '../src/hub.js';
-import { buildServer } from '../src/server.js';
+import { buildServer, type UpstreamSocket } from '../src/server.js';
 
 const event = {
   id: 'f'.repeat(32), ts: 1790000000000, type: 'tool.started', profile: 'dev', session_id: 's', task_id: null,
@@ -257,5 +257,84 @@ describe('kanban actions (M5a)', () => {
     expect(bad.statusCode).toBe(502);
     expect(readdirSync(root)).toHaveLength(1);
     expect((await app.inject({ method: 'POST', url: '/v1/kanban', payload: { title: '', assignee: 'dev' }, headers: { authorization: 'Bearer ut' } })).statusCode).toBe(400);
+  });
+});
+
+class FakeUpstream implements UpstreamSocket {
+  onopen: (() => void) | null = null;
+  onmessage: ((e: { data: unknown }) => void) | null = null;
+  onclose: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  sent: string[] = [];
+  closed = false;
+  send(data: string) {
+    this.sent.push(data);
+  }
+  close() {
+    this.closed = true;
+  }
+}
+
+async function makeChat() {
+  const upstreams: FakeUpstream[] = [];
+  app = await buildServer({
+    db: openCoreDb(':memory:'),
+    bridgeToken: 'bt',
+    uiToken: 'ut',
+    approverToken: 'at',
+    hub: createHub(),
+    kanban: () => ({ tasks: [], runs: [] }),
+    chat: {
+      connect: () => {
+        const u = new FakeUpstream();
+        upstreams.push(u);
+        return u;
+      },
+      context: { profiles: ['chief'], chatRoot: join('C:', 'chat'), known: () => new Set(), remember: () => {} },
+    },
+  });
+  await app.ready();
+  return upstreams;
+}
+
+const nextMessage = (ws: { once(event: 'message', cb: (data: Buffer) => void): unknown }) =>
+  new Promise<unknown>((resolve) => ws.once('message', (data) => resolve(JSON.parse(String(data)))));
+
+describe('/v1/chat relay', () => {
+  it('queues client frames until serve opens and filters them', async () => {
+    const upstreams = await makeChat();
+    const ws = await app!.injectWS('/v1/chat?token=ut');
+    ws.send(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'session.create', params: { profile: 'chief', cwd: join('D:', 'MIT') } }));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(upstreams[0].sent).toEqual([]);
+    upstreams[0].onopen?.();
+    expect(JSON.parse(upstreams[0].sent[0])).toMatchObject({ method: 'session.create', params: { cwd: join('C:', 'chat', 'chief') } });
+    const refused = nextMessage(ws);
+    ws.send(JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'shell.exec', params: { command: 'dir' } }));
+    expect(await refused).toMatchObject({ id: 2, error: { code: -32601 } });
+    expect(upstreams[0].sent).toHaveLength(1);
+    const event = nextMessage(ws);
+    upstreams[0].onmessage?.({ data: JSON.stringify({ jsonrpc: '2.0', method: 'event', params: { type: 'gateway.ready' } }) });
+    expect(await event).toMatchObject({ method: 'event', params: { type: 'gateway.ready' } });
+    ws.terminate();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(upstreams[0].closed).toBe(true);
+  });
+
+  it('closes with 4502 when serve drops', async () => {
+    const upstreams = await makeChat();
+    const ws = await app!.injectWS('/v1/chat?token=ut');
+    const closed = new Promise<number>((resolve) => ws.once('close', (code: number) => resolve(code)));
+    upstreams[0].onclose?.();
+    expect(await closed).toBe(4502);
+  });
+
+  it('closes with 4503 when serve is disabled and rejects bad tokens', async () => {
+    await make();
+    await app!.ready();
+    const ws = await app!.injectWS('/v1/chat?token=ut');
+    const code = await new Promise<number>((resolve) => ws.once('close', (c: number) => resolve(c)));
+    expect(code).toBe(4503);
+    await expect(app!.injectWS('/v1/chat?token=wrong')).rejects.toThrow();
   });
 });

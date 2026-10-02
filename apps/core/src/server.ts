@@ -15,6 +15,7 @@ import {
   GrantMatchSchema,
   listApprovals,
 } from './approvals.js';
+import { ChatRelay, type RelayContext } from './chatRelay.js';
 import { costSummary, dailyCosts } from './costs.js';
 import type { Db } from './db.js';
 import { type AosEvent, ingestEvents, recentEvents } from './events.js';
@@ -35,6 +36,17 @@ import {
 } from './office.js';
 import { listAgentStates } from './state.js';
 
+export interface UpstreamSocket {
+  onopen: (() => void) | null;
+  onmessage: ((e: { data: unknown }) => void) | null;
+  onclose: (() => void) | null;
+  onerror: (() => void) | null;
+  send(data: string): void;
+  close(): void;
+}
+
+const MAX_QUEUED_FRAMES = 100;
+
 export interface ServerDeps {
   db: Db;
   bridgeToken: string;
@@ -51,6 +63,7 @@ export interface ServerDeps {
   timeZone?: string;
   runHermes?: RunHermes;
   workspacesRoot?: string;
+  chat?: { connect(): UpstreamSocket; context: RelayContext };
 }
 
 function safeEqual(a: string, b: string): boolean {
@@ -166,6 +179,50 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   app.get('/v1/stream', { websocket: true, preHandler: requireUi }, (socket) => {
     const off = deps.hub.subscribe((message) => socket.send(message));
     socket.on('close', off);
+  });
+
+  app.get('/v1/chat', { websocket: true, preHandler: requireUi }, (socket) => {
+    if (!deps.chat) {
+      socket.close(4503, 'hermes serve nonaktif');
+      return;
+    }
+    const relay = new ChatRelay(deps.chat.context);
+    const upstream = deps.chat.connect();
+    const queue: string[] = [];
+    let open = false;
+    let done = false;
+    const toClient = (frame?: string) => {
+      if (frame && !done) socket.send(frame);
+    };
+    const toServer = (frame?: string) => {
+      if (!frame) return;
+      if (open) upstream.send(frame);
+      else if (queue.length < MAX_QUEUED_FRAMES) queue.push(frame);
+    };
+    upstream.onopen = () => {
+      open = true;
+      for (const frame of queue.splice(0)) upstream.send(frame);
+    };
+    upstream.onmessage = (e) => {
+      const out = relay.fromServer(String(e.data));
+      toServer(out.toServer);
+      toClient(out.toClient);
+    };
+    upstream.onerror = () => {};
+    upstream.onclose = () => {
+      if (done) return;
+      done = true;
+      socket.close(4502, 'hermes serve terputus');
+    };
+    socket.on('message', (data: Buffer) => {
+      const out = relay.fromClient(String(data));
+      toServer(out.toServer);
+      toClient(out.toClient);
+    });
+    socket.on('close', () => {
+      done = true;
+      upstream.close();
+    });
   });
 
   app.get('/v1/health/components', { preHandler: requireUi }, async () =>

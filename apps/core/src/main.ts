@@ -1,7 +1,8 @@
-import { execFile } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
-import { loadCoreConfig } from './config.js';
+import { execFile, spawn } from 'node:child_process';
+import { existsSync, mkdirSync, openSync, readFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { knownChatSessions, rememberChatSession } from './chatSessions.js';
+import { loadCoreConfig, PROFILES } from './config.js';
 import { syncUsage } from './costs.js';
 import { openCoreDb } from './db.js';
 import { type HealthDeps, probeHealth } from './health.js';
@@ -10,7 +11,8 @@ import { createHub } from './hub.js';
 import { diffTasks, readKanban, type KanbanSnapshot } from './kanban.js';
 import { createNotifierFromFile } from './notify.js';
 import { createReactions } from './reactions.js';
-import { buildServer } from './server.js';
+import { serveLaunch, superviseServe } from './serve.js';
+import { buildServer, type ServerDeps, type UpstreamSocket } from './server.js';
 
 const repoRoot = resolve(import.meta.dirname, '../../..');
 const envFile = join(repoRoot, '.env.local');
@@ -97,6 +99,46 @@ setInterval(() => safely('costs', refreshCosts), 30_000);
 setInterval(() => background('expire', reactions.expireTick()), 60_000);
 setInterval(() => background('health', refreshHealth()), 30_000);
 
+let chat: ServerDeps['chat'];
+if (config.serveToken && config.servePort) {
+  const port = config.servePort;
+  for (const profile of PROFILES) mkdirSync(join(config.chatRoot, profile), { recursive: true });
+  mkdirSync(config.serveLockDir, { recursive: true });
+  const serveLog = openSync(join(dirname(config.dbPath), 'serve.log'), 'a');
+  const launch = serveLaunch(
+    {
+      hermesExe: config.hermesExe,
+      hermesHome: config.hermesHome,
+      port,
+      token: config.serveToken,
+      lockDir: config.serveLockDir,
+      cwd: config.chatRoot,
+      parentPid: process.pid,
+    },
+    process.env,
+  );
+  const supervisor = superviseServe(launch, {
+    spawn: (l) => spawn(l.exe, l.args, { env: l.env, cwd: l.cwd, stdio: ['ignore', serveLog, serveLog], windowsHide: true }),
+    log,
+    now: Date.now,
+  });
+  process.on('exit', () => supervisor.stop());
+  const upstreamUrl = `ws://127.0.0.1:${port}/api/ws?token=${encodeURIComponent(config.serveToken)}`;
+  const origin = `http://127.0.0.1:${port}`;
+  // Node 22's global WebSocket (undici) accepts an init object with headers; serve requires a loopback Origin.
+  const NodeWebSocket = (globalThis as unknown as { WebSocket: new (url: string, init: { headers: Record<string, string> }) => UpstreamSocket }).WebSocket;
+  chat = {
+    connect: () => new NodeWebSocket(upstreamUrl, { headers: { Origin: origin } }),
+    context: {
+      profiles: PROFILES,
+      chatRoot: config.chatRoot,
+      known: (profile) => knownChatSessions(db, profile),
+      remember: (profile, storedId) => rememberChatSession(db, profile, storedId, Date.now()),
+    },
+  };
+  log(`hermes serve supervised on 127.0.0.1:${port} (lock dir ${config.serveLockDir})`);
+}
+
 const app = await buildServer({
   db,
   bridgeToken: config.bridgeToken,
@@ -111,6 +153,7 @@ const app = await buildServer({
   timeZone: config.timeZone,
   runHermes,
   workspacesRoot: config.workspacesRoot,
+  chat,
 });
 await app.listen({ host: config.host, port: config.port });
 console.log(`[aos-core] listening on http://${config.host}:${config.port} (db ${config.dbPath})`);
