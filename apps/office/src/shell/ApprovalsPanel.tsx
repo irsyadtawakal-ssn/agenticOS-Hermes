@@ -22,7 +22,7 @@ export function ApprovalsPanel() {
   }
 
   return (
-    <div role="dialog" aria-label="Kotak masuk approval" className="fixed bottom-56 left-12 z-40 w-[560px] max-h-[60vh] overflow-auto pixel-panel p-12 flex flex-col gap-12">
+    <div role="dialog" aria-label="Kotak masuk approval" className="fixed bottom-56 left-12 right-12 z-40 max-w-[560px] max-h-[60vh] overflow-auto pixel-panel p-12 flex flex-col gap-12 whitespace-normal">
       <div className="flex items-center justify-between">
         <strong>Approval menunggu ({approvals.length})</strong>
         <Button size="sm" variant="ghost" onClick={() => shell.toggleApprovals()}>

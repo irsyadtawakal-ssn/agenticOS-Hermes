@@ -13,7 +13,7 @@ export function Hud() {
   const costsOpen = useShell((s) => s.costsOpen);
   const waiting = approvals.length > 0;
   return (
-    <div className="h-full flex items-center gap-16 px-12 bg-bg-dark border-t-2 border-border text-sm">
+    <div className="h-full flex items-center gap-16 px-12 bg-bg-dark border-t-2 border-border text-sm whitespace-nowrap overflow-x-auto [scrollbar-width:thin]">
       <button
         type="button"
         onClick={() => shell.toggleApprovals()}
@@ -34,7 +34,7 @@ export function Hud() {
       <button type="button" onClick={() => shell.toggleDrawer()} className="px-8 py-2 border-2 border-transparent cursor-pointer hover:bg-btn-hover">
         ▤ Kanban
       </button>
-      <ul className="flex items-center gap-10" aria-label="Kesehatan sistem">
+      <ul className="flex items-center gap-10 shrink-0" aria-label="Kesehatan sistem">
         {health.map((c) => (
           <li key={c.id} className="flex items-center gap-4" title={`${c.label}: ${c.detail}`}>
             <span aria-hidden="true" className={`inline-block w-8 h-8 ${DOT[c.status]}`} />
@@ -45,7 +45,7 @@ export function Hud() {
           </li>
         ))}
       </ul>
-      <span className="ml-auto text-text-muted">1–5 agent · A approval · B kanban · Esc tutup</span>
+      <span className="ml-auto pl-16 text-text-muted">1–5 agent · A approval · B kanban · Esc tutup</span>
       {approvalsOpen && <ApprovalsPanel />}
       {costsOpen && <CostPanel />}
     </div>

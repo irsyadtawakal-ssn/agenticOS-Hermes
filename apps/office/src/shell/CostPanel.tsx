@@ -35,7 +35,7 @@ export function CostPanel() {
   const costs = useShell((s) => s.costs);
   const daily = useShell((s) => s.daily);
   return (
-    <div role="dialog" aria-label="Rincian biaya" className="fixed bottom-56 left-200 z-40 w-[520px] max-h-[60vh] overflow-auto pixel-panel p-12 flex flex-col gap-12 text-sm">
+    <div role="dialog" aria-label="Rincian biaya" className="fixed bottom-56 left-12 right-12 z-40 max-w-[520px] max-h-[60vh] overflow-auto pixel-panel p-12 flex flex-col gap-12 text-sm whitespace-normal">
       <div className="flex items-center justify-between">
         <strong>Biaya hari ini {costs ? formatUsd(costs.total.cost_usd) : '…'}</strong>
         <Button size="sm" variant="ghost" onClick={() => shell.toggleCosts()}>

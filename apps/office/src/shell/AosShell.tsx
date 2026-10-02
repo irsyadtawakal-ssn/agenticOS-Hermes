@@ -53,7 +53,9 @@ export default function AosShell() {
       style={{ gridTemplateColumns: selected ? 'minmax(0, 1fr) 380px' : 'minmax(0, 1fr)', gridTemplateRows: 'minmax(0, 1fr) 48px' }}
     >
       <div className="relative min-w-0 min-h-0">
-        <App />
+        <div className="isolate h-full">
+          <App />
+        </div>
         <KanbanDrawer />
       </div>
       {selected && (
