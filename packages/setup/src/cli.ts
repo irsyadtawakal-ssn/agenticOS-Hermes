@@ -6,6 +6,7 @@ import { realExec } from './exec.js';
 import { resolveHermesHome } from './hermesHome.js';
 import { loadRoster, routerKeysFromEnv, tierModelsFromEnv } from './profiles.js';
 import { runDoctor } from './doctor.js';
+import { officeLoginUrl, officePublicUrl, openInBrowser } from './office.js';
 import { smokeKanban, smokeChief } from './smoke.js';
 
 const repoRoot = resolve(import.meta.dirname, '../../..');
@@ -87,8 +88,13 @@ async function main(cmd: string | undefined): Promise<number> {
       console.log(`${result.ok ? 'PASS' : 'FAIL'} ${result.taskId} -> ${result.status}`);
       return result.ok ? 0 : 1;
     }
+    case 'office': {
+      await openInBrowser(officeLoginUrl(coreUrl, required('AOS_UI_TOKEN')), realExec);
+      console.log(`Office dibuka di browser: ${officePublicUrl(coreUrl)}`);
+      return 0;
+    }
     default:
-      console.error('Usage: pnpm aos <apply-profiles|doctor|smoke-kanban|smoke-chief>');
+      console.error('Usage: pnpm aos <apply-profiles|doctor|smoke-kanban|smoke-chief|office>');
       return 2;
   }
 }
