@@ -73,7 +73,7 @@ def test_list_passes_filters(monkeypatch):
     assert calls == [["kanban", "list", "--status=ready", "--assignee=researcher"]]
 
 
-def test_register_exposes_both_tools():
+def test_register_exposes_all_office_tools():
     mod = load()
     registered = []
 
@@ -85,7 +85,69 @@ def test_register_exposes_both_tools():
     assert registered == [
         ("office_create_task", "aos_office", "office_create_task"),
         ("office_list_tasks", "aos_office", "office_list_tasks"),
+        ("office_list_approvals", "aos_office", "office_list_approvals"),
+        ("office_approve", "aos_office", "office_approve"),
     ]
+
+
+def _with_config(mod, tmp_path, monkeypatch, token="at"):
+    (tmp_path / "config.json").write_text(json.dumps({"core_url": "http://core.test:7400/", "token": token}), encoding="utf-8")
+    monkeypatch.setattr(mod, "_plugin_dir", lambda: tmp_path)
+
+
+def test_list_approvals_calls_core_with_the_approver_token(monkeypatch, tmp_path):
+    mod = load()
+    _with_config(mod, tmp_path, monkeypatch)
+    seen = []
+    monkeypatch.setattr(mod, "_http", lambda method, url, token, body=None: (seen.append((method, url, token, body)) or (200, [
+        {"id": "abc234", "profile": "dev", "task_id": "t_1", "tool": "terminal", "args_preview": "{}", "rule_id": "git-push", "status": "pending", "created_at": 1, "args_hash": "x"},
+    ])))
+    out = json.loads(mod.handle_list_approvals({}))
+    assert seen == [("GET", "http://core.test:7400/v1/approvals?status=pending", "at", None)]
+    assert out == {"success": True, "approvals": [{"id": "abc234", "profile": "dev", "task_id": "t_1", "tool": "terminal", "args_preview": "{}", "rule_id": "git-push", "status": "pending", "created_at": 1}]}
+    assert json.loads(mod.handle_list_approvals({"status": "nope"}))["success"] is False
+
+
+def test_approve_posts_the_exact_decision(monkeypatch, tmp_path):
+    mod = load()
+    _with_config(mod, tmp_path, monkeypatch)
+    seen = []
+    monkeypatch.setattr(mod, "_http", lambda method, url, token, body=None: (seen.append((method, url, body)) or (200, {"id": "abc234", "status": "approved", "tool": "terminal", "task_id": "t_1", "args_hash": "x"})))
+    out = json.loads(mod.handle_approve({"approval_id": "abc234", "decision": "approve", "note": "ok"}))
+    assert seen == [("POST", "http://core.test:7400/v1/approvals/abc234/decision", {"decision": "approve", "note": "ok", "by": "chief"})]
+    assert out == {"success": True, "approval": {"id": "abc234", "status": "approved", "tool": "terminal", "task_id": "t_1"}}
+    json.loads(mod.handle_approve({"approval_id": "abc234", "decision": "deny"}))
+    assert seen[-1][2] == {"decision": "deny", "by": "chief"}
+
+
+def test_approve_rejects_bad_input_without_calling_core(monkeypatch, tmp_path):
+    mod = load()
+    _with_config(mod, tmp_path, monkeypatch)
+    monkeypatch.setattr(mod, "_http", lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not call core")))
+    for params in (
+        {"approval_id": "abc234", "decision": "Approve"},
+        {"approval_id": "abc234", "decision": "approve "},
+        {"approval_id": "../x", "decision": "approve"},
+        {"approval_id": "abc23", "decision": "approve"},
+        "not-a-dict",
+    ):
+        assert json.loads(mod.handle_approve(params))["success"] is False
+
+
+def test_approve_reports_core_errors(monkeypatch, tmp_path):
+    mod = load()
+    _with_config(mod, tmp_path, monkeypatch)
+    for code, text in ((404, "not found"), (409, "no longer pending"), (401, "HTTP 401"), (0, "unreachable")):
+        monkeypatch.setattr(mod, "_http", lambda *a, code=code, **k: (code, {"error": "unreachable"} if code == 0 else {"error": "x"}))
+        out = json.loads(mod.handle_approve({"approval_id": "abc234", "decision": "approve"}))
+        assert out["success"] is False and text in out["error"]
+
+
+def test_approve_needs_an_approver_token(monkeypatch, tmp_path):
+    mod = load()
+    _with_config(mod, tmp_path, monkeypatch, token="")
+    out = json.loads(mod.handle_approve({"approval_id": "abc234", "decision": "approve"}))
+    assert out["success"] is False and "token" in out["error"]
 
 
 def test_create_treats_user_text_as_data_not_flags(monkeypatch, tmp_path):
