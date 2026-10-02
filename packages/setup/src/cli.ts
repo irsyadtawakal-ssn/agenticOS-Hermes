@@ -94,8 +94,18 @@ async function main(cmd: string | undefined): Promise<number> {
       console.log(`Office dibuka di browser: ${officePublicUrl(coreUrl)}`);
       return 0;
     }
+    case 'backup': {
+      const res = await fetch(`${coreUrl}/v1/backup`, { method: 'POST', headers: { authorization: `Bearer ${required('AOS_UI_TOKEN')}` } });
+      const body = (await res.json()) as { file?: string; files?: number; failed?: string[]; error?: string };
+      if (!res.ok) {
+        console.error(`Backup gagal: ${body.error ?? res.status}`);
+        return 1;
+      }
+      console.log(`Backup: ${body.file} (${body.files} file, ${body.failed?.length ?? 0} gagal)`);
+      return 0;
+    }
     default:
-      console.error('Usage: pnpm aos <apply-profiles|doctor|smoke-kanban|smoke-chief|office>');
+      console.error('Usage: pnpm aos <apply-profiles|doctor|smoke-kanban|smoke-chief|office|backup|dogfood-report>');
       return 2;
   }
 }

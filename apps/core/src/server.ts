@@ -15,6 +15,7 @@ import {
   GrantMatchSchema,
   listApprovals,
 } from './approvals.js';
+import type { BackupResult } from './backup.js';
 import { buildBriefing } from './briefing.js';
 import { ChatRelay, type RelayContext } from './chatRelay.js';
 import { costSummary, dailyCosts } from './costs.js';
@@ -65,6 +66,7 @@ export interface ServerDeps {
   runHermes?: RunHermes;
   workspacesRoot?: string;
   chat?: { connect(): UpstreamSocket; context: RelayContext };
+  runBackup?: () => Promise<BackupResult>;
 }
 
 function safeEqual(a: string, b: string): boolean {
@@ -234,6 +236,15 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     const days = Number((req.query as Record<string, string | undefined>).days ?? 7);
     if (!Number.isInteger(days) || days < 1 || days > 31) return reply.code(400).send({ error: 'days must be 1-31' });
     return dailyCosts(deps.db, days, now(), deps.timeZone ?? 'Asia/Jakarta');
+  });
+
+  app.post('/v1/backup', { preHandler: requireOwner }, async (_req, reply) => {
+    if (!deps.runBackup) return reply.code(503).send({ error: 'backup tidak tersedia' });
+    try {
+      return await deps.runBackup();
+    } catch (err) {
+      return reply.code(500).send({ error: (err as Error).message });
+    }
   });
 
   app.get('/v1/briefing', { preHandler: requireBridgeOrOwner }, async () => {

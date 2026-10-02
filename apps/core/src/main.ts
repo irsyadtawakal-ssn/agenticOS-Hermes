@@ -2,6 +2,7 @@ import { execFile, spawn } from 'node:child_process';
 import { existsSync, mkdirSync, openSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { healthAlerts, newHealthAlertState, stuckCardAlerts } from './alerts.js';
+import { type BackupResult, backupDue, latestBackupMs, runBackup } from './backup.js';
 import { knownChatSessions, rememberChatSession } from './chatSessions.js';
 import { loadCoreConfig, PROFILES } from './config.js';
 import { syncUsage } from './costs.js';
@@ -110,6 +111,43 @@ setInterval(() => safely('costs', refreshCosts), 30_000);
 setInterval(() => background('expire', reactions.expireTick()), 60_000);
 setInterval(() => background('health', refreshHealth()), 30_000);
 
+const backupsDir = process.env.AOS_BACKUP_DIR?.trim() || join(dirname(config.dbPath), '..', 'backups');
+let backupRunning: Promise<BackupResult> | null = null;
+function backupNow(): Promise<BackupResult> {
+  backupRunning ??= runBackup({
+    hermesHome: config.hermesHome,
+    backupsDir,
+    coreDb: db,
+    now: Date.now(),
+    timeZone: config.timeZone,
+    zip: (staging, zipFile) =>
+      new Promise((done, fail) => {
+        execFile('tar.exe', ['-a', '-c', '-f', zipFile, '-C', staging, '.'], { windowsHide: true, timeout: 600_000 }, (err) =>
+          err ? fail(err) : done(),
+        );
+      }),
+  })
+    .then((r) => {
+      log(`backup ${r.file}: ${r.files} file, ${r.failed.length} gagal`);
+      if (r.failed.length > 0) void notifier.send(`⚠️ Backup selesai dengan ${r.failed.length} file gagal: ${r.failed.slice(0, 3).join(', ')}`);
+      return r;
+    })
+    .catch((err: unknown) => {
+      void notifier.send(`⚠️ Backup harian gagal: ${(err as Error).message}`);
+      throw err;
+    })
+    .finally(() => {
+      backupRunning = null;
+    });
+  return backupRunning;
+}
+function backupTick(): void {
+  if (backupRunning || !backupDue(latestBackupMs(backupsDir), Date.now(), config.timeZone)) return;
+  background('backup', backupNow().then(() => undefined));
+}
+setTimeout(backupTick, 120_000);
+setInterval(backupTick, 600_000);
+
 let chat: ServerDeps['chat'];
 if (config.serveToken && config.servePort) {
   const port = config.servePort;
@@ -172,6 +210,7 @@ const app = await buildServer({
   runHermes,
   workspacesRoot: config.workspacesRoot,
   chat,
+  runBackup: backupNow,
 });
 await app.listen({ host: config.host, port: config.port });
 console.log(`[aos-core] listening on http://${config.host}:${config.port} (db ${config.dbPath})`);
