@@ -63,7 +63,7 @@ export default function AosShell() {
           <Dock profile={selected} />
         </div>
       )}
-      <div style={{ gridColumn: '1 / -1' }}>
+      <div className="min-w-0" style={{ gridColumn: '1 / -1' }}>
         <Hud />
       </div>
       {toast && (
