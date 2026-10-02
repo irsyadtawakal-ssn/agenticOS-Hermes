@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import YAML from 'yaml';
 import type { Exec } from './exec.js';
@@ -27,6 +27,9 @@ export interface ApplyOptions {
   routerKeys?: Record<string, string>;
   pluginSources?: Record<string, string>;
   bridge?: { coreUrl: string; token: string };
+  policyTemplate?: string;
+  workspacesRoot?: string;
+  approver?: { coreUrl: string; token: string };
 }
 
 export function profileDir(home: string, name: string): string {
@@ -49,8 +52,18 @@ function writeEnv(path: string, updates: Record<string, string>, stamp: string):
   writeFileSync(path, mergeEnv(text, updates), 'utf8');
 }
 
-// Copy only these files: the plugin dir also holds runtime state (spool/, config.json) that must survive re-apply.
-const PLUGIN_FILES = ['plugin.yaml', '__init__.py'];
+// Copy code only: the plugin dir also holds runtime state (spool/, config.json, policy.json) that apply writes itself.
+export function pluginFiles(source: string): string[] {
+  return readdirSync(source)
+    .filter((f) => f === 'plugin.yaml' || f.endsWith('.py'))
+    .sort();
+}
+
+export function buildPolicy(templateText: string, workspacesRoot: string): string {
+  const doc = JSON.parse(templateText) as Record<string, unknown>;
+  if (doc.version !== 1 || !Array.isArray(doc.rules)) throw new Error('policy template must have version 1 and a rules array');
+  return `${JSON.stringify({ ...doc, workspaces_root: workspacesRoot }, null, 2)}\n`;
+}
 
 async function installPlugins(o: ApplyOptions, spec: ProfileSpec, dir: string): Promise<string | null> {
   if (!o.pluginSources) return null;
@@ -60,9 +73,15 @@ async function installPlugins(o: ApplyOptions, spec: ProfileSpec, dir: string): 
     if (!source) throw new Error(`no plugin source configured for ${name}`);
     const target = join(dir, 'plugins', name);
     mkdirSync(target, { recursive: true });
-    for (const file of PLUGIN_FILES) copyFileSync(join(source, file), join(target, file));
+    for (const file of pluginFiles(source)) copyFileSync(join(source, file), join(target, file));
     if (name === 'os-bridge' && o.bridge) {
       writeFileSync(join(target, 'config.json'), JSON.stringify({ core_url: o.bridge.coreUrl, token: o.bridge.token }), 'utf8');
+    }
+    if (name === 'os-bridge' && o.policyTemplate) {
+      writeFileSync(join(target, 'policy.json'), buildPolicy(o.policyTemplate, o.workspacesRoot ?? join(o.home, 'workspaces')), 'utf8');
+    }
+    if (name === 'aos-office-tools' && o.approver) {
+      writeFileSync(join(target, 'config.json'), JSON.stringify({ core_url: o.approver.coreUrl, token: o.approver.token }), 'utf8');
     }
     const r = await o.exec('hermes', ['-p', spec.name, 'plugins', 'enable', name], { timeoutMs: 120_000 });
     if (r.code !== 0) throw new Error(`hermes -p ${spec.name} plugins enable ${name} failed: ${(r.stderr || r.stdout).trim()}`);

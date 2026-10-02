@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import YAML from 'yaml';
-import { applyProfiles, profileDir } from '../src/apply.js';
+import { applyProfiles, buildPolicy, pluginFiles, profileDir } from '../src/apply.js';
 import type { Exec } from '../src/exec.js';
 import { loadRoster } from '../src/profiles.js';
 
@@ -17,6 +17,8 @@ function pluginSources(): Record<string, string> {
     writeFileSync(join(root, name, '__init__.py'), `# ${name}\n`);
     mkdirSync(join(root, name, '__pycache__'), { recursive: true });
   }
+  writeFileSync(join(root, 'os-bridge', 'policy.py'), '# policy\n');
+  writeFileSync(join(root, 'os-bridge', 'notes.txt'), 'not code\n');
   return { 'os-bridge': join(root, 'os-bridge'), 'aos-office-tools': join(root, 'aos-office-tools') };
 }
 
@@ -113,6 +115,31 @@ describe('applyProfiles', () => {
     await expect(
       applyProfiles({ ...opts, exec, pluginSources: pluginSources(), bridge: { coreUrl: 'u', token: 't' } }),
     ).rejects.toThrow(/plugins enable os-bridge failed: nope/);
+  });
+
+  it('copies plugin code, writes the policy with the workspaces root and the chief approver config', async () => {
+    const { home, opts } = setup();
+    const template = JSON.stringify({ version: 1, default: 'allow', workspaces_root: '', rules: [{ id: 'x', action: 'deny', match: {} }] });
+    await applyProfiles({ ...opts, pluginSources: pluginSources(), policyTemplate: template, approver: { coreUrl: 'http://127.0.0.1:7400', token: 'appr' } });
+    const bridge = join(profileDir(home, 'chief'), 'plugins', 'os-bridge');
+    expect(readFileSync(join(bridge, 'policy.py'), 'utf8')).toBe('# policy\n');
+    expect(existsSync(join(bridge, 'notes.txt'))).toBe(false);
+    expect(existsSync(join(bridge, '__pycache__'))).toBe(false);
+    const policy = JSON.parse(readFileSync(join(bridge, 'policy.json'), 'utf8'));
+    expect(policy.workspaces_root).toBe(join(home, 'workspaces'));
+    expect(policy.rules).toHaveLength(1);
+    const office = JSON.parse(readFileSync(join(profileDir(home, 'chief'), 'plugins', 'aos-office-tools', 'config.json'), 'utf8'));
+    expect(office).toEqual({ core_url: 'http://127.0.0.1:7400', token: 'appr' });
+  });
+
+  it('honours an explicit workspaces root and rejects an invalid policy template', () => {
+    expect(JSON.parse(buildPolicy('{"version":1,"rules":[]}', 'E:\\ws')).workspaces_root).toBe('E:\\ws');
+    expect(() => buildPolicy('{"version":2}', 'E:\\ws')).toThrow(/version 1/);
+  });
+
+  it('lists only plugin.yaml and python files', () => {
+    const src = pluginSources()['os-bridge'];
+    expect(pluginFiles(src)).toEqual(['__init__.py', 'plugin.yaml', 'policy.py']);
   });
 
   it('leaves an existing os-bridge spool untouched when re-applied', async () => {

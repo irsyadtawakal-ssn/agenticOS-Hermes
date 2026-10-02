@@ -100,7 +100,13 @@ describe('buildRootOverlay', () => {
         failure_limit: 2,
       },
       cron: { catch_up_missed: true },
+      approvals: { mode: 'manual', timeout: 600, cron_mode: 'deny', single_query_mode: 'deny', unattended_mode: 'deny' },
     });
+  });
+  it('forces the manual Hermes approval gate everywhere', () => {
+    const expected = { mode: 'manual', timeout: 600, cron_mode: 'deny', single_query_mode: 'deny', unattended_mode: 'deny' };
+    for (const spec of roster) expect(buildOverlay(spec, roster, BASE).approvals).toEqual(expected);
+    expect(buildRootOverlay(roster, BASE).approvals).toEqual(expected);
   });
   it('uses the mapped worker model', () => {
     const map = { 'os-brain': 'B', 'os-worker': 'W', 'os-private': 'P' };

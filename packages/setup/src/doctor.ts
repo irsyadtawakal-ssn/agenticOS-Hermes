@@ -5,7 +5,7 @@ import { profileDir } from './apply.js';
 import type { CheckResult } from './check.js';
 import type { Exec } from './exec.js';
 import { parseInstallDir, parseLock } from './hermesHome.js';
-import { DEFAULT_TIER_MODELS, parseEnv, pluginsFor, type ProfileSpec, type TierModels } from './profiles.js';
+import { APPROVALS_CONFIG, DEFAULT_TIER_MODELS, parseEnv, pluginsFor, type ProfileSpec, type TierModels } from './profiles.js';
 import { checkRouter } from './router.js';
 
 export const FORBIDDEN_ENV_KEYS = [
@@ -19,7 +19,19 @@ export const FORBIDDEN_ENV_KEYS = [
   'MISTRAL_API_KEY',
   'NOUS_API_KEY',
   'OPENAI_BASE_URL',
+  'HERMES_YOLO_MODE',
 ];
+
+export function checkApprovals(cfg: Record<string, unknown> | undefined, label: string): CheckResult {
+  const a = cfg ?? {};
+  const keys = ['mode', 'cron_mode', 'single_query_mode', 'unattended_mode'] as const;
+  const wrong = keys.filter((k) => a[k] !== APPROVALS_CONFIG[k]).map((k) => `${k}=${String(a[k])}`);
+  return {
+    name: `${label}:approvals`,
+    ok: wrong.length === 0,
+    detail: wrong.length ? `expected manual + deny, got ${wrong.join(', ')}` : 'manual gate; cron/single-query/unattended deny',
+  };
+}
 
 export interface DoctorConfig {
   home: string;
@@ -110,6 +122,7 @@ export function checkProfile(
       detail: env.OPENAI_API_KEY === expectedKey ? 'OPENAI_API_KEY is the 9Router key' : 'OPENAI_API_KEY is not the 9Router key',
     },
     { name: `${label}:soul`, ok: existsSync(join(dir, 'SOUL.md')), detail: existsSync(join(dir, 'SOUL.md')) ? 'SOUL.md present' : 'SOUL.md missing' },
+    checkApprovals(cfg.approvals, label),
   ];
 
   const pluginProblems: string[] = [];
@@ -122,6 +135,27 @@ export function checkProfile(
     if (!bridgeCfg.token) pluginProblems.push('bridge token missing');
   } catch {
     pluginProblems.push('bridge config.json unreadable');
+  }
+  if (!existsSync(join(dir, 'plugins', 'os-bridge', 'policy.py'))) pluginProblems.push('missing os-bridge/policy.py');
+  try {
+    const policy = JSON.parse(readText(join(dir, 'plugins', 'os-bridge', 'policy.json')) || 'null') as
+      | { version?: number; rules?: unknown[]; workspaces_root?: string }
+      | null;
+    if (!policy || policy.version !== 1 || !Array.isArray(policy.rules) || policy.rules.length === 0) {
+      pluginProblems.push('bridge policy.json missing or invalid');
+    } else if (!policy.workspaces_root) {
+      pluginProblems.push('bridge policy.json has no workspaces_root');
+    }
+  } catch {
+    pluginProblems.push('bridge policy.json unreadable');
+  }
+  if (spec.gateway) {
+    try {
+      const office = JSON.parse(readText(join(dir, 'plugins', 'aos-office-tools', 'config.json')) || '{}') as { token?: string };
+      if (!office.token) pluginProblems.push('office-tools approver token missing');
+    } catch {
+      pluginProblems.push('office-tools config.json unreadable');
+    }
   }
   results.push({
     name: `${label}:plugins`,
@@ -149,6 +183,7 @@ export function checkRootConfig(home: string, routerBaseUrl: string, tierModels:
     { name: 'root:model', ok: modelOk, detail: modelOk ? `${tierModels['os-worker']} via ${routerBaseUrl}` : `model=${JSON.stringify(model)}` },
     { name: 'root:dispatcher', ok: dispatcherOk, detail: dispatcherOk ? 'dispatch_in_gateway, max_in_progress=2, failure_limit=2' : `kanban=${JSON.stringify(kanban)}` },
     { name: 'root:cron-catch-up', ok: cron.catch_up_missed === true, detail: `cron.catch_up_missed=${String(cron.catch_up_missed)}` },
+    checkApprovals(cfg.approvals, 'root'),
   ];
 }
 

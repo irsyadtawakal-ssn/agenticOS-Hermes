@@ -22,7 +22,7 @@ foreach ($p in "CHIEF", "RESEARCHER", "SECRETARY", "CONTENT", "DEV") {
   $v = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($s))
   if ($v) { Set-EnvLine "AOS_ROUTER_KEY_$p" $v }
 }
-foreach ($t in "AOS_BRIDGE_TOKEN", "AOS_UI_TOKEN") {
+foreach ($t in "AOS_BRIDGE_TOKEN", "AOS_UI_TOKEN", "AOS_APPROVER_TOKEN") {
   $has = (Test-Path $EnvFile) -and (Select-String -Path $EnvFile -Pattern "^$t=.+" -Quiet)
   if (-not $has) { Set-EnvLine $t (New-Token) }
 }

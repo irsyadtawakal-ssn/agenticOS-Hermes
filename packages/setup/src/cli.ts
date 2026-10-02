@@ -51,6 +51,9 @@ async function main(cmd: string | undefined): Promise<number> {
         routerKeys,
         pluginSources,
         bridge: { coreUrl, token: required('AOS_BRIDGE_TOKEN') },
+        policyTemplate: readFileSync(join(repoRoot, 'infra/policy/policy.json'), 'utf8'),
+        workspacesRoot: process.env.AOS_WORKSPACES_ROOT?.trim() || undefined,
+        approver: { coreUrl, token: required('AOS_APPROVER_TOKEN') },
       });
       for (const line of log) console.log(line);
       return 0;

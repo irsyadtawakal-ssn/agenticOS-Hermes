@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import YAML from 'yaml';
 import { profileDir } from '../src/apply.js';
-import { checkCore, checkEnvFile, checkGatewayRunning, checkHermesPin, checkProfile, checkRootConfig, runDoctor } from '../src/doctor.js';
+import { checkApprovals, checkCore, checkEnvFile, checkGatewayRunning, checkHermesPin, checkProfile, checkRootConfig, runDoctor } from '../src/doctor.js';
 import type { Exec } from '../src/exec.js';
 import { buildOverlay, buildRootOverlay, loadRoster, pluginsFor } from '../src/profiles.js';
 
@@ -25,6 +25,11 @@ function healthyHome(): string {
       writeFileSync(join(dir, 'plugins', plugin, '__init__.py'), '#\n');
     }
     writeFileSync(join(dir, 'plugins', 'os-bridge', 'config.json'), JSON.stringify({ core_url: 'http://127.0.0.1:7400', token: 'bt' }));
+    writeFileSync(join(dir, 'plugins', 'os-bridge', 'policy.py'), '#\n');
+    writeFileSync(join(dir, 'plugins', 'os-bridge', 'policy.json'), JSON.stringify({ version: 1, workspaces_root: 'D:\\w', rules: [{ id: 'x', action: 'deny', match: {} }] }));
+    if (spec.gateway) {
+      writeFileSync(join(dir, 'plugins', 'aos-office-tools', 'config.json'), JSON.stringify({ core_url: 'http://127.0.0.1:7400', token: 'at' }));
+    }
   }
   writeFileSync(join(home, 'config.yaml'), YAML.stringify(buildRootOverlay(roster, BASE)));
   writeFileSync(join(home, '.env'), '');
@@ -117,6 +122,7 @@ describe('checkProfile', () => {
       ['profile:chief:no-direct-keys', true],
       ['profile:chief:router-key', true],
       ['profile:chief:soul', true],
+      ['profile:chief:approvals', true],
       ['profile:chief:plugins', true],
     ]);
   });
@@ -175,6 +181,49 @@ describe('checkProfile', () => {
   });
 });
 
+describe('approval hardening checks', () => {
+  it('flags a weakened Hermes approval gate', () => {
+    expect(checkApprovals({ mode: 'manual', cron_mode: 'deny', single_query_mode: 'deny', unattended_mode: 'deny' }, 'profile:dev').ok).toBe(true);
+    const off = checkApprovals({ mode: 'off', cron_mode: 'approve' }, 'profile:dev');
+    expect(off).toMatchObject({ name: 'profile:dev:approvals', ok: false });
+    expect(off.detail).toContain('mode=off');
+    expect(checkApprovals(undefined, 'root').ok).toBe(false);
+  });
+
+  it('reports a weakened gate in an applied profile', () => {
+    const home = healthyHome();
+    const dir = profileDir(home, 'researcher');
+    writeFileSync(join(dir, 'config.yaml'), YAML.stringify({ ...buildOverlay(roster[1], roster, BASE), approvals: { mode: 'smart' } }));
+    expect(checkProfile(home, roster[1], BASE, 'rk').find((r) => r.name === 'profile:researcher:approvals')?.ok).toBe(false);
+  });
+
+  it('flags a missing policy, a policy without root and a missing approver token', () => {
+    const home = healthyHome();
+    const chief = profileDir(home, 'chief');
+    rmSync(join(chief, 'plugins', 'os-bridge', 'policy.json'));
+    writeFileSync(join(chief, 'plugins', 'aos-office-tools', 'config.json'), JSON.stringify({ core_url: 'u', token: '' }));
+    const row = checkProfile(home, roster[0], BASE, 'rk').find((r) => r.name === 'profile:chief:plugins');
+    expect(row?.ok).toBe(false);
+    expect(row?.detail).toMatch(/policy\.json missing or invalid/);
+    expect(row?.detail).toMatch(/approver token missing/);
+    const researcher = profileDir(home, 'researcher');
+    writeFileSync(join(researcher, 'plugins', 'os-bridge', 'policy.json'), JSON.stringify({ version: 1, workspaces_root: '', rules: [{ id: 'x', action: 'deny', match: {} }] }));
+    rmSync(join(researcher, 'plugins', 'os-bridge', 'policy.py'));
+    const other = checkProfile(home, roster[1], BASE, 'rk').find((r) => r.name === 'profile:researcher:plugins');
+    expect(other?.detail).toMatch(/no workspaces_root/);
+    expect(other?.detail).toMatch(/missing os-bridge\/policy\.py/);
+  });
+
+  it('flags HERMES_YOLO_MODE in a profile env', () => {
+    const home = healthyHome();
+    writeFileSync(join(profileDir(home, 'researcher'), '.env'), 'OPENAI_API_KEY=rk\nHERMES_YOLO_MODE=1\n');
+    expect(checkProfile(home, roster[1], BASE, 'rk').find((r) => r.name === 'profile:researcher:no-direct-keys')).toMatchObject({
+      ok: false,
+      detail: 'remove: HERMES_YOLO_MODE',
+    });
+  });
+});
+
 describe('checkRootConfig', () => {
   it('passes for the applied root overlay', () => {
     const home = healthyHome();
@@ -182,6 +231,7 @@ describe('checkRootConfig', () => {
       ['root:model', true],
       ['root:dispatcher', true],
       ['root:cron-catch-up', true],
+      ['root:approvals', true],
     ]);
   });
   it('reports a missing root config as one failing row', () => {

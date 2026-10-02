@@ -36,6 +36,14 @@ export function loadRoster(yamlText: string): ProfileSpec[] {
 
 export type TierModels = Record<Tier, string>;
 
+export const APPROVALS_CONFIG = {
+  mode: 'manual',
+  timeout: 600,
+  cron_mode: 'deny',
+  single_query_mode: 'deny',
+  unattended_mode: 'deny',
+} as const;
+
 export const DEFAULT_TIER_MODELS: TierModels = { 'os-brain': 'os-brain', 'os-worker': 'os-worker', 'os-private': 'os-private' };
 
 export function tierModelsFromEnv(env: NodeJS.ProcessEnv): TierModels {
@@ -69,6 +77,7 @@ export function buildOverlay(
       container_memory: isDev ? 4096 : 2048,
     },
     kanban: { dispatch_in_gateway: false },
+    approvals: { ...APPROVALS_CONFIG },
   };
   return overlay;
 }
@@ -85,6 +94,7 @@ export function buildRootOverlay(roster: ProfileSpec[], routerBaseUrl: string, t
       failure_limit: 2,
     },
     cron: { catch_up_missed: true },
+    approvals: { ...APPROVALS_CONFIG },
   };
 }
 
