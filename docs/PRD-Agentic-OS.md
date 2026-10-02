@@ -64,7 +64,7 @@ Developer/entrepreneur solo, memakai Windows, nyaman dengan terminal dan monorep
 
 **Personal Assistant**
 - US-01. Sebagai owner, saya menerima **briefing pagi** di Telegram pukul 07:00 berisi: kartu hari ini per agent, kartu `blocked`/menunggu approval, biaya kemarin per tier, dan topik/berita pilihan.
-- US-02. Saya bisa menulis "ingatkan aku bayar listrik Jumat jam 9" di Telegram → `secretary` membuat reminder, dan saya menerima notifikasi pada waktunya.
+- US-02. Saya bisa menulis "ingatkan aku bayar listrik Jumat jam 9" di Telegram → `secretary` membuat reminder, dan saya menerima notifikasi pada waktunya. *(M6, keputusan owner: reminder dibuat `chief`, karena hanya chief yang punya bot Telegram.)*
 - US-03. Saya bisa melempar ide/tugas mentah ke `chief` ("riset 5 kompetitor postiz, bikin tabel") → muncul sebagai kartu kanban ter-assign ke agent yang tepat.
 - US-04. Jika PC mati saat jadwal briefing, briefing dikirim saat PC menyala kembali (jika masih sebelum 12:00), ditandai "terlambat".
 
@@ -80,7 +80,7 @@ Developer/entrepreneur solo, memakai Windows, nyaman dengan terminal dan monorep
 
 **Biaya**
 - US-11. Saya melihat biaya hari ini secara live di HUD, dan rincian per agent/kartu/tier.
-- US-12. Saya diberi tahu jika satu kartu mengonsumsi token jauh di atas normal, dan kartu itu dihentikan otomatis (circuit breaker).
+- US-12. Saya diberi tahu jika satu kartu mengonsumsi token jauh di atas normal, dan kartu itu dihentikan otomatis (circuit breaker). *(Status M6: sebagian — breaker jumlah tool call/pengulangan aktif; ambang token per kartu butuh key 9Router per profile, owner memilih belum.)*
 
 ---
 
@@ -344,6 +344,10 @@ rules:
 | `health` | Status Core, Hermes gateway (record host-gateway + PID hidup), `hermes serve` (`absent` bila `AOS_SERVE_TOKEN` kosong), 9Router, Docker, Ollama → `ok`/`down`/`absent`; dicek tiap 30 dtk, di-broadcast saat berubah; tampil di HUD (M5a) |
 | `serve` | Spawn `hermes serve --isolated --skip-build --host 127.0.0.1 --port 9129` dengan `HERMES_HOME` Agentic OS, token sesi `AOS_SERVE_TOKEN`, `HERMES_GATEWAY_LOCK_DIR` privat, `HERMES_PARENT_PID` = Core; tanpa `HERMES_DESKTOP`/`AOS_*`; restart backoff 2/5/15/60 dtk (M5b) |
 | `chat-relay` | WS `/v1/chat` (auth UI) ↔ `ws://127.0.0.1:9129/api/ws`: allowlist 12 metode, parameter dibangun ulang (profile, cwd paksa), teks `/…` ditolak, hanya sesi kantor (`chat_sessions`) yang bisa di-list/resume, permintaan server selain `approval`/`clarify` ditolak (M5b) |
+| `briefing` | Ringkasan pagi untuk pre-run script chief: kartu aktif per agent, blocked, izin menunggu, selesai kemarin, biaya kemarin (M6) |
+| `backup` | Backup harian 23:30 / > 26 jam: `HERMES_HOME` tanpa runtime/cache/`.env` + `core.db`, SQLite online backup, zip bsdtar, retensi 14 (M6) |
+| `alerts` | Telegram: komponen down 3 probe berturut-turut + pulih, kartu `running` > 2 jam, backup gagal (M6) |
+| `dogfood` | Tabel `uptime` per jam + laporan gate F1 dari `executions.db` chief, `risk-audit`, latensi izin, hari pemakaian (M6) |
 | `catchup` | Saat start: jika briefing hari ini belum terkirim dan jam < 12:00 → trigger cron briefing sekarang (label "terlambat") |
 | `notify` | Notifikasi Telegram via bot utama: izin diminta/kedaluwarsa, breaker, kartu triage (M3); alert kesehatan & digest biaya menyusul. Ops bot kedua ditunda (ADR-03) |
 
@@ -366,6 +370,9 @@ rules:
 | GET | `/v1/events?profile=&limit=` | office | Event terakhir satu profile (M5a) |
 | GET | `/v1/health/components` | office | Status komponen untuk HUD (M5a) |
 | WS | `/v1/chat` | office | Relay JSON-RPC ke `hermes serve` lewat `chat-relay`; tutup 4503 (serve nonaktif) / 4502 (serve terputus) (M5b) |
+| GET | `/v1/briefing` | pre-run script chief (token bridge) / owner | Ringkasan briefing pagi (M6) |
+| POST | `/v1/backup` | owner (`pnpm aos backup`) | Backup sekarang (M6) |
+| GET | `/v1/dogfood?days=` | owner (`pnpm aos dogfood-report`) | Laporan gate F1, 1–60 hari (M6) |
 | GET | `/v1/health` | publik (tanpa auth) | Status Core (terpasang M2) |
 | GET / PUT | `/v1/office/state`, `/v1/office/state/:key` | office (UI) | Layout / kursi / setting kantor (`layout`, `seats`, `settings`) (M4) |
 | GET | `/office/login?token=` | browser | Token UI valid → cookie httpOnly `aos_ui` → redirect `/office/` (M4) |
@@ -634,12 +641,17 @@ Tipe event yang terpasang (M3): `session.started`, `session.ended`, `llm.started
 | PC sleep/mati | Agent berhenti; data aman di `HERMES_HOME` & `core.db`. Known limitation F1. Rekomendasi: atur power plan agar tidak sleep di jam cron penting |
 | PC menyala kembali | Launcher Startup menyalakan 9Router dan host gateway Hermes, Scheduled Task menyalakan Core; Core `catchup` mengirim briefing yang terlewat (≤12:00) |
 | Core mati | Tool berisiko ditolak (fail-closed); event di-spool; office menampilkan banner "Core offline" |
-| 9Router mati | Semua agent gagal panggil LLM → error jelas; Core alert via Telegram bot utama (pemantauan health 9Router menyusul) |
+| 9Router mati | Semua agent gagal panggil LLM → error jelas; Core alert via Telegram bot utama setelah 3 probe gagal (±90 dtk) dan "pulih" saat kembali (M6; juga untuk gateway, Docker, serve) |
 | Ollama mati | `os-private` fallback ke API ZDR sesuai combo |
 | Hermes upgrade memecah protokol | Dicegah oleh pin versi + contract test sebelum upgrade |
-| Kartu macet `running` > 2 jam | Core alert; owner bisa pindah ke `blocked` dari laci |
+| Kartu macet `running` > 2 jam | Core alert (sekali per kartu, M6); owner bisa pindah ke `blocked` dari laci |
 
 **Backup**: job harian Core (23:30) → zip `HERMES_HOME` (tanpa cache) + `core.db` ke folder backup lokal (retensi 14 hari). Restore didokumentasikan di `docs/runbook.md`.
+
+**Terpasang M6 (2026-10-02):**
+- Backup ±9 MB di `D:\agentic-os\backups`, tanpa runtime, cache, dan `.env` (keputusan owner); `*.db` lewat SQLite online backup; zip via Windows bsdtar; restore teruji.
+- Catch-up briefing: pre-run script `briefing_context.py` memberi label "terlambat" sebelum 12:00 dan melewati susulan setelah 12:00 atau slot kemarin.
+- Laporan gate `pnpm aos dogfood-report`.
 
 **Observability**: log terstruktur (pino) Core; `hermes logs --follow` untuk Hermes; panel Health di HUD.
 
@@ -740,7 +752,7 @@ agentic-os/
 | **M4 — Pixel office: kanvas** ✅ **Selesai (2026-10-02)** | Vendor Pixel Agents, HermesEventAdapter, pemetaan state §5.5.3, layout kantor 5 meja + meja kosong | Karakter mencerminkan state nyata; layout editor tetap berfungsi. Bukti (runbook §5): label "Membaca README.md" live dari run `researcher`; gelembung izin pada `dev` bertahan selama izin `sq983k` pending dan hilang setelah owner menolak, lalu ✓; layout editor menyimpan ke `office_state` dan bertahan setelah reload; reconnect otomatis saat Core mati/hidup; build produksi disajikan Core di `/office/` dengan cookie httpOnly |
 | **M5a — Pixel office: ruang kerja** ✅ **Selesai (2026-10-02)** | Dock (kartu, aktivitas, agent), HUD (approval, biaya, health), laci kanban (drag & drop + buat kartu lewat CLI resmi), shortcut — semua dari Core | Dock, HUD, dan laci bekerja di atas data asli. Bukti (runbook §5): HUD menampilkan approval, biaya + sparkline, dan 6 komponen health; aktivitas `researcher` live di dock; izin `dev` `xxyjqi` ditolak dari kotak masuk kantor (`decided_by=office`, kartu lanjut dengan `DENIED_BY_OWNER`, remote kosong); laci: buat kartu → dikerjakan, Ready → Blocked → Ready dengan instruksi (`UNBLOCK: …` dijalankan agent), Done → Arsip, Done → Ready ditolak; shortcut berfungsi dan tidak aktif saat mengetik |
 | **M5b — Pixel office: chat** ✅ **Selesai untuk chat (2026-10-02)** | Chat dengan agent di dock lewat `hermes serve` (relay WebSocket Core, token di server), prompt approval/clarify di chat, riwayat sesi | Semua user story US-01…US-12 dapat didemokan dari office/Telegram. Bukti chat (runbook §5, C1–C8): serve diawasi Core dengan lock dir privat; chat chief mengalir; tool `researcher` tampil; izin `dev` (`network-egress`) ditolak dari kartu chat dan tercatat `native/denied`; riwayat sesi hanya sesi kantor; relay menolak `shell.exec`/`cli.exec`/`config.set`/profile asing/`/yolo`; Core mati → serve ikut mati, hidup lagi → chat tersambung dengan konteks utuh. **Sisa:** demo menyeluruh US-01…US-12 belum dijalankan sebagai satu sesi; dijadwalkan di awal M6 bersama owner |
-| **M6 — Hardening & dogfooding** | Catch-up briefing, backup, runbook, reduced-motion, 14 hari pemakaian nyata | Gate rilis F1 (§14) terpenuhi |
+| **M6 — Hardening & dogfooding** 🟡 **Kode selesai (2026-10-02); dogfooding 14 hari berjalan sejak 2026-10-03** | Catch-up briefing, backup, runbook, reduced-motion, 14 hari pemakaian nyata | Gate rilis F1 (§14) terpenuhi. Bukti kode (runbook §5 "Bukti M6"): briefing dengan data Core + aturan terlambat/lewati, backup otomatis ±9 MB + restore lolos `integrity_check`, alert 9Router bermasalah/pulih diterima owner, laporan dogfooding, reduced motion (P8), reminder oleh chief. Demo US-01…US-12 bersama owner: semua ✅ kecuali US-12 sebagian. **Sisa:** jalankan `pnpm aos dogfood-report 14` setelah 14 hari PC menyala; bila "GATE F1 LULUS" → M6 ✅ dan F1 rilis |
 
 ---
 
@@ -794,12 +806,14 @@ V9 (cron yang terlewat) **terverifikasi**: satu run susulan untuk beberapa slot 
 10. ~~**M5b — `hermes serve` berbagi record host**~~ **Terjawab (M5b):** lock dir privat `D:\agentic-os\serve-locks` terbukti memisahkan record `serve`; `hermes serve --status` owner tidak melihat instance ini. Efek `hermes serve --stop` owner belum diuji (Core menyalakan ulang serve bila mati).
 11. **Kartu `triage` dari kantor**: laci kanban menolak memindah `triage` (Hermes belum punya perintah resmi yang aman); tetap lewat CLI.
 12. **Chat kantor — lanjutan**: lampiran file/gambar, slash command yang aman, resume sesi Telegram/CLI dari kantor, dan folder chat per profile (container persisten Hermes saat ini mengabaikan subfolder, jadi chat worker berbagi `workspaces\chat`).
-13. **Demo US-01…US-12** menyeluruh dari office/Telegram (sisa exit M5) bersama owner.
+13. ~~**Demo US-01…US-12**~~ **Terjawab (M6, 2026-10-02):** semua didemokan bersama owner; US-12 sebagian (lihat butir 1 dan 4).
+14. **Pengujian UI otomatis (Playwright, §12)** belum dibuat; F1 memakai unit test + demo manual. Pertimbangkan sebelum F2.
 
 Sudah selesai di M2 (bukan lagi open): penanda konteks cron (§5.3.2), config dispatcher & cron di root home (§5.1.3), file hasil worker persisten per kartu (§5.1.3, runbook V7).
 Sudah selesai di M3: mode event `tool.*` mengikuti platform sesi (§5.3.2), red-team & rule injeksi workspace (§8.1), egress `dev` (§8.4).
 Sudah selesai di M5a: modul health Core (§5.4.1), mutasi kanban dari kantor lewat CLI resmi (risiko §15 "API mutasi kanban" terjawab untuk unblock/promote/block/archive/create).
 Sudah selesai di M5b: chat kantor lewat `hermes serve` + relay Core (§5.4.1, §5.5.4), isolasi record host serve (butir 10).
+Sudah selesai di M6: backup & restore (§9), alert komponen dan kartu macet (§9), catch-up briefing ≤ 12:00 berlabel (US-04), reduced motion (§5.5.6), laporan gate (§14).
 
 ---
 

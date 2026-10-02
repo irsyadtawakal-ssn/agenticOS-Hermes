@@ -25,7 +25,7 @@ Status: `✅ terverifikasi` (dicoba di mesin ini) · `📄 dari docs/source` · 
 | V15 | Pin versi | Pin = commit source bersama di `infra/hermes.lock`; `doctor` membaca `Install directory` dari `hermes --version`. **Update Hermes Desktop menggeser commit ini** → `doctor` FAIL `hermes-pin` = sinyal untuk uji ulang lalu bump lock. Jangan jalankan `hermes update` dari folder Agentic OS. | ✅ | `pnpm aos doctor` |
 | V16 | Lokasi plugin | **Per profile**: `<HERMES_HOME>\profiles\<profile>\plugins\<nama>\` (bukan `<HERMES_HOME>\plugins`). Aktifkan: `hermes -p <profile> plugins enable <nama>`. Tool dimuat lazy lewat tool search — sebut nama tool secara eksplisit di persona. | ✅ | `aos-office-tools` aktif untuk `chief` |
 
-## 2. Arsitektur yang terpasang (M1 + M2 + M3 + M4 + M5a + M5b)
+## 2. Arsitektur yang terpasang (M1 + M2 + M3 + M4 + M5a + M5b + M6)
 
 ```
 Telegram ──► host gateway Agentic OS (Hermes_Gateway_787a7c01, HERMES_HOME=D:\agentic-os\hermes-home)
@@ -65,6 +65,11 @@ M5b — chat kantor:
   tab Chat dock ──WS /v1/chat (cookie/proxy UI)──► Core: ChatRelay (allowlist 12 metode, cwd paksa, tanpa "/")
       ──WS /api/ws?token=AOS_SERVE_TOKEN──► hermes serve 127.0.0.1:9129 (diawasi Core, lock dir D:\agentic-os\serve-locks)
       ──► sesi profile (platform tui, os-bridge aktif) ──► gate izin bawaan → kartu "Agent meminta izin" di chat
+
+M6 — hardening:
+  cron morning-briefing ──pre-run script briefing_context.py──► GET /v1/briefing (token bridge) ──► chief ──► Telegram
+  OS Core: backup harian 23:30 (D:\agentic-os\backups, 14 file) · alert Telegram (komponen down, kartu > 2 jam, backup gagal)
+           tabel uptime + GET /v1/dogfood ◄── pnpm aos dogfood-report
 ```
 Gateway & data Hermes lama milik owner (`%LOCALAPPDATA%\hermes`, `Hermes_Gateway`) berjalan berdampingan dan tidak disentuh.
 
@@ -85,6 +90,8 @@ Gateway & data Hermes lama milik owner (`%LOCALAPPDATA%\hermes`, `Hermes_Gateway
 | Buka kantor pixel | `pnpm aos office` (browser terbuka di `http://127.0.0.1:7400/office/`; token tidak dicetak) |
 | Build ulang kantor setelah ubah `apps/office` | `pnpm office:build` (Core menyajikan `apps/office/dist`; refresh browser) |
 | Kantor mode dev | `pnpm office:dev` → http://127.0.0.1:5173 |
+| Backup sekarang (selain jadwal harian 23:30) | `pnpm aos backup` |
+| Laporan dogfooding / gate F1 | `pnpm aos dogfood-report [hari]` (default 14) |
 
 ### 9Router
 - Autostart: `shell:startup\9router.vbs` dengan `--tray --skip-update --host 127.0.0.1` (launcher duplikat `start_9router.bat` sudah dihapus). Skrip `infra/windows/register-9router-task.ps1` tidak dipakai (alternatif).
@@ -225,7 +232,53 @@ Gateway & data Hermes lama milik owner (`%LOCALAPPDATA%\hermes`, `Hermes_Gateway
 
 ### Cron
 - `morning-briefing` (`c7efc0721f0e`): `0 7 * * *`, deliver telegram. Jalankan manual: `hermes -p chief cron run c7efc0721f0e`.
-- PC mati/sleep di jam 07:00 → saat gateway menyala lagi, briefing dikirim **satu kali** sebagai susulan (V9).
+- PC mati/sleep di jam 07:00 → saat gateway menyala lagi, Hermes menjalankan **satu** susulan (V9). Sejak M6, pre-run script menentukan apakah susulan itu jadi dikirim (lihat "Briefing pagi (M6)").
+- Reminder owner adalah job sekali jalan di cron **chief** (mis. `cek demo M6`, `once in 5m`). Lihat dengan `hermes -p chief cron list`.
+
+### Briefing pagi (M6)
+- **Pre-run script** `profiles\chief\scripts\briefing_context.py` (sumber `packages/hermes-cron-scripts/chief/`, dipasang `apply-profiles`) berjalan sebelum agent. Ia membaca `last_dispatch` job-nya sendiri di `cron\jobs.json`:
+  - **Tepat waktu**: briefing biasa.
+  - **Terlambat sebelum 12:00**: judul diberi "(terlambat, dibuat <jam>)".
+  - **Setelah 12:00, atau susulan slot hari sebelumnya**: dilewati senyap (`{"wakeAgent": false}`).
+  - **Run manual** (`cron run`): selalu jalan, dengan penanda "(dijalankan manual)".
+- **Data** diambil dari `GET /v1/briefing` (token bridge dari `plugins\os-bridge\config.json`): kartu aktif per agent, blocked, izin menunggu, selesai kemarin, dan biaya kemarin. Reminder hari ini dibaca dari job cron chief lain. Bila Core mati, chief memakai `office_list_tasks` dan menulis "biaya & izin: tidak tersedia".
+- **Prompt job**: `infra/profiles/cron/morning-briefing.md`. Mengubahnya: `hermes -p chief cron edit c7efc0721f0e --prompt "$(cat infra/profiles/cron/morning-briefing.md)"`.
+
+### Backup & restore (M6)
+- **Jadwal.** OS Core membuat backup harian ±23:30 (dicek tiap 10 menit). Bila backup terakhir lebih dari 26 jam, backup dibuat 2 menit setelah Core start. Manual: `pnpm aos backup`.
+- **Lokasi & retensi.** `D:\agentic-os\backups\aos-backup-<YYYYMMDD-HHmmss>.zip` (bisa diubah lewat `AOS_BACKUP_DIR`). Retensi 14 file terbaru. Gagal → alert Telegram.
+- **Isi** (±9 MB):
+  - `hermes-home\` tanpa `tools`, `installs`, `cache`, `sandboxes`, `logs`, `bin`, cache per profile, `spool`, `__pycache__`;
+  - tanpa **`.env*`** (keputusan owner), file lock/pid, dan `-wal`/`-shm`;
+  - ditambah `core\core.db`.
+
+  Semua `*.db` disalin dengan SQLite online backup, jadi konsisten walau gateway sedang menulis. Nama berisi `:` atau pemetaan Cygwin-nya (U+F000–U+F0FF), mis. folder sisa `D:`, dilewati.
+- **Zip** dibuat dengan `%SystemRoot%\System32\tar.exe` (bsdtar). GNU tar dari Git yang ada di PATH membaca `C:\…` sebagai host jarak jauh.
+- **Restore:**
+  1. `hermes gateway stop` (dengan `HERMES_HOME` Agentic OS), lalu matikan proses port 7400 (Core; serve ikut berhenti).
+  2. Ekstrak: `C:\Windows\System32\tar.exe -xf <zip> -C D:\agentic-os\restore-tmp`.
+  3. Salin `restore-tmp\hermes-home\*` ke `D:\agentic-os\hermes-home\` (mis. `robocopy … /E`), lalu `restore-tmp\core\core.db` ke `D:\agentic-os\core\core.db` (hapus `core.db-wal`/`-shm` lama).
+  4. Isi ulang rahasia yang tidak ikut backup: `infra/windows/set-local-secrets.ps1` bila `.env.local` hilang, `pnpm aos apply-profiles` (`OPENAI_API_KEY` + plugin config), dan baris `TELEGRAM_*` di `profiles\chief\.env` dari catatan owner.
+  5. Nyalakan gateway dan Core lewat `.vbs`; `pnpm aos doctor`.
+
+  Uji restore 2026-10-02: `kanban.db`, `core.db`, dan `executions.db` hasil ekstrak lolos `integrity_check`.
+
+### Alert Telegram (M6)
+- Core mengirim lewat bot utama:
+  - **"⚠️ <komponen> bermasalah"** bila Gateway, 9Router, Docker, atau Hermes serve `down` 3 probe berturut-turut (±90 dtk), lalu **"✅ … pulih"** saat kembali;
+  - **"⏳ Kartu … berjalan lebih dari 2 jam"** (sekali per kartu macet);
+  - kegagalan backup.
+- Ollama dan komponen `absent` tidak di-alert.
+
+### Laporan dogfooding (M6)
+- Core mencatat jam menyala (tabel `uptime`, tiap 10 menit).
+- `pnpm aos dogfood-report [hari]` menampilkan:
+  - **briefing per hari**: ✓, ✓ terlambat, ✗, atau "PC mati pagi", berdasarkan `executions.db` chief; hanya run terjadwal yang `delivered` dihitung;
+  - **rate** pada hari PC menyala jam 07–12;
+  - **pelanggaran keamanan** (`risk-audit`);
+  - **median keputusan izin**;
+  - **hari pemakaian** (Telegram/kantor);
+  - **vonis**: `BELUM CUKUP DATA` sampai 14 hari PC menyala, lalu `GATE F1 LULUS` / `BELUM LULUS` (briefing ≥ 95% dan 0 pelanggaran).
 
 ### Plugin
 - `aos-office-tools` → `profiles\chief\plugins\aos-office-tools\` (sumber: `packages/hermes-office-tools/aos-office-tools/`; salin ulang setelah diubah, lalu restart gateway).
@@ -236,6 +289,7 @@ Gateway & data Hermes lama milik owner (`%LOCALAPPDATA%\hermes`, `Hermes_Gateway
 - Nyalakan OS Core dan gateway **hanya** lewat klik dua kali `.vbs` di `shell:startup`, atau dari skrip dengan `explorer.exe "<path .vbs>"`. Jangan lewat `wscript`/`Start-Process` dari shell otomasi (mis. sesi tool asisten AI): proses ikut menjadi turunan shell itu dan bisa mati tanpa log saat shell dibersihkan. Kejadian 2026-10-02: gateway & Core yang dinyalakan ulang dari shell otomasi mati bersamaan ±15:16 tanpa jejak exit, sehingga pesan Telegram setelahnya tidak diproses.
 - Pesan Telegram yang masuk saat gateway mati **tidak** diproses setelah gateway hidup lagi; kirim ulang.
 - `hermes serve` milik Agentic OS tidak punya launcher sendiri: ikut nyala/mati bersama OS Core. Jangan menyalakannya manual dari shell.
+- **Setelah persona (`SOUL.md`) diubah lewat `apply-profiles`**, sesi Telegram chief yang sudah berjalan tetap memakai persona lama (system prompt disimpan per sesi). Kirim `/new` di Telegram agar persona baru berlaku. Kejadian M6: reminder pertama masih didelegasikan ke secretary sebelum `/new`.
 
 ### Aturan keamanan operasional
 - Jangan memulai sesi interaktif worker (`researcher/secretary/content/dev`) dari folder yang berisi rahasia — cwd di-mount ke sandbox Docker.
@@ -278,8 +332,16 @@ Gateway & data Hermes lama milik owner (`%LOCALAPPDATA%\hermes`, `Hermes_Gateway
   - Persona agent bisa menolak sendiri sebelum gate (mis. `dev` menolak `git push` interaktif); itu perilaku aman, bukan bug relay.
   - Run model `COMBO-SS` bisa beberapa menit sebelum tool pertama; selama itu bubble menampilkan kursor ▍.
   - `hermes serve --status` milik owner tidak melihat instance ini; efek `hermes serve --stop` owner terhadap instance ini belum diuji. Bila serve mati karena sebab apa pun, Core menyalakannya lagi.
+- **Hardening (M6)**:
+  - US-12 sebagian: breaker berbasis jumlah tool call dan pengulangan; ambang token per kartu butuh key 9Router per profile (owner memilih belum).
+  - Briefing tanpa topik/berita (keputusan owner).
+  - Reminder dibuat chief, bukan secretary (hanya chief yang punya bot Telegram).
+  - Pesan cron Telegram memakai bungkus bawaan Hermes ("Cronjob Response: … / To stop or manage this job …").
+  - Backup tidak memuat `.env`; restore perlu mengisi ulang rahasia.
+  - Reduced motion mengikuti pengaturan OS (Windows: Accessibility → Visual effects → Animation effects **Off**); belum diuji dengan pengaturan itu aktif.
+  - Laporan dogfooding menghitung "PC menyala pagi" dari tabel `uptime`, yang baru ada sejak M6; hari sebelumnya tampil "PC mati pagi".
 
-## 5. Bukti exit M1, M2, M3, M4, M5a & M5b
+## 5. Bukti exit M1, M2, M3, M4, M5a, M5b & M6
 
 ### Bukti exit M1
 
@@ -385,3 +447,30 @@ Perbaikan selama verifikasi:
 - **cwd sesi Docker** (`6c32317`, `820ba50`). Cwd sesi berupa path host Windows dipakai Hermes sebagai cwd di dalam container, sehingga file jatuh ke `workspaces\chat\D:\…` (diarsip ke `_archive\m5b-tests\`). Sesi Docker kini memakai `/workspace` (mount cwd serve). Container persisten mengabaikan subfolder, jadi chat worker berbagi `workspaces\chat`.
 - **Koneksi tertahan** (`a004129`). Saat Core mati, proxy Vite membiarkan WebSocket browser tetap CONNECTING. `ChatRpc` kini menyerah setelah 10 dtk (kode 4000), lalu store mencoba lagi.
 - **Label tool** menyertakan nama tool (`write_file · halo.md`).
+
+### Bukti M6 (kode selesai; dogfooding 14 hari berjalan)
+
+Diuji di mesin owner, 2026-10-02 (branch `m6-hardening`). Gate F1 (PRD §14.1) dinilai setelah 14 hari PC menyala dengan `pnpm aos dogfood-report 14`.
+
+| Kriteria | Bukti | Status |
+|---|---|---|
+| Test & build | Core 114, `@aos/office` 34, setup 113, Python + red-team + script briefing 153; typecheck bersih; `pnpm office:build` sukses; `doctor` 42/42 | ✅ |
+| Pemasangan | `apply-profiles` → `installed cron scripts briefing_context.py for chief`; gateway direstart; `hermes -p chief cron edit c7efc0721f0e --script briefing_context.py --prompt …`; Core direstart | ✅ |
+| B1 — backup | Percobaan pertama **gagal** (GNU tar + crash bsdtar pada folder `D:` sisa uji M3) → diperbaiki `2b55a7c` → backup otomatis 19:15: `aos-backup-20261002-191522.zip` ±9 MB, 2495 file, 0 gagal; memuat `kanban.db`, `SOUL.md`, script briefing, `executions.db`, `core.db`; tanpa `.env`, `tools`, `cache`, `sandboxes`, `-wal`, `.lock`. Alert "Backup harian gagal" dari percobaan pertama sampai di Telegram (19:09) | ✅ |
+| B2 — restore | Zip diekstrak ke folder sementara; `kanban.db` (19 kartu), `core.db` (457 event), `executions.db` (4) lolos `integrity_check` | ✅ |
+| A1 — alert | 9Router dimatikan 19:45:30 → owner menerima "⚠️ 9Router bermasalah: tidak terjangkau"; dinyalakan lewat `9router.vbs` 19:48 → "✅ 9Router pulih (terjangkau)" | ✅ |
+| D1 — laporan | `pnpm aos dogfood-report 3`: 2 Okt "✓ terlambat" (briefing 07:33), 0 pelanggaran dari 10 keputusan, median izin 2,6 menit, "BELUM CUKUP DATA" | ✅ |
+
+Demo user story bersama owner (2026-10-02):
+
+| US | Bukti | Status |
+|---|---|---|
+| US-01 briefing | `cron run` 19:16 → script: STATUS MANUAL, biaya kemarin $4.00 (238 panggilan), 8 kartu selesai kemarin → briefing diterima owner di Telegram 19:16 dengan "(dijalankan manual)" | ✅ |
+| US-02 reminder | Pertama: sesi Telegram lama masih memakai persona lama → kartu secretary `t_3c0709cd`; secretary (persona baru) hanya mencatat; diarsip. Setelah `/new`: "ingatkan aku cek demo M6 …" → chief `cronjob` `cek demo M6` (sekali jalan) → terkirim 19:39:56 (`delivered`), diterima owner | ✅ |
+| US-03/US-05 delegasi | "riset 3 alternatif open-source untuk Postiz, bikin tabel perbandingan" → kartu `t_1a5f1cb5` researcher (Goal, acceptance criteria, `Risk: low`, `ready`) → dikerjakan 19:42–19:43 → `riset-alternatif-postiz.md` (Mixpost, TryPost, Socioboard) | ✅ |
+| US-04 susulan | Unit test `decide()` (terlambat < 12:00 berlabel; ≥ 12:00 / slot kemarin dilewati) + V9 M1; laporan dogfooding mencatat briefing 2 Okt 07:33 sebagai "terlambat" | ✅ (simulasi alami selama dogfooding) |
+| US-06, US-07, US-08 | Bukti M4/M5a/M5b (animasi live, dock + chat, laci kanban) | ✅ |
+| US-09 approval | Bukti M3 (Telegram) + M5a (HUD, `decided_by=office`) + M5b (kartu izin chat) | ✅ |
+| US-10 injeksi | Red-team 58/58 + `risk-audit` 0 pelanggaran | ✅ |
+| US-11 biaya | HUD "$ hari ini" + panel rincian (M5a) | ✅ |
+| US-12 boros token | Breaker jumlah tool call (M3); ambang token per kartu menunggu key per profile | ⚠️ sebagian (keputusan owner) |
