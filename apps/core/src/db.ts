@@ -69,6 +69,11 @@ CREATE TABLE IF NOT EXISTS office_state (
   value TEXT NOT NULL,
   updated_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS chat_sessions (
+  stored_id TEXT PRIMARY KEY,
+  profile TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
 `;
 
 export function migrate(db: Db): void {
