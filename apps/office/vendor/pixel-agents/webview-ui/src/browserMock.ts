@@ -286,3 +286,10 @@ export function dispatchMockMessages(): void {
 
   console.log('[BrowserMock] Messages dispatched');
 }
+
+/** Agentic OS: expose the decoded payload so HermesTransport can deliver it (see NOTICE.md P5). */
+export function getMockPayload(): MockPayload | null {
+  return mockPayload;
+}
+
+export type { MockPayload };

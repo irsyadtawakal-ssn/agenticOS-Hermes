@@ -7,9 +7,9 @@ import App from './App.tsx';
 import { isBrowserRuntime } from './runtime';
 
 async function main() {
-  // browserMock is for Vite dev mode only (UI prototyping without a server).
-  // In standalone server mode, assets are loaded server-side and sent over WebSocket.
-  if (isBrowserRuntime && import.meta.env.DEV) {
+  // Agentic OS (NOTICE P3): decode office assets in every browser build;
+  // HermesTransport delivers them to the office.
+  if (isBrowserRuntime) {
     const { initBrowserMock } = await import('./browserMock.js');
     await initBrowserMock();
   }
