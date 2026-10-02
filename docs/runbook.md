@@ -25,7 +25,7 @@ Status: `✅ terverifikasi` (dicoba di mesin ini) · `📄 dari docs/source` · 
 | V15 | Pin versi | Pin = commit source bersama di `infra/hermes.lock`; `doctor` membaca `Install directory` dari `hermes --version`. **Update Hermes Desktop menggeser commit ini** → `doctor` FAIL `hermes-pin` = sinyal untuk uji ulang lalu bump lock. Jangan jalankan `hermes update` dari folder Agentic OS. | ✅ | `pnpm aos doctor` |
 | V16 | Lokasi plugin | **Per profile**: `<HERMES_HOME>\profiles\<profile>\plugins\<nama>\` (bukan `<HERMES_HOME>\plugins`). Aktifkan: `hermes -p <profile> plugins enable <nama>`. Tool dimuat lazy lewat tool search — sebut nama tool secara eksplisit di persona. | ✅ | `aos-office-tools` aktif untuk `chief` |
 
-## 2. Arsitektur yang terpasang (M1 + M2 + M3 + M4 + M5a)
+## 2. Arsitektur yang terpasang (M1 + M2 + M3 + M4 + M5a + M5b)
 
 ```
 Telegram ──► host gateway Agentic OS (Hermes_Gateway_787a7c01, HERMES_HOME=D:\agentic-os\hermes-home)
@@ -60,13 +60,18 @@ M5a — ruang kerja kantor (AosShell membungkus engine Pixel Agents):
                biaya ◄── /v1/costs, /v1/costs/daily · kesehatan ◄── /v1/health/components (+ topik health)
   laci kanban: seret kartu ──POST /v1/kanban/:id/move──► Core ──► hermes kanban unblock|promote|block|archive
                kartu baru ──POST /v1/kanban──► Core (buat workspace) ──► hermes kanban create
+
+M5b — chat kantor:
+  tab Chat dock ──WS /v1/chat (cookie/proxy UI)──► Core: ChatRelay (allowlist 12 metode, cwd paksa, tanpa "/")
+      ──WS /api/ws?token=AOS_SERVE_TOKEN──► hermes serve 127.0.0.1:9129 (diawasi Core, lock dir D:\agentic-os\serve-locks)
+      ──► sesi profile (platform tui, os-bridge aktif) ──► gate izin bawaan → kartu "Agent meminta izin" di chat
 ```
 Gateway & data Hermes lama milik owner (`%LOCALAPPDATA%\hermes`, `Hermes_Gateway`) berjalan berdampingan dan tidak disentuh.
 
 ## 3. Prosedur operasi
 
 ### Konfigurasi lokal (`.env.local`, tidak di-commit)
-`AOS_ROUTER_URL`, `AOS_ROUTER_KEY` (key 9Router "HERMES"), `AOS_TIMEZONE=Asia/Jakarta`, `AOS_HERMES_HOME=D:\agentic-os\hermes-home`, `AOS_TIER_MODEL_OS_BRAIN|OS_WORKER|OS_PRIVATE` (sementara `COMBO-SS`), `AOS_BRIDGE_TOKEN`, `AOS_UI_TOKEN` dan `AOS_APPROVER_TOKEN` (token OS Core; **ketiganya harus berbeda**; `AOS_APPROVER_TOKEN` hanya dipasang di plugin `aos-office-tools` milik chief), opsional `AOS_ROUTER_KEY_<PROFILE>` (lihat "Atribusi biaya"). Isi key lewat editor atau `Read-Host -AsSecureString` — jangan ditempel di chat.
+`AOS_ROUTER_URL`, `AOS_ROUTER_KEY` (key 9Router "HERMES"), `AOS_TIMEZONE=Asia/Jakarta`, `AOS_HERMES_HOME=D:\agentic-os\hermes-home`, `AOS_TIER_MODEL_OS_BRAIN|OS_WORKER|OS_PRIVATE` (sementara `COMBO-SS`), `AOS_BRIDGE_TOKEN`, `AOS_UI_TOKEN` dan `AOS_APPROVER_TOKEN` (token OS Core; **ketiganya harus berbeda**; `AOS_APPROVER_TOKEN` hanya dipasang di plugin `aos-office-tools` milik chief), opsional `AOS_ROUTER_KEY_<PROFILE>` (lihat "Atribusi biaya"), `AOS_SERVE_TOKEN` (token sesi `hermes serve`, harus beda dari token lain; kosong = chat kantor nonaktif), `AOS_SERVE_PORT` (default 9129), opsional `AOS_SERVE_LOCK_DIR` (default `D:\agentic-os\serve-locks`). Isi key lewat editor atau `Read-Host -AsSecureString` — jangan ditempel di chat.
 
 ### Perintah harian
 | Tujuan | Perintah |
@@ -121,11 +126,12 @@ Gateway & data Hermes lama milik owner (`%LOCALAPPDATA%\hermes`, `Hermes_Gateway
 | POST | `/v1/kanban/:id/move` | UI | `{to: ready|blocked|archived, note?}` → CLI resmi; 404 kartu tidak ada, 409 perpindahan ditolak, 502 CLI gagal |
 | POST | `/v1/kanban` | UI | `{title, assignee, body?}` → workspace `<stamp lokal>-<slug>` dibuat lalu `hermes kanban create`; 400 input salah, 502 CLI gagal (folder dihapus lagi) |
 | GET/PUT | `/v1/office/state` | UI | layout, kursi, setting kantor |
+| WS | `/v1/chat` | UI | relay JSON-RPC ke `hermes serve` (M5b); tutup `4503` = serve nonaktif, `4502` = serve terputus |
 
 - Rute UI memakai `Authorization: Bearer <AOS_UI_TOKEN>` atau `?token=`. Rute "owner" menerima `AOS_UI_TOKEN` **atau** `AOS_APPROVER_TOKEN`. Token ada di `.env.local`, harus berbeda; jangan ditempel di chat atau log.
 - Core juga: mengirim notifikasi Telegram lewat `sendMessage` bot utama (token & chat id dibaca dari `profiles\chief\.env`; tanpa polling, jadi tidak bentrok dengan gateway), menjalankan `hermes kanban unblock|block` (dengan `HERMES_HOME` Agentic OS), dan mengedarkan permintaan yang kedaluwarsa (24 jam) tiap menit.
 - Core membaca `kanban.db` (tiap 2 dtk) dan `data.sqlite` 9Router (tiap 30 dtk) secara **read-only**; tidak pernah menulis ke keduanya.
-- **Rotasi token**: setelah mengubah `AOS_BRIDGE_TOKEN` / `AOS_UI_TOKEN` / `AOS_APPROVER_TOKEN` di `.env.local`, jalankan `pnpm aos apply-profiles`, lalu restart OS Core dan gateway Hermes. Sampai itu selesai, bridge mendapat 401 dan terus men-spool event (batas 5 MB).
+- **Rotasi token**: setelah mengubah `AOS_BRIDGE_TOKEN` / `AOS_UI_TOKEN` / `AOS_APPROVER_TOKEN` di `.env.local`, jalankan `pnpm aos apply-profiles`, lalu restart OS Core dan gateway Hermes. Sampai itu selesai, bridge mendapat 401 dan terus men-spool event (batas 5 MB). `AOS_SERVE_TOKEN` cukup dengan restart Core (serve dinyalakan ulang dengan token baru).
 
 ### Bridge (plugin `os-bridge`) & spool
 - Dipasang oleh `pnpm aos apply-profiles` di kelima profile: `profiles\<profile>\plugins\os-bridge\` dengan `config.json` (`core_url` + token); `hermes plugins enable` bersifat idempoten.
@@ -157,12 +163,12 @@ Gateway & data Hermes lama milik owner (`%LOCALAPPDATA%\hermes`, `Hermes_Gateway
 - **Upgrade Pixel Agents**: clone commit baru upstream, salin ulang `core/src` dan `webview-ui` (tanpa `test/`), terapkan ulang P1–P7 (`NOTICE.md`), lalu `pnpm -F @aos/office test`, `typecheck`, dan `build`.
 
 ### Ruang kerja kantor (M5a)
-- **Dock agent** (panel kanan 380px): klik karakter atau tekan `1`–`5` (chief, researcher, secretary, content, dev). Tab **Chat** (placeholder, menyusul M5b), **Kartu** (aktif + 10 riwayat), **Aktivitas** (riwayat `/v1/events` lalu live dari stream: "Membaca …", "read_file selesai (… ms)"), **Agent** (tier, state, biaya hari ini).
+- **Dock agent** (panel kanan 380px): klik karakter atau tekan `1`–`5` (chief, researcher, secretary, content, dev). Tab **Chat** (M5b, lihat "Chat kantor"), **Kartu** (aktif + 10 riwayat), **Aktivitas** (riwayat `/v1/events` lalu live dari stream: "Membaca …", "read_file selesai (… ms)"), **Agent** (tier, state, biaya hari ini).
 - **HUD** (bar bawah):
   - **⚠ Approval (n)** (oranye bila ada yang menunggu; `A`) membuka kotak masuk. Isi instruksi opsional lalu **Setujui** / **Tolak**. Keputusan tercatat `decided_by=office` dan alurnya sama dengan keputusan lewat chief.
   - **$ hari ini** + sparkline 7 hari membuka rincian biaya per agent, model, kartu, dan hari.
   - **▤ Kanban** (`B`) membuka laci kanban.
-  - **Titik kesehatan**: hijau `ok`, merah `down`, abu-abu `absent` (Hermes serve abu-abu sampai M5b, Ollama opsional).
+  - **Titik kesehatan**: hijau `ok`, merah `down`, abu-abu `absent` (Hermes serve abu-abu bila `AOS_SERVE_TOKEN` kosong, Ollama opsional).
 - **Laci kanban** (`B`): kolom triage → done + kolom **Arsip**, filter agent, dan form kartu baru (judul ≤ 80 karakter, assignee, goal). Kartu baru mendapat workspace permanen `workspaces\<YYYYMMDD-HHmmss lokal>-<slug>` dan langsung `ready`.
 - **Aturan seret** (sama dengan `planMove` di Core):
 
@@ -175,6 +181,32 @@ Gateway & data Hermes lama milik owner (`%LOCALAPPDATA%\hermes`, `Hermes_Gateway
 
   Kombinasi lain ditolak: kolom tujuan ditandai merah dan muncul toast. Kartu `triage` tidak bisa dipindah dari office.
 - **Shortcut**: `1`–`5` agent, `A` approval, `B` kanban, `Esc` tutup semua, `Ctrl+K` dock chief tab Chat. Shortcut diabaikan saat mengetik di input/textarea/select.
+
+### Chat kantor (M5b)
+- **Proses.** Saat `AOS_SERVE_TOKEN` terisi, OS Core menjalankan `hermes serve --isolated --skip-build --host 127.0.0.1 --port 9129`:
+  - `HERMES_HOME` Agentic OS;
+  - token sesi = `AOS_SERVE_TOKEN`;
+  - lock dir **privat** `D:\agentic-os\serve-locks` (agar `hermes serve`/`dashboard`/`plugins install` milik owner tidak menempel ke instance ini);
+  - `HERMES_PARENT_PID` = PID Core;
+  - `HERMES_DESKTOP` dan semua `AOS_*` dibuang dari env.
+
+  Rantai proses: Core → `hermes.exe` → `python.exe`. Serve mati → Core menyalakannya lagi (backoff 2/5/15/60 dtk). Core mati → serve ikut berhenti (< 1 dtk). Log: `D:\agentic-os\core\serve.log`.
+- **Pakai.** Dock agent → tab **Chat** (atau `Ctrl+K` untuk chief):
+  - Enter = kirim, Shift+Enter = baris baru.
+  - Jawaban mengalir; tool tampil sebagai baris "✓ write_file · halo.md (680 ms)"; **Hentikan** menghentikan giliran berjalan.
+  - **Sesi baru** membuat sesi; **Riwayat sesi** hanya berisi sesi yang dibuat dari kantor (tabel `chat_sessions` di `core.db`), bukan sesi Telegram/CLI.
+- **Izin & pertanyaan.**
+  - Aksi berisiko memunculkan kartu **"Agent meminta izin"** (Izinkan sekali / Izinkan sesi ini / Selalu izinkan / Tolak). Ini gate bawaan Hermes, sama dengan tombol Telegram: dicatat Core sebagai baris approval `native`, dan timeout 10 menit = ditolak.
+  - Pertanyaan agent (`clarify`) tampil sebagai kartu dengan pilihan atau isian.
+- **Relay keamanan** (`apps/core/src/chatRelay.ts`):
+  - Browser tidak pernah memegang token serve.
+  - Hanya 12 metode yang lolos: `ping`, `client.capabilities`, `session.create/list/resume/history/interrupt/close/events.since`, `approval.pending/respond`, `prompt.submit`. Yang lain, termasuk `shell.exec`/`cli.exec`/`config.set` yang **memang terbuka di serve**, ditolak `-32601`.
+  - Parameter dibangun ulang: profile harus salah satu dari lima, cwd dipaksa, override model/provider dibuang. Teks yang diawali `/` ditolak.
+  - Permintaan server selain `approval`/`clarify` (mis. `secret`, `sudo`, `vault.*`) dijawab "tidak didukung".
+- **Folder kerja.**
+  - Kelima profile ber-backend Docker dengan container persisten. Serve berjalan dengan cwd `workspaces\chat`, yang di container terlihat sebagai `/workspace`, jadi semua chat worker **berbagi** folder itu. Hermes mengabaikan subfolder per profile untuk container persisten.
+  - Path host Windows tidak boleh dipakai sebagai cwd sesi Docker: Hermes menganggapnya path relatif di container (terbukti saat uji: file jatuh ke `workspaces\chat\D:\…`).
+  - Profile ber-backend lokal (bila nanti ada) memakai `workspaces\chat\<profile>`.
 
 ### Atribusi biaya (per profile / per kartu)
 - Saat ini semua usage tercatat sebagai profile `shared` dan `byTask` kosong, karena owner memilih tidak membuat key 9Router per profile. Impor pertama memuat seluruh riwayat key HERMES: 258 panggilan, total ≈ $4,36 (≈ $0,81 dalam 24 jam terakhir).
@@ -203,6 +235,7 @@ Gateway & data Hermes lama milik owner (`%LOCALAPPDATA%\hermes`, `Hermes_Gateway
 ### Menyalakan ulang proses (penting)
 - Nyalakan OS Core dan gateway **hanya** lewat klik dua kali `.vbs` di `shell:startup`, atau dari skrip dengan `explorer.exe "<path .vbs>"`. Jangan lewat `wscript`/`Start-Process` dari shell otomasi (mis. sesi tool asisten AI): proses ikut menjadi turunan shell itu dan bisa mati tanpa log saat shell dibersihkan. Kejadian 2026-10-02: gateway & Core yang dinyalakan ulang dari shell otomasi mati bersamaan ±15:16 tanpa jejak exit, sehingga pesan Telegram setelahnya tidak diproses.
 - Pesan Telegram yang masuk saat gateway mati **tidak** diproses setelah gateway hidup lagi; kirim ulang.
+- `hermes serve` milik Agentic OS tidak punya launcher sendiri: ikut nyala/mati bersama OS Core. Jangan menyalakannya manual dari shell.
 
 ### Aturan keamanan operasional
 - Jangan memulai sesi interaktif worker (`researcher/secretary/content/dev`) dari folder yang berisi rahasia — cwd di-mount ke sandbox Docker.
@@ -234,12 +267,19 @@ Gateway & data Hermes lama milik owner (`%LOCALAPPDATA%\hermes`, `Hermes_Gateway
   - Di mode dev (`office:dev`) asset terkirim dua kali karena React StrictMode; tidak memengaruhi tampilan.
   - Pada lebar sempit, tombol Layout/Settings bawaan Pixel Agents bisa menutupi karakter di pojok kiri bawah; pakai `1`–`5` atau zoom.
 - **Ruang kerja kantor (M5a)**:
-  - Chat langsung dengan agent menyusul di M5b (`hermes serve`); sementara pakai Telegram (chief) atau `hermes -p <profile> chat`.
   - Kartu `triage` hanya bisa dipindah lewat CLI.
   - Biaya per agent di dock tertulis "tercatat sebagai shared" sampai key 9Router per profile dibuat.
   - Instruksi saat Blocked → Ready memakai dialog `window.prompt` bawaan browser.
+- **Chat kantor (M5b)**:
+  - Slash command (`/yolo`, `/model`, …) tidak didukung dari kantor; pakai Telegram atau CLI.
+  - Lampiran file, gambar, dan suara belum ada.
+  - Hanya sesi yang dibuat dari kantor yang bisa dibuka lagi dari kantor.
+  - Chat worker berbagi folder `workspaces\chat` (lihat §3 "Chat kantor").
+  - Persona agent bisa menolak sendiri sebelum gate (mis. `dev` menolak `git push` interaktif); itu perilaku aman, bukan bug relay.
+  - Run model `COMBO-SS` bisa beberapa menit sebelum tool pertama; selama itu bubble menampilkan kursor ▍.
+  - `hermes serve --status` milik owner tidak melihat instance ini; efek `hermes serve --stop` owner terhadap instance ini belum diuji. Bila serve mati karena sebab apa pun, Core menyalakannya lagi.
 
-## 5. Bukti exit M1, M2, M3, M4 & M5a
+## 5. Bukti exit M1, M2, M3, M4, M5a & M5b
 
 ### Bukti exit M1
 
@@ -320,4 +360,28 @@ Perbaikan selama verifikasi:
 - Panel dilapis di atas label vendor (`isolate`).
 - Label `sr-only` HUD tidak lagi melebarkan halaman.
 - Header laci bisa terlipat.
-- Stamp workspace kartu dari office kini memakai jam lokal (`b502723`). Workspace uji W5 masih ber-stamp UTC; perbaikan aktif setelah restart Core berikutnya.
+- Stamp workspace kartu dari office kini memakai jam lokal (`b502723`). Workspace uji W5 masih ber-stamp UTC; perbaikan aktif sejak restart Core M5b.
+
+### Bukti exit M5b
+
+Diuji di mesin owner, 2026-10-02 (branch `m5b-office-chat`, preview `office:dev` 730px, serve 127.0.0.1:9129). Kriteria: chat dengan agent dari dock lewat `hermes serve` yang diawasi Core, dengan izin dan riwayat sesi, tanpa membuka serve ke browser.
+
+| Kriteria | Bukti | Status |
+|---|---|---|
+| Spike protokol | Serve sementara port 9139: cwd sesi dipatuhi, `message.delta` = potongan dan `message.complete` = teks penuh, `started_at` dalam detik, **`shell.exec` diterima serve** (relay wajib), `host-serve.*` hanya di lock dir privat (catatan di rencana M5b) | ✅ |
+| Test & build | Core 101, `@aos/office` 34, setup 112, Python + red-team 145; typecheck bersih; `pnpm office:build` sukses | ✅ |
+| C1 — proses & isolasi | Core → `hermes.exe` → `python.exe` listen 9129; `D:\agentic-os\serve-locks\host-serve.*` ada; lock dir bawaan tanpa `host-serve` (hanya `host-desktop-serve.*` Hermes Desktop owner + `host-gateway.*`); HUD/`/v1/health/components`: `serve ok port 9129` | ✅ |
+| C2 — chat chief | `Ctrl+K` → textarea fokus → "Balas hanya dengan satu kata: pong" → kursor ▍ lalu "pong" (±15 dtk), tombol Hentikan muncul/hilang; event `session.started/llm.*/session.ended` mode `tui` di Core, state chief kembali `idle` | ✅ |
+| C3 — tool di worker | `researcher`: "Buat file halo.md…, jalankan pwd" → baris "✓ terminal · pwd", "✓ write_file · halo.md", "✓ read_file · halo.md"; jawaban: `pwd` = `/workspace`, file di `workspaces\chat\halo.md` | ✅ (setelah perbaikan cwd) |
+| C4 — izin di chat | `dev`: `curl -sI https://example.com` → kartu "Agent meminta izin" (aturan `network-egress`, 4 pilihan) → **Tolak** → agent melapor "Action denied by user" dan tidak mengulang; Core: approval `native/denied/hermes/network-egress`, `tool.finished` = `blocked`. Permintaan `git push` ditolak persona `dev` sendiri sebelum gate | ✅ |
+| C5 — riwayat sesi | Reload → dropdown chief hanya berisi sesi kantor ("Tes respons pong"), tanpa 2 sesi spike dan sesi Telegram → pilih → transkrip tampil | ✅ |
+| C6 — keamanan relay | Lewat `/v1/chat`: `shell.exec`, `cli.exec`, `config.set` → `-32601`; profile `root` → `-32602`; `/yolo` → "Perintah slash tidak didukung…"; `cwd: D:\MIT` dari client diabaikan | ✅ |
+| C7 — Core mati/hidup | Core dimatikan → port 9129 tertutup 0,9 dtk (watchdog `HERMES_PARENT_PID`); Core dinyalakan lewat `explorer.exe` → serve listen 2 dtk kemudian; chat tersambung ulang otomatis, sesi chief dibuka lagi, agent masih ingat jawaban "pong" | ✅ |
+| C8 — Hermes owner | `hermes serve --status` (env owner) hanya melihat serve Hermes Desktop (port 0), bukan instance ini; gateway owner/Desktop tetap berjalan | ✅ |
+| Audit | `pnpm -F @aos/core risk-audit 2026-10-02T10:39:00Z` → `violations: []` | ✅ |
+
+Perbaikan selama verifikasi:
+
+- **cwd sesi Docker** (`6c32317`, `820ba50`). Cwd sesi berupa path host Windows dipakai Hermes sebagai cwd di dalam container, sehingga file jatuh ke `workspaces\chat\D:\…` (diarsip ke `_archive\m5b-tests\`). Sesi Docker kini memakai `/workspace` (mount cwd serve). Container persisten mengabaikan subfolder, jadi chat worker berbagi `workspaces\chat`.
+- **Koneksi tertahan** (`a004129`). Saat Core mati, proxy Vite membiarkan WebSocket browser tetap CONNECTING. `ChatRpc` kini menyerah setelah 10 dtk (kode 4000), lalu store mencoba lagi.
+- **Label tool** menyertakan nama tool (`write_file · halo.md`).
