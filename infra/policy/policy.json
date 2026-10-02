@@ -1,0 +1,74 @@
+{
+  "version": 1,
+  "default": "allow",
+  "workspaces_root": "",
+  "breaker": { "max_tool_calls": 150, "max_repeat": 5 },
+  "rules": [
+    {
+      "id": "payments", "action": "deny", "reason": "pembayaran/pembelian tidak pernah diizinkan di F1",
+      "match": { "tool": ["*payment*", "*purchase*", "*checkout*", "*pay_*"] }
+    },
+    {
+      "id": "workspace-injection", "action": "deny", "reason": "kartu baru dengan workspace di luar root workspace",
+      "match": { "tool": ["kanban_create"], "path_outside_root": ["workspace_path"] }
+    },
+    {
+      "id": "workspace-kind", "action": "deny", "reason": "worker tidak boleh membuat kartu dengan workspace worktree",
+      "match": { "tool": ["kanban_create"], "args": { "workspace_kind": ["worktree"] } }
+    },
+    {
+      "id": "execute-code-unattended", "action": "deny", "reason": "execute_code menjalankan Python di host; tidak diizinkan tanpa owner",
+      "match": { "tool": ["execute_code"], "mode": ["kanban", "cron"] }
+    },
+    {
+      "id": "execute-code", "action": "approve", "reason": "execute_code menjalankan Python di host",
+      "match": { "tool": ["execute_code"] }
+    },
+    {
+      "id": "external-interaction", "action": "approve", "reason": "interaksi browser/desktop ke dunia luar",
+      "match": { "tool": ["browser_navigate", "browser_click", "browser_type", "browser_press", "browser_exec", "browser_cdp", "browser_dialog", "computer_use"] }
+    },
+    {
+      "id": "git-push", "action": "approve", "reason": "git push / PR / publish paket",
+      "match": {
+        "tool": ["terminal", "process_manage"],
+        "command_regex": ["\\bgit\\b.*\\bpush\\b", "\\bgh\\s+pr\\s+(create|merge)\\b", "\\b(npm|pnpm|yarn)\\s+publish\\b"]
+      }
+    },
+    {
+      "id": "delete", "action": "approve", "reason": "menghapus file",
+      "match": {
+        "tool": ["terminal", "process_manage"],
+        "command_regex": ["\\brm\\b", "\\brmdir\\b", "\\bunlink\\b", "remove-item", "\\bdel\\b", "\\berase\\b", "\\bgit\\s+clean\\b", "\\bgit\\s+reset\\s+--hard\\b", "\\bshred\\b", "\\bfind\\b.*\\s-delete\\b", "\\btruncate\\b"]
+      }
+    },
+    {
+      "id": "network-egress", "action": "approve", "reason": "akses jaringan langsung dari sandbox",
+      "match": {
+        "tool": ["terminal", "process_manage"],
+        "command_regex": ["\\b(curl|wget|nc|ncat|netcat|socat|ssh|scp|sftp|rsync|ftp|tftp|telnet)\\b", "invoke-webrequest|invoke-restmethod|\\biwr\\b|\\birm\\b", "https?://", "\\b(python3?|node|deno|bun|perl|ruby|php)\\b\\s+-(c|e)\\b", "/dev/tcp/"]
+      }
+    },
+    {
+      "id": "write-outside-workspace", "action": "approve", "reason": "menulis file di luar workspace kartu",
+      "match": { "tool": ["write_file", "patch"], "mode": ["kanban"], "path_outside_workspace": ["path", "file_path"] }
+    },
+    {
+      "id": "cron-manage", "action": "approve", "reason": "membuat/mengubah jadwal cron",
+      "match": { "tool": ["cronjob_manage", "cronjob"] },
+      "unless": { "profile": ["chief", "secretary"] }
+    },
+    {
+      "id": "skill-manage", "action": "approve", "reason": "memasang/mengubah skill agent",
+      "match": { "tool": ["skill_manage"] }
+    },
+    {
+      "id": "approve-decision-unattended", "action": "deny", "reason": "persetujuan hanya boleh dari owner di sesi Telegram/CLI",
+      "match": { "tool": ["office_approve"], "mode": ["kanban", "cron"] }
+    },
+    {
+      "id": "approve-decision", "action": "approve", "reason": "menyetujui permintaan izin agent",
+      "match": { "tool": ["office_approve"], "args": { "decision": ["approve"] } }
+    }
+  ]
+}
