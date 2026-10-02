@@ -11,7 +11,7 @@ import { createHub } from './hub.js';
 import { diffTasks, readKanban, type KanbanSnapshot } from './kanban.js';
 import { createNotifierFromFile } from './notify.js';
 import { createReactions } from './reactions.js';
-import { serveLaunch, superviseServe } from './serve.js';
+import { serveLaunch, sessionCwdFor, superviseServe, terminalBackend } from './serve.js';
 import { buildServer, type ServerDeps, type UpstreamSocket } from './server.js';
 
 const repoRoot = resolve(import.meta.dirname, '../../..');
@@ -127,11 +127,18 @@ if (config.serveToken && config.servePort) {
   const origin = `http://127.0.0.1:${port}`;
   // Node 22's global WebSocket (undici) accepts an init object with headers; serve requires a loopback Origin.
   const NodeWebSocket = (globalThis as unknown as { WebSocket: new (url: string, init: { headers: Record<string, string> }) => UpstreamSocket }).WebSocket;
+  const sessionCwds = new Map(
+    PROFILES.map((profile) => {
+      const configFile = join(config.hermesHome, 'profiles', profile, 'config.yaml');
+      const backend = existsSync(configFile) ? terminalBackend(readFileSync(configFile, 'utf8')) : 'local';
+      return [profile, sessionCwdFor(backend, config.chatRoot, profile)] as const;
+    }),
+  );
   chat = {
     connect: () => new NodeWebSocket(upstreamUrl, { headers: { Origin: origin } }),
     context: {
       profiles: PROFILES,
-      chatRoot: config.chatRoot,
+      sessionCwd: (profile) => sessionCwds.get(profile as (typeof PROFILES)[number]) ?? join(config.chatRoot, profile),
       known: (profile) => knownChatSessions(db, profile),
       remember: (profile, storedId) => rememberChatSession(db, profile, storedId, Date.now()),
     },

@@ -1,12 +1,10 @@
-import { join } from 'node:path';
-
 /**
  * Policy between the office chat and `hermes serve` (JSON-RPC 2.0 over WebSocket).
  * The browser never talks to serve directly: only allowlisted methods pass, with rebuilt params.
  */
 export interface RelayContext {
   profiles: readonly string[];
-  chatRoot: string;
+  sessionCwd(profile: string): string;
   known(profile: string): Set<string>;
   remember(profile: string, storedId: string): void;
 }
@@ -152,7 +150,7 @@ export class ChatRelay {
         return { params: { server_requests: true }, profile: '' };
       case 'session.create': {
         const profile = this.profileOf(params);
-        return { params: { profile, cwd: join(this.ctx.chatRoot, profile), cwd_explicit: true }, profile };
+        return { params: { profile, cwd: this.ctx.sessionCwd(profile), cwd_explicit: true }, profile };
       }
       case 'session.list': {
         const profile = this.profileOf(params);

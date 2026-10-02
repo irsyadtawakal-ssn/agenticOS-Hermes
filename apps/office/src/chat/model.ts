@@ -32,6 +32,7 @@ export interface SessionRow {
 
 const CHOICES: ApprovalChoice[] = ['once', 'session', 'always', 'deny'];
 const s = (v: unknown): string => (typeof v === 'string' ? v : '');
+const toolLabel = (name: string, detail: string): string => (detail && detail !== name ? `${name} · ${detail}` : name);
 
 let counter = 0;
 export function newItemId(): string {
@@ -86,7 +87,7 @@ export function applyChatEvent(view: ChatView, ev: ChatEvent): ChatView {
     }
     case 'tool.start': {
       const name = s(p.name) || 'tool';
-      const label = s(p.preview) || s(p.context) || name;
+      const label = toolLabel(name, s(p.preview) || s(p.context));
       return { items: [...settle(items), { kind: 'tool', id: s(p.tool_id) || newItemId(), name, label, status: 'running' }], busy: true };
     }
     case 'tool.complete': {
@@ -109,7 +110,7 @@ export function fromTranscript(messages: TranscriptMessage[]): ChatItem[] {
     else if (m.role === 'assistant' && text) out.push({ kind: 'assistant', id: newItemId(), text, streaming: false });
     else if (m.role === 'tool') {
       const name = s(m.name) || 'tool';
-      out.push({ kind: 'tool', id: newItemId(), name, label: s(m.context) || name, status: 'done' });
+      out.push({ kind: 'tool', id: newItemId(), name, label: toolLabel(name, s(m.context)), status: 'done' });
     }
   }
   return out;

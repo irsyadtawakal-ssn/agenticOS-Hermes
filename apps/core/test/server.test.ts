@@ -290,7 +290,7 @@ async function makeChat() {
         upstreams.push(u);
         return u;
       },
-      context: { profiles: ['chief'], chatRoot: join('C:', 'chat'), known: () => new Set(), remember: () => {} },
+      context: { profiles: ['chief'], sessionCwd: (p) => `/workspace/${p}`, known: () => new Set(), remember: () => {} },
     },
   });
   await app.ready();
@@ -304,11 +304,11 @@ describe('/v1/chat relay', () => {
   it('queues client frames until serve opens and filters them', async () => {
     const upstreams = await makeChat();
     const ws = await app!.injectWS('/v1/chat?token=ut');
-    ws.send(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'session.create', params: { profile: 'chief', cwd: join('D:', 'MIT') } }));
+    ws.send(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'session.create', params: { profile: 'chief', cwd: 'D:/MIT' } }));
     await new Promise((r) => setTimeout(r, 20));
     expect(upstreams[0].sent).toEqual([]);
     upstreams[0].onopen?.();
-    expect(JSON.parse(upstreams[0].sent[0])).toMatchObject({ method: 'session.create', params: { cwd: join('C:', 'chat', 'chief') } });
+    expect(JSON.parse(upstreams[0].sent[0])).toMatchObject({ method: 'session.create', params: { cwd: '/workspace/chief' } });
     const refused = nextMessage(ws);
     ws.send(JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'shell.exec', params: { command: 'dir' } }));
     expect(await refused).toMatchObject({ id: 2, error: { code: -32601 } });

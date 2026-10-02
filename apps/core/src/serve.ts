@@ -1,4 +1,21 @@
+import { join } from 'node:path';
+
 /** Launch and supervise the Agentic OS `hermes serve` backend (M5b). */
+
+/** `terminal.backend` from a profile `config.yaml` (default `local`). */
+export function terminalBackend(configText: string): string {
+  const section = /^terminal:\r?\n((?:[ \t]+.*\r?\n?)*)/m.exec(configText)?.[1] ?? '';
+  return /^[ \t]+backend:[ \t]*([\w-]+)/m.exec(section)?.[1] ?? 'local';
+}
+
+/**
+ * Working directory for an office chat session. Serve runs with cwd = chat root, which docker
+ * profiles (`docker_mount_cwd_to_workspace`) see as `/workspace`; a host path would be taken
+ * as a relative path inside the container.
+ */
+export function sessionCwdFor(backend: string, chatRoot: string, profile: string): string {
+  return backend === 'docker' ? `/workspace/${profile}` : join(chatRoot, profile);
+}
 
 export interface ServeSettings {
   hermesExe: string;

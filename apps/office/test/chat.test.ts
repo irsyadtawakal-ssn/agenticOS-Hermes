@@ -80,7 +80,7 @@ describe('chat model', () => {
     expect(v.busy).toBe(false);
     expect(v.items.map((i) => i.kind)).toEqual(['user', 'assistant', 'tool', 'assistant']);
     expect(v.items[1]).toMatchObject({ text: 'Sebentar, ', streaming: false });
-    expect(v.items[2]).toMatchObject({ label: 'README.md', status: 'done', durationMs: 250 });
+    expect(v.items[2]).toMatchObject({ label: 'read_file · README.md', status: 'done', durationMs: 250 });
     expect(v.items[3]).toMatchObject({ text: 'isinya halo.', streaming: false });
   });
 

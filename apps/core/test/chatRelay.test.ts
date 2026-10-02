@@ -1,17 +1,14 @@
-import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ChatRelay, type RelayContext } from '../src/chatRelay.js';
 import { knownChatSessions, rememberChatSession } from '../src/chatSessions.js';
 import { openCoreDb } from '../src/db.js';
-
-const ROOT = join('D:', 'ws', 'chat');
 
 function ctx(seed: Record<string, string[]> = {}) {
   const known: Record<string, string[]> = { ...seed };
   const remembered: Array<[string, string]> = [];
   const context: RelayContext = {
     profiles: ['chief', 'researcher', 'secretary', 'content', 'dev'],
-    chatRoot: ROOT,
+    sessionCwd: (p) => `/workspace/${p}`,
     known: (p) => new Set(known[p] ?? []),
     remember: (p, id) => {
       remembered.push([p, id]);
@@ -61,7 +58,7 @@ describe('ChatRelay client frames', () => {
       jsonrpc: '2.0',
       id: 2,
       method: 'session.create',
-      params: { profile: 'researcher', cwd: join(ROOT, 'researcher'), cwd_explicit: true },
+      params: { profile: 'researcher', cwd: '/workspace/researcher', cwd_explicit: true },
     });
   });
 

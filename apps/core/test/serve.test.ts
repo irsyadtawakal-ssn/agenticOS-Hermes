@@ -1,5 +1,19 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { type ServeChild, serveLaunch, superviseServe } from '../src/serve.js';
+import { join } from 'node:path';
+import { type ServeChild, serveLaunch, sessionCwdFor, superviseServe, terminalBackend } from '../src/serve.js';
+
+describe('chat session cwd', () => {
+  it('reads the terminal backend from a profile config', () => {
+    expect(terminalBackend('model:\n  default: x\nterminal:\n  backend: docker\n  docker_network: false\nkanban:\n  backend: other\n')).toBe('docker');
+    expect(terminalBackend('terminal:\n  cwd: /x\n')).toBe('local');
+    expect(terminalBackend('')).toBe('local');
+  });
+
+  it('uses the container mount for sandboxed profiles and the host folder otherwise', () => {
+    expect(sessionCwdFor('docker', 'D:\\ws\\chat', 'researcher')).toBe('/workspace/researcher');
+    expect(sessionCwdFor('local', 'D:\\ws\\chat', 'chief')).toBe(join('D:\\ws\\chat', 'chief'));
+  });
+});
 
 const SETTINGS = {
   hermesExe: 'hermes',
