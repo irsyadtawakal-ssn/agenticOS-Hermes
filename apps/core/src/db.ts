@@ -64,6 +64,11 @@ CREATE TABLE IF NOT EXISTS approvals (
 );
 CREATE INDEX IF NOT EXISTS idx_approvals_match ON approvals(task_id, tool, args_hash, status);
 CREATE INDEX IF NOT EXISTS idx_approvals_status ON approvals(status, created_at);
+CREATE TABLE IF NOT EXISTS office_state (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+);
 `;
 
 export function migrate(db: Db): void {

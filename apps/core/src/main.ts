@@ -64,6 +64,7 @@ const app = await buildServer({
   bridgeToken: config.bridgeToken,
   uiToken: config.uiToken,
   approverToken: config.approverToken,
+  officeDir: join(repoRoot, 'apps/office/dist'),
   hub,
   kanban: () => snapshot,
   onEvents: (events) => background('events', reactions.onEvents(events)),

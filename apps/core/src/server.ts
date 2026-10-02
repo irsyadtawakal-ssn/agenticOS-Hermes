@@ -1,4 +1,5 @@
 import { timingSafeEqual } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import websocket from '@fastify/websocket';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import {
@@ -19,6 +20,16 @@ import type { Db } from './db.js';
 import { type AosEvent, ingestEvents } from './events.js';
 import type { Hub } from './hub.js';
 import type { KanbanSnapshot } from './kanban.js';
+import {
+  contentType,
+  cookieToken,
+  getOfficeState,
+  OFFICE_KEYS,
+  type OfficeKey,
+  putOfficeState,
+  resolveOfficeFile,
+  validateOfficeValue,
+} from './office.js';
 import { listAgentStates } from './state.js';
 
 export interface ServerDeps {
@@ -32,6 +43,7 @@ export interface ServerDeps {
   onEvents?: (events: AosEvent[]) => void;
   onApprovalCreated?: (approval: Approval) => void;
   onApprovalDecided?: (approval: Approval) => void;
+  officeDir?: string;
 }
 
 function safeEqual(a: string, b: string): boolean {
@@ -44,7 +56,8 @@ function bearerOrQueryToken(req: FastifyRequest): string {
   const header = req.headers.authorization;
   if (header?.startsWith('Bearer ')) return header.slice(7);
   const query = req.query as Record<string, unknown> | undefined;
-  return typeof query?.token === 'string' ? query.token : '';
+  if (typeof query?.token === 'string') return query.token;
+  return cookieToken(req.headers.cookie);
 }
 
 function safely<T>(fn: ((arg: T) => void) | undefined, arg: T): void {
@@ -146,6 +159,34 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   app.get('/v1/stream', { websocket: true, preHandler: requireUi }, (socket) => {
     const off = deps.hub.subscribe((message) => socket.send(message));
     socket.on('close', off);
+  });
+
+  app.get('/v1/office/state', { preHandler: requireUi }, async () => getOfficeState(deps.db));
+
+  app.put('/v1/office/state/:key', { preHandler: requireUi }, async (req, reply) => {
+    const key = (req.params as { key: string }).key;
+    if (!(OFFICE_KEYS as readonly string[]).includes(key)) return reply.code(404).send({ error: 'unknown office key' });
+    const problem = validateOfficeValue(key, req.body);
+    if (problem) return reply.code(400).send({ error: problem });
+    putOfficeState(deps.db, key as OfficeKey, req.body, now());
+    return { ok: true };
+  });
+
+  app.get('/office/login', async (req, reply) => {
+    const token = (req.query as Record<string, unknown>).token;
+    if (typeof token !== 'string' || !safeEqual(token, deps.uiToken)) return reply.code(401).send({ error: 'unauthorized' });
+    reply.header('set-cookie', `aos_ui=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=2592000`);
+    return reply.redirect('/office/', 302);
+  });
+
+  app.get('/office', async (_req, reply) => reply.redirect('/office/', 302));
+
+  app.get('/office/*', async (req, reply) => {
+    const file = deps.officeDir ? resolveOfficeFile(deps.officeDir, req.url) : null;
+    if (!file) {
+      return reply.code(404).type('text/plain; charset=utf-8').send('Office belum di-build: jalankan `pnpm office:build`.');
+    }
+    return reply.type(contentType(file)).send(readFileSync(file));
   });
 
   return app;

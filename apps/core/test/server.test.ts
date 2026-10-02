@@ -1,3 +1,6 @@
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { openCoreDb } from '../src/db.js';
@@ -151,5 +154,48 @@ describe('approval routes', () => {
     const { app } = await makeWith({ onEvents: () => { throw new Error('boom'); } });
     const res = await app.inject({ method: 'POST', url: '/v1/events', payload: [event], headers: { 'x-aos-bridge-token': 'bt' } });
     expect(res.json()).toEqual({ inserted: 1, duplicates: 0, rejected: 0 });
+  });
+});
+
+describe('office routes', () => {
+  it('stores office state behind the UI token and accepts the aos_ui cookie', async () => {
+    const { app } = await makeWith();
+    expect((await app.inject({ method: 'GET', url: '/v1/office/state' })).statusCode).toBe(401);
+    const empty = await app.inject({ method: 'GET', url: '/v1/office/state', headers: { cookie: 'aos_ui=ut' } });
+    expect(empty.json()).toEqual({ layout: null, seats: {}, settings: {} });
+    const bad = await app.inject({ method: 'PUT', url: '/v1/office/state/layout', payload: { version: 9 }, headers: { authorization: 'Bearer ut' } });
+    expect(bad.statusCode).toBe(400);
+    const ok = await app.inject({ method: 'PUT', url: '/v1/office/state/settings', payload: { alwaysShowLabels: true }, headers: { authorization: 'Bearer ut' } });
+    expect(ok.json()).toEqual({ ok: true });
+    expect((await app.inject({ method: 'GET', url: '/v1/office/state?token=ut' })).json().settings).toEqual({ alwaysShowLabels: true });
+    expect((await app.inject({ method: 'PUT', url: '/v1/office/state/nope', payload: {}, headers: { authorization: 'Bearer ut' } })).statusCode).toBe(404);
+    expect((await app.inject({ method: 'GET', url: '/v1/agents', headers: { cookie: 'aos_ui=ut' } })).statusCode).toBe(200);
+    expect((await app.inject({ method: 'GET', url: '/v1/agents', headers: { cookie: 'aos_ui=at' } })).statusCode).toBe(401);
+  });
+
+  it('logs in with a valid UI token via an httpOnly cookie', async () => {
+    const { app } = await makeWith();
+    expect((await app.inject({ method: 'GET', url: '/office/login?token=wrong' })).statusCode).toBe(401);
+    const res = await app.inject({ method: 'GET', url: '/office/login?token=ut' });
+    expect(res.statusCode).toBe(302);
+    expect(res.headers.location).toBe('/office/');
+    expect(String(res.headers['set-cookie'])).toBe('aos_ui=ut; HttpOnly; SameSite=Strict; Path=/; Max-Age=2592000');
+  });
+
+  it('serves the built office with SPA fallback, or a build hint', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'aos-office-'));
+    writeFileSync(join(dir, 'index.html'), '<html>office</html>');
+    const { app: first } = await makeWith({ officeDir: dir });
+    const page = await first.inject({ method: 'GET', url: '/office/' });
+    expect(page.statusCode).toBe(200);
+    expect(page.headers['content-type']).toBe('text/html; charset=utf-8');
+    expect(page.body).toBe('<html>office</html>');
+    expect((await first.inject({ method: 'GET', url: '/office/some/route' })).body).toBe('<html>office</html>');
+    expect((await first.inject({ method: 'GET', url: '/office' })).statusCode).toBe(302);
+    await first.close();
+    const { app: noBuild } = await makeWith({ officeDir: join(dir, 'missing') });
+    const hint = await noBuild.inject({ method: 'GET', url: '/office/' });
+    expect(hint.statusCode).toBe(404);
+    expect(hint.body).toMatch(/pnpm office:build/);
   });
 });
