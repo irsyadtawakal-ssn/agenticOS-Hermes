@@ -55,7 +55,21 @@ describe('loadCoreConfig', () => {
     expect(c.gatewayLockDir).toBe(join('C:\\Users\\me', '.local', 'state', 'hermes', 'gateway-locks'));
     expect(c.routerBaseUrl).toBe('http://127.0.0.1:20128/v1');
     expect(c.servePort).toBeNull();
-    const o = loadCoreConfig({ ...BASE_ENV, AOS_SERVE_PORT: '9129', AOS_ROUTER_URL: 'http://x:1/', AOS_TIMEZONE: 'UTC', HERMES_GATEWAY_LOCK_DIR: 'E:\\locks' });
+    const o = loadCoreConfig({ ...BASE_ENV, AOS_SERVE_TOKEN: 'st', AOS_SERVE_PORT: '9129', AOS_ROUTER_URL: 'http://x:1/', AOS_TIMEZONE: 'UTC', HERMES_GATEWAY_LOCK_DIR: 'E:\\locks' });
     expect([o.servePort, o.routerBaseUrl, o.timeZone, o.gatewayLockDir]).toEqual([9129, 'http://x:1/v1', 'UTC', 'E:\\locks']);
+  });
+
+  it('enables hermes serve only when AOS_SERVE_TOKEN is set', () => {
+    const off = loadCoreConfig({ ...BASE_ENV, AOS_SERVE_PORT: '9200' });
+    expect([off.serveToken, off.servePort]).toEqual([null, null]);
+    const on = loadCoreConfig({ ...BASE_ENV, AOS_SERVE_TOKEN: 'st' });
+    expect([on.serveToken, on.servePort]).toEqual(['st', 9129]);
+    expect(on.serveLockDir).toBe(join(on.hermesHome, '..', 'serve-locks'));
+    expect(on.chatRoot).toBe(join(on.workspacesRoot, 'chat'));
+    expect(loadCoreConfig({ ...BASE_ENV, AOS_SERVE_TOKEN: 'st', AOS_SERVE_PORT: '9300', AOS_SERVE_LOCK_DIR: 'E:\\sl' }).serveLockDir).toBe('E:\\sl');
+  });
+
+  it('rejects a serve token equal to another Core token', () => {
+    expect(() => loadCoreConfig({ ...BASE_ENV, AOS_SERVE_TOKEN: BASE_ENV.AOS_UI_TOKEN })).toThrow(/AOS_SERVE_TOKEN/);
   });
 });

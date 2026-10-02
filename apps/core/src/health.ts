@@ -63,7 +63,7 @@ export async function probeHealth(deps: HealthDeps): Promise<HealthComponent[]> 
       ? { id: 'docker', label: 'Docker', status: 'ok', detail: `Docker ${docker.stdout.trim()}` }
       : { id: 'docker', label: 'Docker', status: 'down', detail: 'Docker Desktop tidak berjalan' },
     deps.servePort === null
-      ? { id: 'serve', label: 'Hermes serve', status: 'absent', detail: 'dipasang di M5b' }
+      ? { id: 'serve', label: 'Hermes serve', status: 'absent', detail: 'nonaktif (AOS_SERVE_TOKEN kosong)' }
       : serve !== null && serve < 500
         ? { id: 'serve', label: 'Hermes serve', status: 'ok', detail: `port ${deps.servePort}` }
         : { id: 'serve', label: 'Hermes serve', status: 'down', detail: `port ${deps.servePort} tidak menjawab` },

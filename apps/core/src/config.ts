@@ -20,6 +20,9 @@ export interface CoreConfig {
   gatewayLockDir: string;
   routerBaseUrl: string;
   servePort: number | null;
+  serveToken: string | null;
+  serveLockDir: string;
+  chatRoot: string;
 }
 
 function routerBase(raw: string | undefined): string {
@@ -49,6 +52,11 @@ export function loadCoreConfig(env: NodeJS.ProcessEnv): CoreConfig {
   if (approverToken === bridgeToken || approverToken === uiToken) {
     throw new Error('AOS_APPROVER_TOKEN must differ from the bridge and UI tokens');
   }
+  const serveToken = env.AOS_SERVE_TOKEN?.trim() || null;
+  if (serveToken && [bridgeToken, uiToken, approverToken].includes(serveToken)) {
+    throw new Error('AOS_SERVE_TOKEN must differ from the other Core tokens');
+  }
+  const workspacesRoot = env.AOS_WORKSPACES_ROOT?.trim() || join(hermesHome, 'workspaces');
   return {
     host: '127.0.0.1',
     port: Number(env.AOS_CORE_PORT ?? 7400),
@@ -63,9 +71,12 @@ export function loadCoreConfig(env: NodeJS.ProcessEnv): CoreConfig {
     routerDbPath: env.AOS_ROUTER_DB?.trim() || join(env.APPDATA ?? '', '9router', 'db', 'data.sqlite'),
     routerKeyProfiles,
     timeZone: env.AOS_TIMEZONE?.trim() || 'Asia/Jakarta',
-    workspacesRoot: env.AOS_WORKSPACES_ROOT?.trim() || join(hermesHome, 'workspaces'),
+    workspacesRoot,
     gatewayLockDir: env.HERMES_GATEWAY_LOCK_DIR?.trim() || join(env.USERPROFILE ?? '', '.local', 'state', 'hermes', 'gateway-locks'),
     routerBaseUrl: routerBase(env.AOS_ROUTER_URL),
-    servePort: env.AOS_SERVE_PORT?.trim() ? Number(env.AOS_SERVE_PORT) : null,
+    servePort: serveToken ? Number(env.AOS_SERVE_PORT?.trim() || 9129) : null,
+    serveToken,
+    serveLockDir: env.AOS_SERVE_LOCK_DIR?.trim() || join(hermesHome, '..', 'serve-locks'),
+    chatRoot: join(workspacesRoot, 'chat'),
   };
 }
