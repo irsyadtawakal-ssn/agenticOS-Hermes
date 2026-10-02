@@ -1,8 +1,12 @@
+import http.server
 import importlib.util
 import json
 import os
+import threading
 import time
 from pathlib import Path
+
+import pytest
 
 PLUGIN = Path(__file__).parent / "os-bridge" / "__init__.py"
 
@@ -146,6 +150,7 @@ def test_register_wires_six_hooks_that_never_raise(tmp_path, monkeypatch):
             queued.append(event)
 
     monkeypatch.setattr(mod, "_transport", lambda: FakeTransport())
+    monkeypatch.setattr(mod, "_gate", lambda profile: mod.Gate(compiled(mod), FakeCore(), profile, env={}, platforms={}))
     hooks = {}
 
     class Ctx:
@@ -528,3 +533,291 @@ def test_backoff_counts_send_calls(tmp_path):
     assert t.flush_once(now=1.5) == 2
     assert send_calls == [[1], [1, 2]]  # second call at t+1.5 replays both
     assert not own_file.exists()
+
+
+# ---------------------------------------------------------------------------
+# M3: policy gate, Core client, circuit breaker
+# ---------------------------------------------------------------------------
+
+KANBAN_ENV = {"HERMES_KANBAN_TASK": "t_1", "HERMES_KANBAN_WORKSPACE": "D:\\aos\\workspaces\\w1"}
+PUSH_RULE = {"id": "git-push", "action": "approve", "reason": "git push", "match": {"tool": ["terminal"], "command_regex": ["\\bgit\\s+push\\b"]}}
+APPROVE_RULE = {"id": "approve-decision", "action": "approve", "reason": "approve", "match": {"tool": ["office_approve"], "args": {"decision": ["approve"]}}}
+DENY_RULE = {"id": "payments", "action": "deny", "reason": "never", "match": {"tool": ["*payment*"]}}
+
+
+def compiled(mod, *rules, **extra):
+    return mod._policy.compile_policy({"version": 1, "default": "allow", "workspaces_root": "D:\\aos\\workspaces", "rules": list(rules), **extra})
+
+
+class FakeCore:
+    def __init__(self, consume=None, create=None, get=None, error=None):
+        self.calls = []
+        self._consume = consume or {"status": "none"}
+        self._create = create or {"id": "abc234", "status": "pending", "created": True}
+        self._get = get
+        self._error = error
+
+    def _fail(self):
+        if self._error is not None:
+            raise self._error
+
+    def consume(self, task_id, tool, args_hash):
+        self.calls.append(("consume", task_id, tool, args_hash))
+        self._fail()
+        return self._consume
+
+    def create_approval(self, record):
+        self.calls.append(("create", record))
+        self._fail()
+        return self._create
+
+    def get_approval(self, approval_id):
+        self.calls.append(("get", approval_id))
+        self._fail()
+        return self._get
+
+
+def decide(gate, tool, args, session_id="s1"):
+    return gate.decide({"tool_name": tool, "args": args, "session_id": session_id, "tool_call_id": "c1"})
+
+
+def test_gate_allows_tools_no_rule_matches():
+    mod = load()
+    gate = mod.Gate(compiled(mod, PUSH_RULE), FakeCore(), "researcher", env=KANBAN_ENV, platforms={})
+    directive, info = decide(gate, "web_search", {"query": "x"})
+    assert directive is None and info["decision"] == "allow" and info["mode"] == "kanban"
+
+
+def test_gate_parks_risky_kanban_calls_in_core():
+    mod = load()
+    core = FakeCore()
+    gate = mod.Gate(compiled(mod, PUSH_RULE), core, "dev", env=KANBAN_ENV, platforms={})
+    args = {"command": "git push origin main"}
+    directive, info = decide(gate, "terminal", args)
+    digest = mod._policy.args_hash("terminal", args)
+    assert directive["action"] == "block"
+    assert directive["message"].startswith("PENDING_APPROVAL:abc234:")
+    assert "kanban_block" in directive["message"] and "awaiting_approval:abc234" in directive["message"]
+    assert info == {"decision": "park", "rule_id": "git-push", "mode": "kanban", "args_hash": digest, "approval_id": "abc234"}
+    assert core.calls[0] == ("consume", "t_1", "terminal", digest)
+    record = core.calls[1][1]
+    assert record["profile"] == "dev" and record["task_id"] == "t_1" and record["session_id"] == "s1"
+    assert record["rule_id"] == "git-push" and record["tool"] == "terminal" and record["args_hash"] == digest
+    assert "git push origin main" in record["args_preview"] and record["reason"] == "git push"
+
+
+def test_gate_runs_a_call_that_consumes_a_grant():
+    mod = load()
+    core = FakeCore(consume={"status": "consumed", "id": "abc234"})
+    gate = mod.Gate(compiled(mod, PUSH_RULE), core, "dev", env=KANBAN_ENV, platforms={})
+    directive, info = decide(gate, "terminal", {"command": "git push origin main"})
+    assert directive is None and info["decision"] == "granted" and info["approval_id"] == "abc234"
+    assert [c[0] for c in core.calls] == ["consume"]
+
+
+def test_gate_relays_an_owner_denial():
+    mod = load()
+    core = FakeCore(consume={"status": "denied", "id": "abc234", "instruction": "jangan push"})
+    gate = mod.Gate(compiled(mod, PUSH_RULE), core, "dev", env=KANBAN_ENV, platforms={})
+    directive, info = decide(gate, "terminal", {"command": "git push"})
+    assert directive["message"].startswith("DENIED_BY_OWNER:abc234: jangan push")
+    assert info["decision"] == "deny"
+
+
+def test_gate_fails_closed_when_core_is_unreachable():
+    mod = load()
+    gate = mod.Gate(compiled(mod, PUSH_RULE), FakeCore(error=mod.CoreUnavailable("down")), "dev", env=KANBAN_ENV, platforms={})
+    directive, info = decide(gate, "terminal", {"command": "git push"})
+    assert directive["message"].startswith("DENIED_CORE_UNAVAILABLE:git-push:")
+    assert info["decision"] == "deny"
+
+
+def test_gate_uses_the_native_hermes_gate_outside_kanban():
+    mod = load()
+    core = FakeCore()
+    gate = mod.Gate(compiled(mod, PUSH_RULE), core, "chief", env={}, platforms={"s1": "telegram"})
+    args = {"command": "git push"}
+    directive, info = decide(gate, "terminal", args)
+    assert directive["action"] == "approve"
+    assert directive["rule_key"] == "aos:git-push:" + mod._policy.args_hash("terminal", args)[:16]
+    assert "git push" in directive["message"]
+    assert info["decision"] == "native" and info["mode"] == "interactive"
+    assert core.calls == []
+
+
+def test_gate_detects_cron_sessions():
+    mod = load()
+    gate = mod.Gate(compiled(mod, PUSH_RULE), FakeCore(), "chief", env={}, platforms={"s9": "cron"})
+    assert gate.mode("s9") == "cron"
+    assert gate.mode("cron_job1_20261002_070000") == "cron"
+    assert gate.mode("s1") == "interactive"
+    assert mod.Gate(None, FakeCore(), "dev", env=KANBAN_ENV, platforms={}).mode("cron_x") == "kanban"
+
+
+def test_office_approve_shows_the_pending_request_in_the_native_prompt():
+    mod = load()
+    record = {"id": "abc234", "status": "pending", "profile": "dev", "tool": "terminal", "args_preview": '{"command": "git push"}', "task_id": "t_1", "rule_id": "git-push"}
+    core = FakeCore(get=record)
+    gate = mod.Gate(compiled(mod, APPROVE_RULE), core, "chief", env={}, platforms={})
+    directive, info = decide(gate, "office_approve", {"approval_id": " ABC234 ", "decision": "approve"})
+    assert directive["action"] == "approve"
+    for part in ("abc234", "dev", "terminal", "git push", "t_1", "git-push"):
+        assert part in directive["message"]
+    assert core.calls == [("get", "abc234")]
+    assert info["decision"] == "native"
+
+
+def test_office_approve_blocks_unknown_decided_or_unreachable_requests():
+    mod = load()
+    for core, prefix in (
+        (FakeCore(get=None), "UNKNOWN_APPROVAL:abc234:"),
+        (FakeCore(get={"id": "abc234", "status": "approved"}), "UNKNOWN_APPROVAL:abc234:"),
+        (FakeCore(error=mod.CoreUnavailable("down")), "DENIED_CORE_UNAVAILABLE:approve-decision:"),
+    ):
+        gate = mod.Gate(compiled(mod, APPROVE_RULE), core, "chief", env={}, platforms={})
+        directive, info = decide(gate, "office_approve", {"approval_id": "abc234", "decision": "approve"})
+        assert directive["action"] == "block" and directive["message"].startswith(prefix)
+        assert info["decision"] == "deny"
+
+
+def test_gate_applies_deny_rules():
+    mod = load()
+    gate = mod.Gate(compiled(mod, DENY_RULE), FakeCore(), "content", env=KANBAN_ENV, platforms={})
+    directive, info = decide(gate, "stripe_create_payment", {})
+    assert directive["message"].startswith("DENIED_BY_POLICY:payments: never")
+    assert info["decision"] == "deny"
+
+
+def test_gate_without_policy_allows_only_read_tools():
+    mod = load()
+    gate = mod.Gate(None, FakeCore(), "dev", env=KANBAN_ENV, platforms={})
+    assert decide(gate, "read_file", {"path": "a"})[0] is None
+    directive, info = decide(gate, "terminal", {"command": "ls"})
+    assert directive["message"].startswith("DENIED_POLICY_UNAVAILABLE:") and info["decision"] == "deny"
+
+
+def test_gate_fails_closed_on_unexpected_errors_except_read_tools(monkeypatch):
+    mod = load()
+    gate = mod.Gate(compiled(mod, PUSH_RULE), FakeCore(), "dev", env=KANBAN_ENV, platforms={})
+    monkeypatch.setattr(mod._policy, "evaluate", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+    assert decide(gate, "web_search", {"query": "x"})[0] is None
+    directive, info = decide(gate, "terminal", {"command": "ls"}, session_id="s2")
+    assert directive["message"].startswith("DENIED_BRIDGE_ERROR:") and info["decision"] == "deny"
+
+
+def test_breaker_trips_on_repeats_and_call_count():
+    mod = load()
+    b = mod.Breaker(max_tool_calls=4, max_repeat=2)
+    assert b.check("k", "x") == (None, False)
+    assert b.check("k", "x") == (None, False)
+    reason, new = b.check("k", "x")
+    assert new is True and "repeated" in reason
+    assert b.check("k", "y") == (reason, False)
+    assert b.check("other", "x") == (None, False)
+    c = mod.Breaker(max_tool_calls=3, max_repeat=10)
+    for sig in ("a", "b", "c"):
+        assert c.check("k", sig) == (None, False)
+    reason, new = c.check("k", "d")
+    assert new is True and "3 tool calls" in reason
+
+
+def test_gate_opens_the_circuit_and_flags_the_first_trip():
+    mod = load()
+    gate = mod.Gate(compiled(mod, breaker={"max_tool_calls": 150, "max_repeat": 2}), FakeCore(), "researcher", env=KANBAN_ENV, platforms={})
+    for _ in range(2):
+        assert decide(gate, "web_search", {"query": "same"})[0] is None
+    directive, info = decide(gate, "web_search", {"query": "same"})
+    assert directive["message"].startswith("CIRCUIT_OPEN:")
+    assert info["decision"] == "breaker" and info["new_trip"] is True
+    directive, info = decide(gate, "read_file", {"path": "x"})
+    assert directive["message"].startswith("CIRCUIT_OPEN:") and info["new_trip"] is False
+
+
+def test_build_event_adds_policy_and_remembered_platform():
+    mod = load()
+    platforms = {}
+    mod.remember_platform("s1", "telegram", platforms)
+    ev = mod.build_event(
+        "pre_tool_call", {"tool_name": "terminal", "args": {"command": "ls"}, "session_id": "s1", "tool_call_id": "c1"}, "chief",
+        env={}, policy={"decision": "native", "rule_id": "delete", "args_hash": "h", "approval_id": None, "mode": "interactive"}, platforms=platforms,
+    )
+    assert ev["mode"] == "telegram"
+    assert ev["payload"]["policy"] == {"decision": "native", "rule_id": "delete", "args_hash": "h"}
+    trip = mod.make_event("breaker.tripped", {"tool": "x", "reason": "r"}, "dev", "s1", None, env=KANBAN_ENV, ts_ms=5)
+    assert trip["type"] == "breaker.tripped" and trip["task_id"] == "t_1" and trip["mode"] == "kanban" and trip["ts"] == 5
+
+
+def test_pre_tool_hook_returns_the_directive_and_emits_events(monkeypatch):
+    mod = load()
+    queued = []
+    monkeypatch.setattr(mod, "_transport", lambda: type("T", (), {"enqueue": staticmethod(queued.append)})())
+    gate = mod.Gate(compiled(mod, PUSH_RULE, breaker={"max_tool_calls": 150, "max_repeat": 1}), FakeCore(), "dev", env=KANBAN_ENV, platforms={})
+    monkeypatch.setattr(mod, "_gate", lambda profile: gate)
+    hook = mod._make_pre_tool_hook("dev")
+    kwargs = {"tool_name": "terminal", "args": {"command": "git push"}, "session_id": "s1", "tool_call_id": "c1"}
+    assert hook(**kwargs)["message"].startswith("PENDING_APPROVAL:")
+    assert queued[-1]["payload"]["policy"]["decision"] == "park"
+    assert hook(**kwargs)["message"].startswith("CIRCUIT_OPEN:")
+    assert [e["type"] for e in queued[-2:]] == ["tool.started", "breaker.tripped"]
+
+
+def test_pre_tool_hook_fails_closed_when_the_gate_cannot_be_built(monkeypatch):
+    mod = load()
+    queued = []
+    monkeypatch.setattr(mod, "_transport", lambda: type("T", (), {"enqueue": staticmethod(queued.append)})())
+    monkeypatch.setattr(mod, "_gate", lambda profile: (_ for _ in ()).throw(OSError("no config")))
+    hook = mod._make_pre_tool_hook("dev")
+    assert hook(tool_name="read_file", args={"path": "a"}, session_id="s") is None
+    directive = hook(tool_name="terminal", args={"command": "ls"}, session_id="s")
+    assert directive["message"].startswith("DENIED_BRIDGE_ERROR:")
+
+
+def test_core_client_round_trip_and_failures():
+    mod = load()
+    seen = []
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+        def _reply(self, code, payload):
+            body = json.dumps(payload).encode()
+            self.send_response(code)
+            self.send_header("content-type", "application/json")
+            self.send_header("content-length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_POST(self):
+            length = int(self.headers.get("content-length", "0"))
+            seen.append((self.path, self.headers.get("x-aos-bridge-token"), json.loads(self.rfile.read(length))))
+            if self.path == "/v1/approvals":
+                self._reply(200, {"id": "abc234", "status": "pending", "created": True})
+            else:
+                self._reply(200, {"status": "none"})
+
+        def do_GET(self):
+            seen.append((self.path, self.headers.get("x-aos-bridge-token"), None))
+            if self.path == "/v1/approvals/abc234":
+                self._reply(200, {"id": "abc234", "status": "pending"})
+            elif self.path == "/v1/approvals/boom00":
+                self._reply(500, {"error": "x"})
+            else:
+                self._reply(404, {"error": "not found"})
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        client = mod.CoreClient(f"http://127.0.0.1:{server.server_port}/", "bt")
+        assert client.create_approval({"x": 1})["id"] == "abc234"
+        assert client.consume("t_1", "terminal", "h") == {"status": "none"}
+        assert client.get_approval("abc234")["status"] == "pending"
+        assert client.get_approval("zzzzzz") is None
+        with pytest.raises(mod.CoreUnavailable):
+            client.get_approval("boom00")
+        assert seen[0] == ("/v1/approvals", "bt", {"x": 1})
+        assert seen[1] == ("/v1/approvals/consume", "bt", {"task_id": "t_1", "tool": "terminal", "args_hash": "h"})
+    finally:
+        server.shutdown()
+    with pytest.raises(mod.CoreUnavailable):
+        mod.CoreClient("http://127.0.0.1:9", "bt", timeout=0.5).consume("t", "x", "h")
