@@ -25,7 +25,7 @@ Status: `✅ terverifikasi` (dicoba di mesin ini) · `📄 dari docs/source` · 
 | V15 | Pin versi | Pin = commit source bersama di `infra/hermes.lock`; `doctor` membaca `Install directory` dari `hermes --version`. **Update Hermes Desktop menggeser commit ini** → `doctor` FAIL `hermes-pin` = sinyal untuk uji ulang lalu bump lock. Jangan jalankan `hermes update` dari folder Agentic OS. | ✅ | `pnpm aos doctor` |
 | V16 | Lokasi plugin | **Per profile**: `<HERMES_HOME>\profiles\<profile>\plugins\<nama>\` (bukan `<HERMES_HOME>\plugins`). Aktifkan: `hermes -p <profile> plugins enable <nama>`. Tool dimuat lazy lewat tool search — sebut nama tool secara eksplisit di persona. | ✅ | `aos-office-tools` aktif untuk `chief` |
 
-## 2. Arsitektur yang terpasang (M1 + M2 + M3 + M4)
+## 2. Arsitektur yang terpasang (M1 + M2 + M3 + M4 + M5a)
 
 ```
 Telegram ──► host gateway Agentic OS (Hermes_Gateway_787a7c01, HERMES_HOME=D:\agentic-os\hermes-home)
@@ -53,6 +53,13 @@ M4 — kantor pixel (browser):
   kantor ──WS /v1/stream + REST /v1/agents, /v1/approvals, /v1/office/state──► OS Core
   HermesTransport → HermesAdapter (event Hermes → pesan Pixel Agents) → engine Pixel Agents (vendored)
   dev: pnpm office:dev (127.0.0.1:5173, proxy Vite menyisipkan token UI dari .env.local)
+
+M5a — ruang kerja kantor (AosShell membungkus engine Pixel Agents):
+  dock agent (kanan) ◄── /v1/kanban, /v1/events, /v1/agents, /v1/costs + stream
+  HUD (bawah): approval ──POST /v1/approvals/:id/decision (by=office)──► Core ──► hermes kanban unblock
+               biaya ◄── /v1/costs, /v1/costs/daily · kesehatan ◄── /v1/health/components (+ topik health)
+  laci kanban: seret kartu ──POST /v1/kanban/:id/move──► Core ──► hermes kanban unblock|promote|block|archive
+               kartu baru ──POST /v1/kanban──► Core (buat workspace) ──► hermes kanban create
 ```
 Gateway & data Hermes lama milik owner (`%LOCALAPPDATA%\hermes`, `Hermes_Gateway`) berjalan berdampingan dan tidak disentuh.
 
@@ -108,6 +115,12 @@ Gateway & data Hermes lama milik owner (`%LOCALAPPDATA%\hermes`, `Hermes_Gateway
 | GET | `/v1/approvals/:id` | bridge atau owner | detail satu permintaan |
 | GET | `/v1/approvals?status=` | owner | daftar permintaan |
 | POST | `/v1/approvals/:id/decision` | owner | `{decision: approve|deny, note?, by?}` |
+| GET | `/v1/health/components` | UI | status core, gateway, 9Router, Docker, Hermes serve, Ollama (`ok`/`down`/`absent`); juga topik stream `health` (dicek tiap 30 dtk, dikirim bila berubah) |
+| GET | `/v1/costs/daily?days=` | UI | biaya per hari lokal (`AOS_TIMEZONE`), 1–31 hari, hari kosong diisi 0 |
+| GET | `/v1/events?profile=&limit=` | UI | event terakhir satu profile (riwayat tab Aktivitas) |
+| POST | `/v1/kanban/:id/move` | UI | `{to: ready|blocked|archived, note?}` → CLI resmi; 404 kartu tidak ada, 409 perpindahan ditolak, 502 CLI gagal |
+| POST | `/v1/kanban` | UI | `{title, assignee, body?}` → workspace `<stamp lokal>-<slug>` dibuat lalu `hermes kanban create`; 400 input salah, 502 CLI gagal (folder dihapus lagi) |
+| GET/PUT | `/v1/office/state` | UI | layout, kursi, setting kantor |
 
 - Rute UI memakai `Authorization: Bearer <AOS_UI_TOKEN>` atau `?token=`. Rute "owner" menerima `AOS_UI_TOKEN` **atau** `AOS_APPROVER_TOKEN`. Token ada di `.env.local`, harus berbeda; jangan ditempel di chat atau log.
 - Core juga: mengirim notifikasi Telegram lewat `sendMessage` bot utama (token & chat id dibaca dari `profiles\chief\.env`; tanpa polling, jadi tidak bentrok dengan gateway), menjalankan `hermes kanban unblock|block` (dengan `HERMES_HOME` Agentic OS), dan mengedarkan permintaan yang kedaluwarsa (24 jam) tiap menit.
@@ -137,11 +150,31 @@ Gateway & data Hermes lama milik owner (`%LOCALAPPDATA%\hermes`, `Hermes_Gateway
 - Mengubah allowlist: edit `squid.conf`, lalu `docker restart aos-egress-proxy`.
 
 ### Pixel office (M4)
-- **Kode**: `apps/office` (`@aos/office`). Engine, editor layout, dan asset = Pixel Agents (MIT) yang di-vendor di `apps/office/vendor/pixel-agents/` (commit `3537e14`, v1.4.1); patch P1–P5 tercatat di `NOTICE.md`; atribusi sprite JIK-A-4 di `apps/office/LICENSES.md`. Kode Agentic OS: `apps/office/src/hermes/` (`labels.ts`, `adapter.ts`, `transport.ts`, `assets.ts`).
+- **Kode**: `apps/office` (`@aos/office`). Engine, editor layout, dan asset = Pixel Agents (MIT) yang di-vendor di `apps/office/vendor/pixel-agents/` (commit `3537e14`, v1.4.1); patch P1–P7 tercatat di `NOTICE.md`; atribusi sprite JIK-A-4 di `apps/office/LICENSES.md`. Kode Agentic OS: `apps/office/src/hermes/` (`labels.ts`, `adapter.ts`, `transport.ts`, `assets.ts`) dan `apps/office/src/shell/` (dock, HUD, laci kanban — M5a).
 - **Akses**: `pnpm aos office` membuka `/office/login?token=…` di browser default → Core memasang cookie `aos_ui` (HttpOnly, SameSite=Strict, 30 hari) → `/office/`. Tanpa cookie, halaman tetap termuat tetapi stream/REST 401 (indikator "Reconnecting…"). Mode dev: proxy Vite menyisipkan header token dari `.env.local` (browser tidak memegang token).
 - **Penyimpanan**: layout, kursi, dan setting kantor ada di tabel `office_state` `core.db` (`layout`, `seats`, `settings`); kursi disimpan otomatis saat kantor dimuat, layout saat tombol Save di editor. Reset ke layout bawaan: hapus baris `layout` dari `office_state` (Core boleh tetap jalan), lalu reload.
 - **Pemetaan state**: `llm.started` → duduk aktif; tool baca/web/browser → animasi membaca; tool tulis/terminal → animasi mengetik dengan label ("Membaca …", "Menulis …", "Menjalankan …"); keputusan policy `park`/`native` atau izin `pending` → gelembung "…" + label "Needs approval" (tetap ada sampai izin selesai, termasuk setelah run berhenti); `session.ended` → gelembung ✓; `breaker.tripped` → gelembung "…"; `delegate_task` → karakter sub-agent; tanpa aktivitas → karakter berkeliaran / ke lounge.
-- **Upgrade Pixel Agents**: clone commit baru upstream, salin ulang `core/src` dan `webview-ui` (tanpa `test/`), terapkan ulang P1–P5 (`NOTICE.md`), lalu `pnpm -F @aos/office test`, `typecheck`, dan `build`.
+- **Upgrade Pixel Agents**: clone commit baru upstream, salin ulang `core/src` dan `webview-ui` (tanpa `test/`), terapkan ulang P1–P7 (`NOTICE.md`), lalu `pnpm -F @aos/office test`, `typecheck`, dan `build`.
+
+### Ruang kerja kantor (M5a)
+- **Dock agent** (panel kanan 380px): klik karakter atau tekan `1`–`5` (chief, researcher, secretary, content, dev). Tab **Chat** (placeholder, menyusul M5b), **Kartu** (aktif + 10 riwayat), **Aktivitas** (riwayat `/v1/events` lalu live dari stream: "Membaca …", "read_file selesai (… ms)"), **Agent** (tier, state, biaya hari ini).
+- **HUD** (bar bawah):
+  - **⚠ Approval (n)** (oranye bila ada yang menunggu; `A`) membuka kotak masuk. Isi instruksi opsional lalu **Setujui** / **Tolak**. Keputusan tercatat `decided_by=office` dan alurnya sama dengan keputusan lewat chief.
+  - **$ hari ini** + sparkline 7 hari membuka rincian biaya per agent, model, kartu, dan hari.
+  - **▤ Kanban** (`B`) membuka laci kanban.
+  - **Titik kesehatan**: hijau `ok`, merah `down`, abu-abu `absent` (Hermes serve abu-abu sampai M5b, Ollama opsional).
+- **Laci kanban** (`B`): kolom triage → done + kolom **Arsip**, filter agent, dan form kartu baru (judul ≤ 80 karakter, assignee, goal). Kartu baru mendapat workspace permanen `workspaces\<YYYYMMDD-HHmmss lokal>-<slug>` dan langsung `ready`.
+- **Aturan seret** (sama dengan `planMove` di Core):
+
+  | Dari | Ke | Perintah |
+  |---|---|---|
+  | `blocked` | `ready` | `unblock`; laci meminta instruksi opsional yang dikirim sebagai `UNBLOCK: <instruksi>` |
+  | `todo` | `ready` | `promote` |
+  | `todo`, `ready`, `running` | `blocked` | `block` dengan alasan "ditahan owner dari office" |
+  | apa pun | Arsip | `archive` |
+
+  Kombinasi lain ditolak: kolom tujuan ditandai merah dan muncul toast. Kartu `triage` tidak bisa dipindah dari office.
+- **Shortcut**: `1`–`5` agent, `A` approval, `B` kanban, `Esc` tutup semua, `Ctrl+K` dock chief tab Chat. Shortcut diabaikan saat mengetik di input/textarea/select.
 
 ### Atribusi biaya (per profile / per kartu)
 - Saat ini semua usage tercatat sebagai profile `shared` dan `byTask` kosong, karena owner memilih tidak membuat key 9Router per profile. Impor pertama memuat seluruh riwayat key HERMES: 258 panggilan, total ≈ $4,36 (≈ $0,81 dalam 24 jam terakhir).
@@ -156,7 +189,7 @@ Gateway & data Hermes lama milik owner (`%LOCALAPPDATA%\hermes`, `Hermes_Gateway
 ### Kanban & workspace
 - Kartu dari `chief` dibuat lewat `office_create_task` dengan workspace permanen `D:\agentic-os\hermes-home\workspaces\<stamp>-<slug>\` (hasil kerja worker tersimpan di sana; di dalam sandbox terlihat sebagai `/workspace`, satu container per proses worker, lihat V7). Plugin kini mengunci `HERMES_HOME` ke home Agentic OS (`AOS_HERMES_HOME`, atau terdeteksi dari lokasi plugin). Kartu smoke sebelumnya ada di `…\profiles\chief\workspaces\`, dibuat sebelum perbaikan ini.
 - Kartu yang dibuat manual dengan `hermes kanban create` tanpa `--workspace` memakai workspace *scratch* yang **dihapus saat kartu selesai**.
-- Core menampilkan board lewat `GET /v1/kanban` (uji: 9 kartu). Mutasi kartu tetap lewat CLI `hermes kanban …`.
+- Core menampilkan board lewat `GET /v1/kanban` (uji: 9 kartu). Mutasi kartu selalu lewat CLI `hermes kanban …`: langsung, atau dari laci kanban kantor (Core yang menjalankan CLI; Core tidak pernah menulis `kanban.db`).
 
 ### Cron
 - `morning-briefing` (`c7efc0721f0e`): `0 7 * * *`, deliver telegram. Jalankan manual: `hermes -p chief cron run c7efc0721f0e`.
@@ -199,9 +232,14 @@ Gateway & data Hermes lama milik owner (`%LOCALAPPDATA%\hermes`, `Hermes_Gateway
   - Tombol Export/Import layout dan pengaturan folder asset eksternal bawaan Pixel Agents belum berfungsi.
   - Run yang sangat cepat (beberapa detik) bisa terlewat animasinya, tetapi label terakhir dan ✓ tetap muncul.
   - Di mode dev (`office:dev`) asset terkirim dua kali karena React StrictMode; tidak memengaruhi tampilan.
-  - Chat, dock, dan HUD menyusul di M5.
+  - Pada lebar sempit, tombol Layout/Settings bawaan Pixel Agents bisa menutupi karakter di pojok kiri bawah; pakai `1`–`5` atau zoom.
+- **Ruang kerja kantor (M5a)**:
+  - Chat langsung dengan agent menyusul di M5b (`hermes serve`); sementara pakai Telegram (chief) atau `hermes -p <profile> chat`.
+  - Kartu `triage` hanya bisa dipindah lewat CLI.
+  - Biaya per agent di dock tertulis "tercatat sebagai shared" sampai key 9Router per profile dibuat.
+  - Instruksi saat Blocked → Ready memakai dialog `window.prompt` bawaan browser.
 
-## 5. Bukti exit M1, M2, M3 & M4
+## 5. Bukti exit M1, M2, M3, M4 & M5a
 
 ### Bukti exit M1
 
@@ -260,3 +298,26 @@ Diuji di mesin owner, 2026-10-02 (branch `m4-pixel-office`). Kriteria PRD §13: 
 | V3 — layout editor | BIN digeser kolom 2 → 4 dan Save → `office_state.layout` diperbarui (BIN 4,20); reload → posisi bertahan; kursi tersimpan otomatis | ✅ |
 | V4 — reconnect | Core dimatikan → "Reconnecting…"; Core hidup lagi → indikator hilang, roster utuh tanpa reload | ✅ |
 | Build produksi dari Core | `/office/`, `asset-index.json`, katalog furniture, sprite → 200; `/v1/agents` tanpa cookie → 401 | ✅ |
+
+### Bukti exit M5a
+
+Diuji di mesin owner, 2026-10-02 (branch `m5a-office-workspace`, preview `office:dev` lebar 730px). Kriteria: dock, HUD, dan laci kanban berfungsi di atas data Core asli (US-07 sebagian, US-08, US-09).
+
+| Kriteria | Bukti | Status |
+|---|---|---|
+| Test & build | Core 76, `@aos/office` 24, setup 112, Python + red-team 145; typecheck bersih; `pnpm office:build` sukses; `/office/` 200, rute M5a tanpa token → 401 | ✅ |
+| W1 — HUD | ⚠ Approval (0), "$ hari ini $2.54" + sparkline 7 hari, ▤ Kanban; kesehatan: OS Core, Gateway (PID 20840), 9Router, Docker 29.3.1 = ok; Hermes serve "dipasang di M5b" dan Ollama = absent; panel biaya: `shared` 154 panggilan, model `gemini-3.8-flash-medium`, catatan "shared" | ✅ |
+| W2 — dock | klik karakter `chief` → dock chief; `2` → researcher (Kartu: riwayat 10 kartu; Aktivitas: riwayat event); `3` → secretary; `Esc` menutup dock | ✅ |
+| W3 — aktivitas live | `researcher -q` "baca README.md, tulis ringkasan.md" → tab Aktivitas berurutan "Membaca README.md" → "read_file selesai (1420 ms)" → "Menulis ringkasan.md" → "write_file selesai (1001 ms)"; header thinking → reading → typing; biaya HUD naik | ✅ |
+| W4 — tolak dari kantor | kartu `dev` `t_bf7a1e55` `git push` → izin `xxyjqi` → HUD ⚠ Approval (1) (±43 dtk) → `A` → instruksi "uji tolak dari office" → **Tolak** → Core `denied`, `decided_by=office`; komentar kartu `UNBLOCK: DENIED_BY_OWNER:xxyjqi — uji tolak dari office…`; run ulang selesai `done`, `remote.git` tetap kosong | ✅ |
+| W5 — laci kanban | `B` → kolom terisi; kartu baru "Uji M5a drag" (`t_39d02a9e`, researcher) → Ready → dikerjakan dispatcher → `halo.md` = "halo"; "Uji M5a blokir" (`t_a56e415f`) Ready → Blocked ("ditahan owner dari office") → Ready dengan instruksi "tulis juga tanggal hari ini" → komentar `UNBLOCK: …` → `dunia.md` berisi "dunia" + tanggal; Done → Arsip → `archived`; Done → Ready: kolom merah, `dragover` ditolak, toast penolakan. Seret diuji dengan `DragEvent` asli lewat JS (mouse sintetis pane tidak memulai drag HTML5) | ✅ |
+| W6 — shortcut & teks | `Ctrl+K` → dock chief tab Chat (placeholder M5b); mengetik "Uji M5a drag" / "uji tolak dari office" di input tidak memicu `5`/`A` | ✅ |
+| Pembersihan | kartu uji `t_bf7a1e55`, `t_39d02a9e`, `t_a56e415f` diarsip lewat laci; workspace dipindah ke `workspaces\_archive\m5a-tests\` | ✅ |
+
+Perbaikan selama verifikasi:
+
+- HUD dibuat satu baris dengan scroll horizontal.
+- Panel dilapis di atas label vendor (`isolate`).
+- Label `sr-only` HUD tidak lagi melebarkan halaman.
+- Header laci bisa terlipat.
+- Stamp workspace kartu dari office kini memakai jam lokal (`b502723`). Workspace uji W5 masih ber-stamp UTC; perbaikan aktif setelah restart Core berikutnya.

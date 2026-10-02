@@ -329,7 +329,7 @@ rules:
 
 ### 5.4 OS Core (Node + Fastify)
 
-**Status M2 (terpasang):** `apps/core` = Fastify + WebSocket + **better-sqlite3** (penyimpangan sengaja dari rencana Drizzle; skema tetap seperti §6). Mendengarkan **hanya** `127.0.0.1:7400`; DB `D:\agentic-os\core\core.db`, log `D:\agentic-os\core\core.log`; autostart `shell:startup\AgenticOS_Core.vbs` (menjalankan `pnpm -F @aos/core start`; dipasang atas persetujuan owner). Membaca `kanban.db` (tiap 2 dtk) dan `data.sqlite` 9Router (tiap 30 dtk) secara read-only. Yang sudah ada di M2: ingest event, state agent, kanban-reader, ledger biaya, realtime WS. **M3:** approvals (store, grant, kedaluwarsa, baris native), kanban-actions (`hermes kanban unblock|block` lewat `execFile` dengan `HERMES_HOME` Agentic OS), notifikasi Telegram via bot utama, reaksi breaker, audit (`pnpm -F @aos/core risk-audit`). Modul catch-up mengikuti §13; ops-bot ditunda (ADR-03).
+**Status M2 (terpasang):** `apps/core` = Fastify + WebSocket + **better-sqlite3** (penyimpangan sengaja dari rencana Drizzle; skema tetap seperti §6). Mendengarkan **hanya** `127.0.0.1:7400`; DB `D:\agentic-os\core\core.db`, log `D:\agentic-os\core\core.log`; autostart `shell:startup\AgenticOS_Core.vbs` (menjalankan `pnpm -F @aos/core start`; dipasang atas persetujuan owner). Membaca `kanban.db` (tiap 2 dtk) dan `data.sqlite` 9Router (tiap 30 dtk) secara read-only. Yang sudah ada di M2: ingest event, state agent, kanban-reader, ledger biaya, realtime WS. **M3:** approvals (store, grant, kedaluwarsa, baris native), kanban-actions (`hermes kanban unblock|block` lewat `execFile` dengan `HERMES_HOME` Agentic OS), notifikasi Telegram via bot utama, reaksi breaker, audit (`pnpm -F @aos/core risk-audit`). Modul catch-up mengikuti §13; ops-bot ditunda (ADR-03). **M5a:** modul `health` (komponen + topik stream `health`), `kanban-actions` untuk kantor (`planMove` → `unblock`/`promote`/`block`/`archive`, `planCreate` → workspace permanen + `kanban create`), biaya harian per hari lokal, dan riwayat event per profile.
 
 **5.4.1 Modul**
 
@@ -338,10 +338,10 @@ rules:
 | `ingest` | `POST /v1/events` (batch), validasi Zod, simpan ke `events`, proyeksikan ke `agent_state` |
 | `approvals` | CRUD approval, grant sekali pakai, kedaluwarsa 24 jam, baris `native` dari event, resume kartu (M3) |
 | `kanban-reader` | Watch/poll `<HERMES_HOME>\kanban.db` (read-only, `mode=ro`; WAL aman dibaca saat gateway jalan), snapshot ke memori + diff yang di-broadcast ke topik `kanban` |
-| `kanban-actions` | Mutasi kartu via CLI resmi `hermes kanban …` (child process, dengan `HERMES_HOME` Agentic OS), bukan tulis langsung ke DB |
+| `kanban-actions` | Mutasi kartu via CLI resmi `hermes kanban …` (child process, dengan `HERMES_HOME` Agentic OS), bukan tulis langsung ke DB. M5a: perpindahan dari kantor hanya `blocked→ready` (`unblock --reason`), `todo→ready` (`promote`), `todo/ready/running→blocked` (`block`), apa pun → `archived`; `triage` ditolak; kartu baru = workspace `<stamp lokal>-<slug>` + `kanban create` |
 | `costs` | Ledger dari tabel `usageHistory` 9Router (`data.sqlite`, dibuka read-only; baris dicocokkan persis (exact match) di memori terhadap nilai `AOS_ROUTER_KEY*` di `.env.local`; key tidak pernah disimpan, di-log, atau dikirim; **satu key bersama "HERMES" tidak membedakan profile/task → usage diatribusikan ke profile `shared` dan `byTask` kosong**; atribusi per profile/kartu aktif setelah key `AOS_ROUTER_KEY_<PROFILE>` dibuat, lihat §4.4-E dan §16) karena `post_llm_call` tak punya usage; price table, agregasi harian, rekonsiliasi dengan `usageDaily`, alert anomali |
 | `realtime` | WebSocket `/v1/stream` → broadcast topik `events`, `agents`, `kanban`, `costs` ke office |
-| `health` | Status Hermes gateway, `hermes serve`, 9Router, Ollama, Docker; tampil di HUD |
+| `health` | Status Core, Hermes gateway (record host-gateway + PID hidup), `hermes serve` (`absent` sampai M5b), 9Router, Docker, Ollama → `ok`/`down`/`absent`; dicek tiap 30 dtk, di-broadcast saat berubah; tampil di HUD (M5a) |
 | `catchup` | Saat start: jika briefing hari ini belum terkirim dan jam < 12:00 → trigger cron briefing sekarang (label "terlambat") |
 | `notify` | Notifikasi Telegram via bot utama: izin diminta/kedaluwarsa, breaker, kartu triage (M3); alert kesehatan & digest biaya menyusul. Ops bot kedua ditunda (ADR-03) |
 
@@ -357,13 +357,17 @@ rules:
 | POST | `/v1/approvals/:id/decision` | office / chief (`office_approve`) | `approve` / `deny` + instruksi opsional (M3) |
 | GET | `/v1/agents` | office | Roster + state terkini |
 | GET | `/v1/kanban` | office | Snapshot board |
-| POST | `/v1/kanban/:taskId/move` | office | Pindah kolom (via Hermes API resmi) |
+| POST | `/v1/kanban/:taskId/move` | office | `{to: ready|blocked|archived, note?}` → CLI resmi; 404 / 409 (ditolak) / 502 (M5a) |
+| POST | `/v1/kanban` | office | Buat kartu `{title, assignee, body?}` dengan workspace permanen (M5a) |
 | GET | `/v1/costs?since=&until=` | office | Agregasi biaya (default 24 jam terakhir; terpasang M2) |
+| GET | `/v1/costs/daily?days=` | office | Biaya per hari lokal, 1–31 hari (M5a) |
+| GET | `/v1/events?profile=&limit=` | office | Event terakhir satu profile (M5a) |
+| GET | `/v1/health/components` | office | Status komponen untuk HUD (M5a) |
 | GET | `/v1/health` | publik (tanpa auth) | Status Core (terpasang M2) |
 | GET / PUT | `/v1/office/state`, `/v1/office/state/:key` | office (UI) | Layout / kursi / setting kantor (`layout`, `seats`, `settings`) (M4) |
 | GET | `/office/login?token=` | browser | Token UI valid → cookie httpOnly `aos_ui` → redirect `/office/` (M4) |
 | GET | `/office/*` | publik | File statis build kantor (`apps/office/dist`), fallback `index.html` (M4) |
-| WS | `/v1/stream` | office | Push realtime; topik `events`, `agents`, `kanban`, `costs` (terpasang M2) |
+| WS | `/v1/stream` | office | Push realtime; topik `events`, `agents`, `kanban`, `costs` (terpasang M2), `approvals` (M3), `health` (M5a) |
 
 Rute UI (`/v1/agents`, `/v1/kanban`, `/v1/costs`, `/v1/stream`) di M2 memakai `Authorization: Bearer <AOS_UI_TOKEN>` atau `?token=`. Rute owner approval (list, decision) menerima `AOS_UI_TOKEN` atau `AOS_APPROVER_TOKEN` (dipasang hanya di plugin `aos-office-tools` chief). Ketiga token harus berbeda. Topik WS `approvals` ditambahkan di M3.
 
@@ -381,7 +385,9 @@ Rute UI (`/v1/agents`, `/v1/kanban`, `/v1/costs`, `/v1/stream`) di M2 memakai `A
 - Transport bawaannya diganti `HermesTransport`: WS `/v1/stream` + REST Core, lalu `HermesAdapter` (`apps/office/src/hermes/`) menerjemahkan event, approval, dan state agent menjadi pesan Pixel Agents.
 - Asset di-decode di browser; tidak ada server Pixel Agents.
 - Core menyajikan build kantor di `http://127.0.0.1:7400/office/` (`pnpm aos office`). Layout, kursi, dan setting disimpan di tabel `office_state`.
-- Sumber `tui_gateway` (chat) menyusul di M5.
+- Sumber `tui_gateway` (chat) menyusul di M5b (`hermes serve`).
+
+**Terpasang M5a (2026-10-02):** `AosShell` (`apps/office/src/shell/`, patch P6–P7) membungkus engine dengan dock agent, HUD, dan laci kanban; semua data dari Core (§5.5.4–5.5.6).
 
 **5.5.2 Layout layar (desktop-first, min 1280×720)**
 
@@ -435,16 +441,27 @@ Target: perubahan state tampil < 2 dtk setelah event (target, bukan gate).
 - Tab "Kartu": kartu aktif + riwayat kartu agent tsb.
 - Tab "Aktivitas": log tool live (disanitasi), durasi, status.
 - Tab "Agent": tier, model aktual terakhir, biaya hari ini, memory/skills (read-only link ke Hermes dashboard).
+- **Status M5a:** dock terpasang (klik karakter atau `1`–`5`). Kartu, Aktivitas (riwayat `/v1/events` + live dari stream), dan Agent (tier, state, detail terakhir, biaya hari ini) berfungsi. Chat masih placeholder (M5b). Model aktual dan tautan memory/skills belum ada.
 
 **5.5.5 HUD & laci**
 - Approval inbox: daftar pending, detail args (ringkas/lengkap), Approve / Deny / Deny + instruksi. Sinkron dengan keputusan lewat chief di Telegram (yang pertama memutuskan menang; Core menolak keputusan kedua dengan 409).
 - Ticker biaya hari ini + sparkline 7 hari; klik → panel biaya per agent/tier/kartu.
 - Laci kanban: kolom sesuai status Hermes, filter per agent, drag & drop (via Core → API Hermes), buat kartu manual.
 - Health: titik status per komponen (Hermes gateway, serve, 9Router, Ollama, Docker, Core).
+- **Status M5a:** semua butir di atas terpasang.
+  - **Approval**: Approve / Deny + instruksi opsional, `decided_by=office`. Belum ada mode tampilan args ringkas vs lengkap; args tampil di "Detail argumen".
+  - **Biaya**: panel per agent, model, kartu, dan 7 hari. Belum ada rincian per tier, karena atribusi masih `shared`.
+  - **Laci kanban**: drag & drop HTML5 dengan aturan `canMove` yang sama dengan Core; kolom tujuan terlarang ditandai merah. Blocked → Ready meminta instruksi.
+  - **Health**: dari `/v1/health/components`.
 
 **5.5.6 Shortcut & aksesibilitas**
 - `Ctrl+K` chat ke `chief`; `1–5` fokus agent; `A` buka approval; `B` laci kanban; `Esc` tutup dock.
 - Semua info di kanvas punya padanan teks di dock/HUD (kanvas bukan satu-satunya sumber informasi); kontras cukup; animasi bisa dikurangi (`prefers-reduced-motion`).
+- **Status M5a:**
+  - Shortcut terpasang. `Esc` menutup dock, panel, dan laci sekaligus; `Ctrl+K` membuka dock chief tab Chat.
+  - Shortcut diabaikan saat mengetik di input.
+  - Titik kesehatan punya teks `sr-only`.
+  - `prefers-reduced-motion` menyusul di M6.
 
 **5.5.7 Format briefing pagi (Telegram)**
 ```
@@ -713,7 +730,8 @@ agentic-os/
 | **M2 — Bridge & Core** ✅ **Selesai (2026-10-02)** | os-bridge (event + usage), Core ingest/event store/state projector/kanban-reader/WS, ledger biaya | Event semua mode masuk Core; state agent & biaya per kartu terlihat via `/v1/agents` & `/v1/costs`. Bukti (runbook §5): sesi interaktif → rantai event lengkap di `core.db`; `smoke-kanban` `t_388dd80b` → 16 event `mode=kanban` ber-`task_id`; `/v1/kanban` mengembalikan 9 kartu; uji spool (Core mati → 4 event ter-spool → terkirim ulang, spool kosong); klien WebSocket menerima keempat topik; file worker persisten per kartu; dispatcher/cron di config root. **Catatan biaya:** owner memilih tidak membuat key per profile, jadi seluruh usage tercatat sebagai profile `shared` dan `byTask` kosong (impor pertama key HERMES: 258 panggilan, ≈ $4,36 total, ≈ $0,81 / 24 jam); atribusi per profile/kartu aktif setelah key `AOS_ROUTER_KEY_<PROFILE>` dibuat (§16) |
 | **M3 — Policy & approval (GATE)** ✅ **Selesai (2026-10-02)** | Policy engine, approval native (gate Hermes) & park, grant sekali pakai, approval lewat chief + tombol Hermes (pengganti Ops bot, keputusan owner), fail-closed, circuit breaker, egress `dev` via proxy allowlist, red-team suite | **Red-team 100% lulus**; approval via Telegram/chief & API berfungsi. Bukti (runbook §5): red-team 58/58 (46 skenario berisiko + 11 kontrol + meta; uji mutasi membuktikan tidak vakum); `doctor` 42/42; uji live L0–L7: deny lewat tombol, park → setujui → push berhasil (`t_1be6dcd0`), park → tolak (`t_ed26d4dd`), Core mati → ditolak (`t_a977443c`), injeksi di file tanpa aksi berisiko, egress diblok proxy walau disetujui; audit `risk-audit` 0 pelanggaran |
 | **M4 — Pixel office: kanvas** ✅ **Selesai (2026-10-02)** | Vendor Pixel Agents, HermesEventAdapter, pemetaan state §5.5.3, layout kantor 5 meja + meja kosong | Karakter mencerminkan state nyata; layout editor tetap berfungsi. Bukti (runbook §5): label "Membaca README.md" live dari run `researcher`; gelembung izin pada `dev` bertahan selama izin `sq983k` pending dan hilang setelah owner menolak, lalu ✓; layout editor menyimpan ke `office_state` dan bertahan setelah reload; reconnect otomatis saat Core mati/hidup; build produksi disajikan Core di `/office/` dengan cookie httpOnly |
-| **M5 — Pixel office: kerja** | Dock (chat via `tui_gateway`, kartu, log), HUD (approval, biaya, health), laci kanban, shortcut | Semua user story US-01…US-12 dapat didemokan dari office/Telegram |
+| **M5a — Pixel office: ruang kerja** ✅ **Selesai (2026-10-02)** | Dock (kartu, aktivitas, agent), HUD (approval, biaya, health), laci kanban (drag & drop + buat kartu lewat CLI resmi), shortcut — semua dari Core | Dock, HUD, dan laci bekerja di atas data asli. Bukti (runbook §5): HUD menampilkan approval, biaya + sparkline, dan 6 komponen health; aktivitas `researcher` live di dock; izin `dev` `xxyjqi` ditolak dari kotak masuk kantor (`decided_by=office`, kartu lanjut dengan `DENIED_BY_OWNER`, remote kosong); laci: buat kartu → dikerjakan, Ready → Blocked → Ready dengan instruksi (`UNBLOCK: …` dijalankan agent), Done → Arsip, Done → Ready ditolak; shortcut berfungsi dan tidak aktif saat mengetik |
+| **M5b — Pixel office: chat** | Chat dengan agent di dock lewat `hermes serve` (relay WebSocket Core, token di server), prompt approval/clarify di chat, riwayat sesi | Semua user story US-01…US-12 dapat didemokan dari office/Telegram |
 | **M6 — Hardening & dogfooding** | Catch-up briefing, backup, runbook, reduced-motion, 14 hari pemakaian nyata | Gate rilis F1 (§14) terpenuhi |
 
 ---
@@ -764,10 +782,13 @@ V9 (cron yang terlewat) **terverifikasi**: satu run susulan untuk beberapa slot 
 7. **Lokasi `AOS_WORKSPACES_ROOT`**: saat ini `D:\agentic-os\hermes-home\workspaces\` (plugin mengunci ke `HERMES_HOME` Agentic OS); kartu smoke awal ada di `…\profiles\chief\workspaces\`. Apakah root ini dipindah ke luar `HERMES_HOME` belum diputuskan.
 
 8. **Ops bot opsional (F2)**: bot Telegram kedua untuk approval/alert bila chat chief jadi terlalu ramai (ADR-03).
-9. **Kantor pixel — sisa pemetaan state (§5.5.3)**: gelembung "?" merah untuk `stuck`, tanda offline per agent (butuh modul health Core), label meja kosong; tombol Export/Import layout bawaan Pixel Agents belum tersambung ke Core.
+9. **Kantor pixel — sisa pemetaan state (§5.5.3)**: gelembung "?" merah untuk `stuck`, tanda offline per agent (modul health Core sudah ada sejak M5a, tinggal dipetakan ke karakter), label meja kosong; tombol Export/Import layout bawaan Pixel Agents belum tersambung ke Core.
+10. **M5b — `hermes serve` berbagi record host**: `hermes serve` milik Agentic OS memakai role `serve` di direktori lock gateway yang sama dengan instalasi Hermes owner, sehingga `hermes serve`/`plugins install` owner bisa menempel ke instance kita. Rencana mitigasi: `HERMES_GATEWAY_LOCK_DIR` privat (diverifikasi di M5b).
+11. **Kartu `triage` dari kantor**: laci kanban menolak memindah `triage` (Hermes belum punya perintah resmi yang aman); tetap lewat CLI.
 
 Sudah selesai di M2 (bukan lagi open): penanda konteks cron (§5.3.2), config dispatcher & cron di root home (§5.1.3), file hasil worker persisten per kartu (§5.1.3, runbook V7).
 Sudah selesai di M3: mode event `tool.*` mengikuti platform sesi (§5.3.2), red-team & rule injeksi workspace (§8.1), egress `dev` (§8.4).
+Sudah selesai di M5a: modul health Core (§5.4.1), mutasi kanban dari kantor lewat CLI resmi (risiko §15 "API mutasi kanban" terjawab untuk unblock/promote/block/archive/create).
 
 ---
 
