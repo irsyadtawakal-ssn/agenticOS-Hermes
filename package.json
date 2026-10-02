@@ -7,7 +7,9 @@
   },
   "scripts": {
     "aos": "tsx packages/setup/src/cli.ts",
-    "test": "pnpm -r test"
+    "test": "pnpm -r test",
+    "office:dev": "pnpm -F @aos/office dev",
+    "office:build": "pnpm -F @aos/office build"
   },
   "devDependencies": {
     "tsx": "^4.23.15"
