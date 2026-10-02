@@ -20,6 +20,7 @@ import { buildBriefing } from './briefing.js';
 import { ChatRelay, type RelayContext } from './chatRelay.js';
 import { costSummary, dailyCosts } from './costs.js';
 import type { Db } from './db.js';
+import { buildDogfoodReport, type ExecutionRow } from './dogfood.js';
 import { type AosEvent, ingestEvents, recentEvents } from './events.js';
 import type { HealthComponent } from './health.js';
 import type { RunHermes } from './hermesCli.js';
@@ -67,6 +68,7 @@ export interface ServerDeps {
   workspacesRoot?: string;
   chat?: { connect(): UpstreamSocket; context: RelayContext };
   runBackup?: () => Promise<BackupResult>;
+  readBriefingExecutions?: () => ExecutionRow[];
 }
 
 function safeEqual(a: string, b: string): boolean {
@@ -245,6 +247,12 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     } catch (err) {
       return reply.code(500).send({ error: (err as Error).message });
     }
+  });
+
+  app.get('/v1/dogfood', { preHandler: requireOwner }, async (req, reply) => {
+    const days = Number((req.query as Record<string, string | undefined>).days ?? 14);
+    if (!Number.isInteger(days) || days < 1 || days > 60) return reply.code(400).send({ error: 'days must be 1-60' });
+    return buildDogfoodReport(deps.db, deps.readBriefingExecutions?.() ?? [], days, now(), deps.timeZone ?? 'Asia/Jakarta');
   });
 
   app.get('/v1/briefing', { preHandler: requireBridgeOrOwner }, async () => {

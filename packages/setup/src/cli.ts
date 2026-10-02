@@ -104,6 +104,42 @@ async function main(cmd: string | undefined): Promise<number> {
       console.log(`Backup: ${body.file} (${body.files} file, ${body.failed?.length ?? 0} gagal)`);
       return 0;
     }
+    case 'dogfood-report': {
+      const days = Number(process.argv[3] ?? 14);
+      const res = await fetch(`${coreUrl}/v1/dogfood?days=${days}`, { headers: { authorization: `Bearer ${required('AOS_UI_TOKEN')}` } });
+      if (!res.ok) {
+        console.error(`Laporan gagal: HTTP ${res.status}`);
+        return 1;
+      }
+      const r = (await res.json()) as {
+        from: string;
+        to: string;
+        briefing: { onDays: number; delivered: number; rate: number | null; perDay: Array<{ day: string; morningOn: boolean; delivered: boolean; late: boolean }> };
+        security: { checked: number; violations: number };
+        approvals: { decided: number; medianMinutes: number | null };
+        adoption: { activeDays: number };
+        gate: { enoughData: boolean; briefingOk: boolean | null; securityOk: boolean };
+      };
+      const pct = r.briefing.rate === null ? '-' : `${Math.round(r.briefing.rate * 100)}%`;
+      console.log(`Dogfooding ${r.from} … ${r.to}`);
+      for (const d of r.briefing.perDay) {
+        const mark = !d.morningOn ? '·  PC mati pagi' : d.delivered ? (d.late ? '✓  terlambat' : '✓') : '✗  tidak terkirim';
+        console.log(`  ${d.day}  ${mark}`);
+      }
+      console.log(`Briefing: ${r.briefing.delivered}/${r.briefing.onDays} hari PC menyala (${pct}; gate ≥ 95%)`);
+      console.log(`Keamanan: ${r.security.violations} pelanggaran dari ${r.security.checked} keputusan (gate = 0)`);
+      console.log(
+        `Approval: ${r.approvals.decided} diputuskan, median ${r.approvals.medianMinutes === null ? '-' : `${r.approvals.medianMinutes.toFixed(1)} menit`} (target < 15)`,
+      );
+      console.log(`Adopsi: ${r.adoption.activeDays} hari dipakai (Telegram/kantor)`);
+      const verdict = !r.gate.enoughData
+        ? 'BELUM CUKUP DATA (perlu 14 hari PC menyala)'
+        : r.gate.briefingOk && r.gate.securityOk
+          ? 'GATE F1 LULUS'
+          : 'GATE F1 BELUM LULUS';
+      console.log(verdict);
+      return 0;
+    }
     default:
       console.error('Usage: pnpm aos <apply-profiles|doctor|smoke-kanban|smoke-chief|office|backup|dogfood-report>');
       return 2;

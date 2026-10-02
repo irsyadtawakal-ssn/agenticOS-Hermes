@@ -74,6 +74,11 @@ CREATE TABLE IF NOT EXISTS chat_sessions (
   profile TEXT NOT NULL,
   created_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS uptime (
+  day TEXT NOT NULL,
+  hour INTEGER NOT NULL,
+  PRIMARY KEY (day, hour)
+);
 `;
 
 export function migrate(db: Db): void {

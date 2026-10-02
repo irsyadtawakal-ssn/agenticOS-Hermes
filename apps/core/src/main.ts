@@ -2,7 +2,9 @@ import { execFile, spawn } from 'node:child_process';
 import { existsSync, mkdirSync, openSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { healthAlerts, newHealthAlertState, stuckCardAlerts } from './alerts.js';
+import Database from 'better-sqlite3';
 import { type BackupResult, backupDue, latestBackupMs, runBackup } from './backup.js';
+import { type ExecutionRow, markUptime } from './dogfood.js';
 import { knownChatSessions, rememberChatSession } from './chatSessions.js';
 import { loadCoreConfig, PROFILES } from './config.js';
 import { syncUsage } from './costs.js';
@@ -148,6 +150,29 @@ function backupTick(): void {
 setTimeout(backupTick, 120_000);
 setInterval(backupTick, 600_000);
 
+function readBriefingExecutions(): ExecutionRow[] {
+  const cronDir = join(config.hermesHome, 'profiles', 'chief', 'cron');
+  try {
+    const jobsDoc = JSON.parse(readFileSync(join(cronDir, 'jobs.json'), 'utf8')) as { jobs?: Array<{ id: string; name: string }> };
+    const job = (jobsDoc.jobs ?? []).find((j) => j.name === 'morning-briefing');
+    if (!job || !existsSync(join(cronDir, 'executions.db'))) return [];
+    const execDb = new Database(join(cronDir, 'executions.db'), { readonly: true, fileMustExist: true });
+    try {
+      return execDb
+        .prepare('SELECT source, status, claimed_at, scheduled_instant, delivery_outcome FROM executions WHERE job_id = ?')
+        .all(job.id) as ExecutionRow[];
+    } finally {
+      execDb.close();
+    }
+  } catch (err) {
+    log(`read briefing executions failed: ${(err as Error).message}`);
+    return [];
+  }
+}
+
+safely('uptime', () => markUptime(db, Date.now(), config.timeZone));
+setInterval(() => safely('uptime', () => markUptime(db, Date.now(), config.timeZone)), 600_000);
+
 let chat: ServerDeps['chat'];
 if (config.serveToken && config.servePort) {
   const port = config.servePort;
@@ -211,6 +236,7 @@ const app = await buildServer({
   workspacesRoot: config.workspacesRoot,
   chat,
   runBackup: backupNow,
+  readBriefingExecutions,
 });
 await app.listen({ host: config.host, port: config.port });
 console.log(`[aos-core] listening on http://${config.host}:${config.port} (db ${config.dbPath})`);
