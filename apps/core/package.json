@@ -6,7 +6,8 @@
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "start": "tsx src/main.ts"
+    "start": "tsx src/main.ts",
+    "audit": "tsx src/auditCli.ts"
   },
   "dependencies": {
     "@fastify/websocket": "^11.3.1",
