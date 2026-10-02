@@ -15,6 +15,7 @@ import {
   GrantMatchSchema,
   listApprovals,
 } from './approvals.js';
+import { buildBriefing } from './briefing.js';
 import { ChatRelay, type RelayContext } from './chatRelay.js';
 import { costSummary, dailyCosts } from './costs.js';
 import type { Db } from './db.js';
@@ -233,6 +234,12 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     const days = Number((req.query as Record<string, string | undefined>).days ?? 7);
     if (!Number.isInteger(days) || days < 1 || days > 31) return reply.code(400).send({ error: 'days must be 1-31' });
     return dailyCosts(deps.db, days, now(), deps.timeZone ?? 'Asia/Jakarta');
+  });
+
+  app.get('/v1/briefing', { preHandler: requireBridgeOrOwner }, async () => {
+    const tz = deps.timeZone ?? 'Asia/Jakarta';
+    const [yesterday] = dailyCosts(deps.db, 2, now(), tz);
+    return buildBriefing(deps.kanban().tasks, listApprovals(deps.db, 'pending'), yesterday, now(), tz);
   });
 
   app.get('/v1/events', { preHandler: requireUi }, async (req, reply) => {

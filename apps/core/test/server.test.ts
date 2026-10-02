@@ -338,3 +338,14 @@ describe('/v1/chat relay', () => {
     await expect(app!.injectWS('/v1/chat?token=wrong')).rejects.toThrow();
   });
 });
+
+describe('/v1/briefing', () => {
+  it('serves the digest to the bridge or owner tokens only', async () => {
+    const { app } = await make();
+    expect((await app.inject({ method: 'GET', url: '/v1/briefing' })).statusCode).toBe(401);
+    const viaBridge = await app.inject({ method: 'GET', url: '/v1/briefing', headers: { 'x-aos-bridge-token': 'bt' } });
+    expect(viaBridge.statusCode).toBe(200);
+    expect(viaBridge.json()).toMatchObject({ today: { total: 1, byAgent: { researcher: 1 } }, approvals: { total: 0 }, costYesterday: { calls: 0 } });
+    expect((await app.inject({ method: 'GET', url: '/v1/briefing?token=at' })).statusCode).toBe(200);
+  });
+});
