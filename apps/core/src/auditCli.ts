@@ -10,7 +10,7 @@ if (existsSync(envFile)) process.loadEnvFile(envFile);
 
 const since = process.argv[2] ? Date.parse(process.argv[2]) : 0;
 if (Number.isNaN(since)) {
-  console.error('Usage: pnpm -F @aos/core audit [ISO-8601 since]');
+  console.error('Usage: pnpm -F @aos/core risk-audit [ISO-8601 since]');
   process.exit(2);
 }
 const config = loadCoreConfig(process.env);
