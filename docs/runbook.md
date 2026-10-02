@@ -151,6 +151,10 @@ Gateway & data Hermes lama milik owner (`%LOCALAPPDATA%\hermes`, `Hermes_Gateway
 - `os-bridge` → `profiles\<profile>\plugins\os-bridge\` di kelima profile, dipasang `pnpm aos apply-profiles` (lihat "Bridge & spool").
 - `aos-probe` → `profiles\researcher\plugins\aos-probe\`, **disabled** (hanya untuk investigasi kontrak hook).
 
+### Menyalakan ulang proses (penting)
+- Nyalakan OS Core dan gateway **hanya** lewat klik dua kali `.vbs` di `shell:startup`, atau dari skrip dengan `explorer.exe "<path .vbs>"`. Jangan lewat `wscript`/`Start-Process` dari shell otomasi (mis. sesi tool asisten AI): proses ikut menjadi turunan shell itu dan bisa mati tanpa log saat shell dibersihkan. Kejadian 2026-10-02: gateway & Core yang dinyalakan ulang dari shell otomasi mati bersamaan ±15:16 tanpa jejak exit, sehingga pesan Telegram setelahnya tidak diproses.
+- Pesan Telegram yang masuk saat gateway mati **tidak** diproses setelah gateway hidup lagi; kirim ulang.
+
 ### Aturan keamanan operasional
 - Jangan memulai sesi interaktif worker (`researcher/secretary/content/dev`) dari folder yang berisi rahasia — cwd di-mount ke sandbox Docker.
 - Jangan jalankan `hermes update` dari folder Agentic OS (source dipakai bersama instalasi Hermes owner).
