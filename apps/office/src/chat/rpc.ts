@@ -29,7 +29,12 @@ export interface ChatRpcOptions {
   onState(state: ChatState, code?: number): void;
   socketFactory?: (url: string) => ChatSocket;
   timeoutMs?: number;
+  /** A proxy that cannot reach Core may leave the socket CONNECTING forever; give up after this. */
+  connectTimeoutMs?: number;
 }
+
+/** Close code reported when the socket never opened in time. */
+export const CONNECT_TIMEOUT_CODE = 4000;
 
 export class RpcError extends Error {
   readonly code: number;
@@ -66,10 +71,21 @@ export class ChatRpc {
     const socket = factory(this.url);
     this.socket = socket;
     this.setState('connecting');
-    socket.onopen = () => this.setState('open');
+    const giveUp = setTimeout(() => {
+      if (this.socket !== socket || this.state !== 'connecting') return;
+      this.socket = null;
+      socket.close();
+      this.failAll(new Error('Koneksi chat terputus'));
+      this.setState('closed', CONNECT_TIMEOUT_CODE);
+    }, this.opts.connectTimeoutMs ?? 10_000);
+    socket.onopen = () => {
+      clearTimeout(giveUp);
+      if (this.socket === socket) this.setState('open');
+    };
     socket.onmessage = (e) => this.receive(String(e.data));
     socket.onerror = () => {};
     socket.onclose = (e) => {
+      clearTimeout(giveUp);
       if (this.socket !== socket) return;
       this.socket = null;
       this.failAll(new Error('Koneksi chat terputus'));

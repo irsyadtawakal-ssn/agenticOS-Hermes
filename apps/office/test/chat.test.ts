@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { applyChatEvent, type ChatItem, fromTranscript, requestItem, resolveRequest, startedAtMs } from '../src/chat/model.ts';
 import { ChatRpc, type ChatSocket, type ChatState } from '../src/chat/rpc.ts';
 
@@ -62,6 +62,33 @@ describe('ChatRpc', () => {
     await expect(hanging).rejects.toThrow('terputus');
     expect(states.at(-1)).toBe('closed');
     await expect(rpc.request('ping')).rejects.toThrow('belum terhubung');
+  });
+
+  afterEach(() => vi.useRealTimers());
+
+  it('gives up on a socket that never opens so the caller can retry', () => {
+    vi.useFakeTimers();
+    const socket = new FakeSocket();
+    let closes = 0;
+    socket.close = () => {
+      closes += 1;
+    };
+    const states: Array<[ChatState, number | undefined]> = [];
+    const rpc = new ChatRpc('ws://x/v1/chat', {
+      socketFactory: () => socket,
+      onEvent: () => {},
+      onRequest: () => {},
+      onState: (s, code) => states.push([s, code]),
+      connectTimeoutMs: 10_000,
+    });
+    rpc.connect();
+    vi.advanceTimersByTime(9_999);
+    expect(states).toEqual([['connecting', undefined]]);
+    vi.advanceTimersByTime(1);
+    expect(states.at(-1)).toEqual(['closed', 4000]);
+    expect(closes).toBe(1);
+    socket.onopen?.();
+    expect(rpc.state).toBe('closed');
   });
 });
 
