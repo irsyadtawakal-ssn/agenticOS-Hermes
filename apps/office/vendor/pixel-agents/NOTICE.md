@@ -11,5 +11,6 @@ Patch Agentic OS (selain ini, file identik dengan upstream):
 - P5 `webview-ui/src/browserMock.ts`: tambah `export function getMockPayload()` dan `export type { MockPayload }`.
 - P6 `webview-ui/src/main.tsx`: merender `AosShell` (`apps/office/src/shell`) yang membungkus `App` dengan dock, HUD, dan laci kanban.
 - P7 `webview-ui/src/index.css`: `@source "../../../../src"` agar Tailwind memindai kode Agentic OS di luar root Vite.
+- P8 `webview-ui/src/office/engine/characters.ts`: bila `prefers-reduced-motion: reduce`, karakter idle tidak berkeliaran (tetap di tempat); animasi kerja (mengetik/membaca) tetap.
 
-Upgrade: clone commit baru upstream, salin ulang `core/src` dan `webview-ui` (tanpa `test/`), lalu terapkan ulang P1–P5.
+Upgrade: clone commit baru upstream, salin ulang `core/src` dan `webview-ui` (tanpa `test/`), lalu terapkan ulang P1–P8.

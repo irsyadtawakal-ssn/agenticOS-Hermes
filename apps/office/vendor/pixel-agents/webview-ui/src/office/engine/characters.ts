@@ -16,6 +16,10 @@ import { isReadingToolName } from '../toolUtils.js';
 import type { Character, Seat, SpriteData, TileType as TileTypeVal } from '../types.js';
 import { CharacterState, Direction, TILE_SIZE } from '../types.js';
 
+// Agentic OS P8: honour prefers-reduced-motion — idle characters stay where they are instead of wandering.
+const REDUCED_MOTION =
+  typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
 /** Whether a tool should show the reading animation (vs typing). Taxonomy comes
  *  from the active HookProvider via the `providerCapabilities` message. */
 export function isReadingTool(tool: string | null): boolean {
@@ -161,6 +165,7 @@ export function updateCharacter(
         }
         break;
       }
+      if (REDUCED_MOTION) break;
       // Countdown wander timer
       ch.wanderTimer -= dt;
       if (ch.wanderTimer <= 0) {
