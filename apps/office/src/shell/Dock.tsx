@@ -1,4 +1,5 @@
 import { Button } from '../../vendor/pixel-agents/webview-ui/src/components/ui/Button.tsx';
+import { ChatPanel } from '../chat/ChatPanel.tsx';
 import { formatUsd, type Profile, TIERS } from './model.ts';
 import { type DockTab, shell, useShell } from './store.ts';
 
@@ -51,59 +52,60 @@ export function Dock({ profile }: { profile: string }) {
           </button>
         ))}
       </nav>
-      <div className="flex-1 overflow-auto p-12 flex flex-col gap-8" role="tabpanel">
-        {tab === 'chat' && (
-          <p className="text-text-muted">
-            Chat langsung dengan agent hadir di M5b. Sementara pakai Telegram (chief) atau <code className="font-[inherit] text-text">hermes -p {profile} chat</code>.
-          </p>
-        )}
-        {tab === 'cards' && (
-          <>
-            <strong>Aktif ({active.length})</strong>
-            {active.length === 0 && <p className="text-text-muted">Tidak ada kartu aktif.</p>}
-            {active.map((t) => (
-              <div key={t.id} className="border-2 border-border p-6">
-                <div>{t.title}</div>
-                <div className="text-text-muted">
-                  {t.id} · {t.status}
+      {tab === 'chat' ? (
+        <div className="flex-1 min-h-0 flex flex-col" role="tabpanel">
+          <ChatPanel profile={profile} />
+        </div>
+      ) : (
+        <div className="flex-1 overflow-auto p-12 flex flex-col gap-8" role="tabpanel">
+          {tab === 'cards' && (
+            <>
+              <strong>Aktif ({active.length})</strong>
+              {active.length === 0 && <p className="text-text-muted">Tidak ada kartu aktif.</p>}
+              {active.map((t) => (
+                <div key={t.id} className="border-2 border-border p-6">
+                  <div>{t.title}</div>
+                  <div className="text-text-muted">
+                    {t.id} · {t.status}
+                  </div>
                 </div>
-              </div>
-            ))}
-            <strong className="mt-8">Riwayat</strong>
-            {history.length === 0 && <p className="text-text-muted">Belum ada.</p>}
-            {history.map((t) => (
-              <div key={t.id} className="text-text-muted">
-                {t.id} · {t.status} · {t.title}
-              </div>
-            ))}
-          </>
-        )}
-        {tab === 'activity' && (
-          <ol className="flex flex-col gap-4" aria-live="polite">
-            {log.length === 0 && <li className="text-text-muted">Belum ada aktivitas.</li>}
-            {log.map((a) => (
-              <li key={a.id} className="flex justify-between gap-8">
-                <span className="break-all">{a.text}</span>
-                <span className={`shrink-0 ${a.status === 'blocked' || a.status === 'breaker' ? 'text-status-permission' : 'text-text-muted'}`}>
-                  {a.status} · {new Date(a.ts).toLocaleTimeString('id-ID')}
-                </span>
-              </li>
-            ))}
-          </ol>
-        )}
-        {tab === 'agent' && (
-          <dl className="grid grid-cols-2 gap-6">
-            <dt className="text-text-muted">Tier</dt>
-            <dd>{TIERS[profile as Profile] ?? '-'}</dd>
-            <dt className="text-text-muted">State</dt>
-            <dd>{agent?.state ?? 'offline'}</dd>
-            <dt className="text-text-muted">Terakhir</dt>
-            <dd>{agent?.detail ?? '-'}</dd>
-            <dt className="text-text-muted">Biaya hari ini</dt>
-            <dd>{cost ? formatUsd(cost.cost_usd) : 'tercatat sebagai shared'}</dd>
-          </dl>
-        )}
-      </div>
+              ))}
+              <strong className="mt-8">Riwayat</strong>
+              {history.length === 0 && <p className="text-text-muted">Belum ada.</p>}
+              {history.map((t) => (
+                <div key={t.id} className="text-text-muted">
+                  {t.id} · {t.status} · {t.title}
+                </div>
+              ))}
+            </>
+          )}
+          {tab === 'activity' && (
+            <ol className="flex flex-col gap-4" aria-live="polite">
+              {log.length === 0 && <li className="text-text-muted">Belum ada aktivitas.</li>}
+              {log.map((a) => (
+                <li key={a.id} className="flex justify-between gap-8">
+                  <span className="break-all">{a.text}</span>
+                  <span className={`shrink-0 ${a.status === 'blocked' || a.status === 'breaker' ? 'text-status-permission' : 'text-text-muted'}`}>
+                    {a.status} · {new Date(a.ts).toLocaleTimeString('id-ID')}
+                  </span>
+                </li>
+              ))}
+            </ol>
+          )}
+          {tab === 'agent' && (
+            <dl className="grid grid-cols-2 gap-6">
+              <dt className="text-text-muted">Tier</dt>
+              <dd>{TIERS[profile as Profile] ?? '-'}</dd>
+              <dt className="text-text-muted">State</dt>
+              <dd>{agent?.state ?? 'offline'}</dd>
+              <dt className="text-text-muted">Terakhir</dt>
+              <dd>{agent?.detail ?? '-'}</dd>
+              <dt className="text-text-muted">Biaya hari ini</dt>
+              <dd>{cost ? formatUsd(cost.cost_usd) : 'tercatat sebagai shared'}</dd>
+            </dl>
+          )}
+        </div>
+      )}
     </aside>
   );
 }
