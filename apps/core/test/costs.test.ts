@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
 import { describe, expect, it } from 'vitest';
-import { attributeTask, costSummary, syncUsage } from '../src/costs.js';
+import { attributeTask, costSummary, dailyCosts, syncUsage } from '../src/costs.js';
 import { openCoreDb } from '../src/db.js';
 import type { KanbanRun } from '../src/kanban.js';
 
@@ -64,5 +64,25 @@ describe('syncUsage + costSummary', () => {
 
   it('returns 0 when the router database is missing', () => {
     expect(syncUsage(openCoreDb(':memory:'), join(tmpdir(), 'no-such-9router.sqlite'), new Map(), [])).toBe(0);
+  });
+});
+
+describe('dailyCosts', () => {
+  it('buckets cost per local day and fills empty days', () => {
+    const db = openCoreDb(':memory:');
+    const insert = db.prepare(
+      `INSERT INTO llm_usage (router_id, ts, provider, model, profile, task_id, prompt_tokens, completion_tokens, cost_usd, status)
+       VALUES (?, ?, 'p', 'm', 'shared', NULL, 1, 1, ?, 'ok')`,
+    );
+    // 2026-10-01 23:30 WIB = 16:30Z; 2026-10-02 00:30 WIB = 2026-10-01 17:30Z
+    insert.run(1, Date.parse('2026-10-01T16:30:00Z'), 0.5);
+    insert.run(2, Date.parse('2026-10-01T17:30:00Z'), 0.25);
+    insert.run(3, Date.parse('2026-10-02T03:00:00Z'), 0.25);
+    const now = Date.parse('2026-10-02T05:00:00Z');
+    expect(dailyCosts(db, 3, now, 'Asia/Jakarta')).toEqual([
+      { day: '2026-09-30', cost_usd: 0, calls: 0 },
+      { day: '2026-10-01', cost_usd: 0.5, calls: 1 },
+      { day: '2026-10-02', cost_usd: 0.5, calls: 2 },
+    ]);
   });
 });

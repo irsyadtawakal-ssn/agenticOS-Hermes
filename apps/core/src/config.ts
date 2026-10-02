@@ -15,6 +15,16 @@ export interface CoreConfig {
   kanbanDbPath: string;
   routerDbPath: string;
   routerKeyProfiles: Map<string, string>;
+  timeZone: string;
+  workspacesRoot: string;
+  gatewayLockDir: string;
+  routerBaseUrl: string;
+  servePort: number | null;
+}
+
+function routerBase(raw: string | undefined): string {
+  const url = (raw?.trim() || 'http://127.0.0.1:20128/v1').replace(/\/+$/, '');
+  return url.endsWith('/v1') ? url : `${url}/v1`;
 }
 
 function required(env: NodeJS.ProcessEnv, name: string): string {
@@ -52,5 +62,10 @@ export function loadCoreConfig(env: NodeJS.ProcessEnv): CoreConfig {
     kanbanDbPath: join(hermesHome, 'kanban.db'),
     routerDbPath: env.AOS_ROUTER_DB?.trim() || join(env.APPDATA ?? '', '9router', 'db', 'data.sqlite'),
     routerKeyProfiles,
+    timeZone: env.AOS_TIMEZONE?.trim() || 'Asia/Jakarta',
+    workspacesRoot: env.AOS_WORKSPACES_ROOT?.trim() || join(hermesHome, 'workspaces'),
+    gatewayLockDir: env.HERMES_GATEWAY_LOCK_DIR?.trim() || join(env.USERPROFILE ?? '', '.local', 'state', 'hermes', 'gateway-locks'),
+    routerBaseUrl: routerBase(env.AOS_ROUTER_URL),
+    servePort: env.AOS_SERVE_PORT?.trim() ? Number(env.AOS_SERVE_PORT) : null,
   };
 }

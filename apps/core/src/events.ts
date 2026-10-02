@@ -62,3 +62,10 @@ export function ingestEvents(db: Db, raw: unknown): { accepted: AosEvent[]; inse
   })();
   return result;
 }
+
+export function recentEvents(db: Db, profile: string, limit: number): AosEvent[] {
+  const rows = db
+    .prepare('SELECT id, ts, type, profile, session_id, task_id, mode, payload FROM events WHERE profile = ? ORDER BY ts DESC LIMIT ?')
+    .all(profile, Math.min(Math.max(limit, 1), 200)) as Array<Omit<AosEvent, 'payload'> & { payload: string }>;
+  return rows.map((r) => ({ ...r, payload: JSON.parse(r.payload) as Record<string, unknown> }));
+}

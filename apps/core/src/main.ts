@@ -1,8 +1,10 @@
-import { existsSync } from 'node:fs';
+import { execFile } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { loadCoreConfig } from './config.js';
 import { syncUsage } from './costs.js';
 import { openCoreDb } from './db.js';
+import { type HealthDeps, probeHealth } from './health.js';
 import { createHermesRunner } from './hermesCli.js';
 import { createHub } from './hub.js';
 import { diffTasks, readKanban, type KanbanSnapshot } from './kanban.js';
@@ -18,10 +20,11 @@ const config = loadCoreConfig(process.env);
 const db = openCoreDb(config.dbPath);
 const hub = createHub();
 const log = (message: string) => console.error(`[aos-core] ${message}`);
+const runHermes = createHermesRunner(config.hermesHome, config.hermesExe);
 const reactions = createReactions({
   db,
   hub,
-  runHermes: createHermesRunner(config.hermesHome, config.hermesExe),
+  runHermes,
   notifier: createNotifierFromFile(config.chiefEnvPath),
   now: Date.now,
   log,
@@ -53,11 +56,46 @@ function refreshCosts(): void {
   if (stored > 0) hub.publish('costs', { stored });
 }
 
+const healthDeps: HealthDeps = {
+  readFile: (path) => (existsSync(path) ? readFileSync(path, 'utf8') : null),
+  pidAlive: (pid) => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  },
+  fetchFn: fetch,
+  runDocker: () =>
+    new Promise((done) => {
+      execFile('docker', ['version', '--format', '{{.Server.Version}}'], { timeout: 5000, windowsHide: true }, (err, stdout) =>
+        done({ code: err ? 1 : 0, stdout: String(stdout ?? '') }),
+      );
+    }),
+  hermesHome: config.hermesHome,
+  lockDir: config.gatewayLockDir,
+  routerBaseUrl: config.routerBaseUrl,
+  servePort: config.servePort,
+};
+
+let lastHealth = '';
+async function refreshHealth(): Promise<void> {
+  const components = await probeHealth(healthDeps);
+  const key = JSON.stringify(components);
+  if (key !== lastHealth) {
+    lastHealth = key;
+    hub.publish('health', components);
+  }
+}
+
 safely('kanban', refreshKanban);
 safely('costs', refreshCosts);
+background('health', refreshHealth());
 setInterval(() => safely('kanban', refreshKanban), 2_000);
 setInterval(() => safely('costs', refreshCosts), 30_000);
 setInterval(() => background('expire', reactions.expireTick()), 60_000);
+setInterval(() => background('health', refreshHealth()), 30_000);
 
 const app = await buildServer({
   db,
@@ -69,6 +107,10 @@ const app = await buildServer({
   kanban: () => snapshot,
   onEvents: (events) => background('events', reactions.onEvents(events)),
   onApprovalCreated: (approval) => reactions.onApprovalCreated(approval),
+  probeHealth: () => probeHealth(healthDeps),
+  timeZone: config.timeZone,
+  runHermes,
+  workspacesRoot: config.workspacesRoot,
 });
 await app.listen({ host: config.host, port: config.port });
 console.log(`[aos-core] listening on http://${config.host}:${config.port} (db ${config.dbPath})`);

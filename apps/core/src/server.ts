@@ -15,9 +15,11 @@ import {
   GrantMatchSchema,
   listApprovals,
 } from './approvals.js';
-import { costSummary } from './costs.js';
+import { costSummary, dailyCosts } from './costs.js';
 import type { Db } from './db.js';
-import { type AosEvent, ingestEvents } from './events.js';
+import { type AosEvent, ingestEvents, recentEvents } from './events.js';
+import type { HealthComponent } from './health.js';
+import type { RunHermes } from './hermesCli.js';
 import type { Hub } from './hub.js';
 import type { KanbanSnapshot } from './kanban.js';
 import {
@@ -44,6 +46,10 @@ export interface ServerDeps {
   onApprovalCreated?: (approval: Approval) => void;
   onApprovalDecided?: (approval: Approval) => void;
   officeDir?: string;
+  probeHealth?: () => Promise<HealthComponent[]>;
+  timeZone?: string;
+  runHermes?: RunHermes;
+  workspacesRoot?: string;
 }
 
 function safeEqual(a: string, b: string): boolean {
@@ -159,6 +165,22 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   app.get('/v1/stream', { websocket: true, preHandler: requireUi }, (socket) => {
     const off = deps.hub.subscribe((message) => socket.send(message));
     socket.on('close', off);
+  });
+
+  app.get('/v1/health/components', { preHandler: requireUi }, async () =>
+    deps.probeHealth ? deps.probeHealth() : [{ id: 'core', label: 'OS Core', status: 'ok', detail: 'berjalan' }],
+  );
+
+  app.get('/v1/costs/daily', { preHandler: requireUi }, async (req, reply) => {
+    const days = Number((req.query as Record<string, string | undefined>).days ?? 7);
+    if (!Number.isInteger(days) || days < 1 || days > 31) return reply.code(400).send({ error: 'days must be 1-31' });
+    return dailyCosts(deps.db, days, now(), deps.timeZone ?? 'Asia/Jakarta');
+  });
+
+  app.get('/v1/events', { preHandler: requireUi }, async (req, reply) => {
+    const q = req.query as Record<string, string | undefined>;
+    if (!q.profile) return reply.code(400).send({ error: 'profile is required' });
+    return recentEvents(deps.db, q.profile, Number(q.limit ?? 50) || 50);
   });
 
   app.get('/v1/office/state', { preHandler: requireUi }, async () => getOfficeState(deps.db));

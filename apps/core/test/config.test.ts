@@ -47,4 +47,15 @@ describe('loadCoreConfig', () => {
   it('rejects identical bridge and UI tokens', () => {
     expect(() => loadCoreConfig({ ...BASE_ENV, AOS_BRIDGE_TOKEN: 'same', AOS_UI_TOKEN: 'same' })).toThrow('AOS_BRIDGE_TOKEN and AOS_UI_TOKEN must differ');
   });
+
+  it('derives office workspace settings with sensible defaults', () => {
+    const c = loadCoreConfig({ ...BASE_ENV, USERPROFILE: 'C:\\Users\\me' });
+    expect(c.timeZone).toBe('Asia/Jakarta');
+    expect(c.workspacesRoot).toBe(join('D:\\agentic-os\\hermes-home', 'workspaces'));
+    expect(c.gatewayLockDir).toBe(join('C:\\Users\\me', '.local', 'state', 'hermes', 'gateway-locks'));
+    expect(c.routerBaseUrl).toBe('http://127.0.0.1:20128/v1');
+    expect(c.servePort).toBeNull();
+    const o = loadCoreConfig({ ...BASE_ENV, AOS_SERVE_PORT: '9129', AOS_ROUTER_URL: 'http://x:1/', AOS_TIMEZONE: 'UTC', HERMES_GATEWAY_LOCK_DIR: 'E:\\locks' });
+    expect([o.servePort, o.routerBaseUrl, o.timeZone, o.gatewayLockDir]).toEqual([9129, 'http://x:1/v1', 'UTC', 'E:\\locks']);
+  });
 });

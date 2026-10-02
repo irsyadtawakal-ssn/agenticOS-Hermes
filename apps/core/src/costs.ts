@@ -107,3 +107,30 @@ export function costSummary(db: Db, sinceMs: number, untilMs: number): CostSumma
       .all(params) as CostSummary['byTask'],
   };
 }
+
+export interface DailyCost {
+  day: string;
+  cost_usd: number;
+  calls: number;
+}
+
+/** Cost per local calendar day for the last `days` days (today last), empty days included. */
+export function dailyCosts(db: Db, days: number, now: number, timeZone: string): DailyCost[] {
+  const fmt = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' });
+  const dayOf = (ms: number) => fmt.format(new Date(ms));
+  const buckets = new Map<string, DailyCost>();
+  for (let i = days - 1; i >= 0; i -= 1) {
+    const day = dayOf(now - i * 86_400_000);
+    buckets.set(day, { day, cost_usd: 0, calls: 0 });
+  }
+  const rows = db
+    .prepare('SELECT ts, cost_usd FROM llm_usage WHERE ts >= ? AND ts <= ?')
+    .all(now - (days + 1) * 86_400_000, now) as Array<{ ts: number; cost_usd: number }>;
+  for (const row of rows) {
+    const bucket = buckets.get(dayOf(row.ts));
+    if (!bucket) continue;
+    bucket.cost_usd = Math.round((bucket.cost_usd + row.cost_usd) * 1e6) / 1e6;
+    bucket.calls += 1;
+  }
+  return [...buckets.values()];
+}

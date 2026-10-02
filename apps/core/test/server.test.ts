@@ -199,3 +199,23 @@ describe('office routes', () => {
     expect(hint.body).toMatch(/pnpm office:build/);
   });
 });
+
+describe('workspace routes (M5a)', () => {
+  it('serves health components, daily costs and recent events behind the UI token', async () => {
+    const { app } = await makeWith({
+      probeHealth: async () => [{ id: 'core', label: 'OS Core', status: 'ok', detail: 'berjalan' }],
+      timeZone: 'Asia/Jakarta',
+    });
+    expect((await app.inject({ method: 'GET', url: '/v1/health/components' })).statusCode).toBe(401);
+    expect((await app.inject({ method: 'GET', url: '/v1/health/components?token=ut' })).json()).toEqual([
+      { id: 'core', label: 'OS Core', status: 'ok', detail: 'berjalan' },
+    ]);
+    const daily = await app.inject({ method: 'GET', url: '/v1/costs/daily?days=2&token=ut' });
+    expect(daily.json()).toHaveLength(2);
+    expect((await app.inject({ method: 'GET', url: '/v1/costs/daily?days=99&token=ut' })).statusCode).toBe(400);
+    await app.inject({ method: 'POST', url: '/v1/events', payload: [event], headers: { 'x-aos-bridge-token': 'bt' } });
+    const recent = await app.inject({ method: 'GET', url: '/v1/events?profile=dev&limit=5&token=ut' });
+    expect(recent.json().map((e: { id: string }) => e.id)).toEqual([event.id]);
+    expect((await app.inject({ method: 'GET', url: '/v1/events?token=ut' })).statusCode).toBe(400);
+  });
+});
