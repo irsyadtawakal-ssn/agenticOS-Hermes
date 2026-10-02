@@ -35,6 +35,8 @@ export class HermesTransport implements MessageTransport {
   private ws: WebSocket | null = null;
   private handlers: Array<(m: ServerMessage) => void> = [];
   private stateHandlers: Array<(s: TransportState) => void> = [];
+  private topicHandlers: Array<(topic: string, data: unknown) => void> = [];
+  private focusHandlers: Array<(agentId: number) => void> = [];
   private _state: TransportState = TRANSPORT_STATE_CONNECTING;
   private attempts = 0;
   private disposed = false;
@@ -93,6 +95,7 @@ export class HermesTransport implements MessageTransport {
         const { topic, data } = JSON.parse(String(e.data)) as { topic: string; data: unknown };
         if (topic === 'events' && Array.isArray(data)) this.deliver(this.adapter.onEvents(data as CoreEvent[]));
         if (topic === 'approvals' && Array.isArray(data)) this.deliver(this.adapter.onApprovals(data as CoreApproval[]));
+        for (const h of this.topicHandlers) h(topic, data);
       } catch {
         // ignore malformed frames
       }
@@ -176,6 +179,9 @@ export class HermesTransport implements MessageTransport {
         this.settings = { ...this.settings, soundEnabled: message.enabled };
         this.put('settings', this.settings);
         break;
+      case 'focusAgent':
+        for (const h of this.focusHandlers) h(message.id);
+        break;
       default:
         break; // editor/VS Code-only messages have no Agentic OS meaning yet (chat dock = M5)
     }
@@ -195,6 +201,27 @@ export class HermesTransport implements MessageTransport {
     };
   }
 
+  /** Raw Core stream frames, after the adapter has animated the office. */
+  onCoreTopic(handler: (topic: string, data: unknown) => void): () => void {
+    this.topicHandlers.push(handler);
+    return () => {
+      this.topicHandlers = this.topicHandlers.filter((h) => h !== handler);
+    };
+  }
+
+  /** Character clicks (the vendored office sends `focusAgent`). */
+  onFocus(handler: (agentId: number) => void): () => void {
+    this.focusHandlers.push(handler);
+    return () => {
+      this.focusHandlers = this.focusHandlers.filter((h) => h !== handler);
+    };
+  }
+
+  /** Highlight a character in the office (keyboard shortcuts). */
+  select(agentId: number): void {
+    this.deliver([{ type: 'agentSelected', id: agentId }]);
+  }
+
   dispose(): void {
     this.disposed = true;
     this.ws?.close();
@@ -205,9 +232,13 @@ export class HermesTransport implements MessageTransport {
   }
 }
 
+/** The live office transport, set once the vendored office creates it (used by the dock/HUD shell). */
+export let officeTransport: HermesTransport | null = null;
+
 export function createHermesTransport(): HermesTransport {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const transport = new HermesTransport({ wsUrl: `${protocol}//${window.location.host}/v1/stream` });
   transport.connect();
+  officeTransport = transport;
   return transport;
 }

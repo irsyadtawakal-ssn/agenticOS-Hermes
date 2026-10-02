@@ -137,6 +137,23 @@ describe('HermesTransport', () => {
     ]);
   });
 
+  it('exposes raw Core topics, focus clicks and programmatic selection', () => {
+    const { t, got } = setup();
+    const topics: string[] = [];
+    const focus: number[] = [];
+    t.onCoreTopic((topic) => topics.push(topic));
+    t.onFocus((id) => focus.push(id));
+    t.connect();
+    FakeSocket.last!.open();
+    FakeSocket.last!.push('health', [{ id: 'core' }]);
+    FakeSocket.last!.push('events', []);
+    t.send({ type: 'focusAgent', id: 3 });
+    t.select(2);
+    expect(topics).toEqual(['health', 'events']);
+    expect(focus).toEqual([3]);
+    expect(got).toContainEqual({ type: 'agentSelected', id: 2 });
+  });
+
   it('reconnects after a drop and re-sends the roster snapshot', async () => {
     const { t, got } = setup();
     t.connect();
