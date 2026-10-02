@@ -54,7 +54,7 @@ export function Dock({ profile }: { profile: string }) {
       <div className="flex-1 overflow-auto p-12 flex flex-col gap-8" role="tabpanel">
         {tab === 'chat' && (
           <p className="text-text-muted">
-            Chat langsung dengan agent hadir di M5b. Sementara pakai Telegram (chief) atau <code>hermes -p {profile} chat</code>.
+            Chat langsung dengan agent hadir di M5b. Sementara pakai Telegram (chief) atau <code className="font-[inherit] text-text">hermes -p {profile} chat</code>.
           </p>
         )}
         {tab === 'cards' && (
