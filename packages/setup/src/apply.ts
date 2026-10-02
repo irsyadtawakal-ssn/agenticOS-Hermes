@@ -30,6 +30,8 @@ export interface ApplyOptions {
   policyTemplate?: string;
   workspacesRoot?: string;
   approver?: { coreUrl: string; token: string };
+  /** Root holding `<profile>/*.py` cron pre-run scripts, copied to `profiles/<profile>/scripts/`. */
+  scriptsRoot?: string;
 }
 
 export function profileDir(home: string, name: string): string {
@@ -89,6 +91,17 @@ async function installPlugins(o: ApplyOptions, spec: ProfileSpec, dir: string): 
   return `installed plugins ${names.join(',')} for ${spec.name}`;
 }
 
+function installScripts(o: ApplyOptions, spec: ProfileSpec, dir: string): string | null {
+  const source = o.scriptsRoot ? join(o.scriptsRoot, spec.name) : null;
+  if (!source || !existsSync(source)) return null;
+  const files = readdirSync(source).filter((f) => f.endsWith('.py')).sort();
+  if (files.length === 0) return null;
+  const target = join(dir, 'scripts');
+  mkdirSync(target, { recursive: true });
+  for (const file of files) copyFileSync(join(source, file), join(target, file));
+  return `installed cron scripts ${files.join(',')} for ${spec.name}`;
+}
+
 export async function applyProfiles(o: ApplyOptions): Promise<string[]> {
   const log: string[] = [];
   for (const spec of o.roster) {
@@ -111,6 +124,8 @@ export async function applyProfiles(o: ApplyOptions): Promise<string[]> {
     writeFileSync(soulPath, buildSoul(spec, o.templatesDir), 'utf8');
     const installed = await installPlugins(o, spec, dir);
     if (installed) log.push(installed);
+    const scripts = installScripts(o, spec, dir);
+    if (scripts) log.push(scripts);
     log.push(`configured profile ${spec.name} (tier ${spec.tier})`);
   }
   mkdirSync(o.home, { recursive: true });

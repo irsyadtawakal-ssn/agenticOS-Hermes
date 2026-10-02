@@ -117,6 +117,19 @@ describe('applyProfiles', () => {
     ).rejects.toThrow(/plugins enable os-bridge failed: nope/);
   });
 
+  it('copies cron scripts for profiles that have them', async () => {
+    const { home, opts } = setup();
+    const scriptsRoot = mkdtempSync(join(tmpdir(), 'aos-scripts-'));
+    mkdirSync(join(scriptsRoot, 'chief'), { recursive: true });
+    writeFileSync(join(scriptsRoot, 'chief', 'briefing_context.py'), '# briefing\n');
+    writeFileSync(join(scriptsRoot, 'chief', 'notes.txt'), 'not a script\n');
+    const log = await applyProfiles({ ...opts, scriptsRoot });
+    const target = join(profileDir(home, 'chief'), 'scripts');
+    expect(readFileSync(join(target, 'briefing_context.py'), 'utf8')).toBe('# briefing\n');
+    expect(existsSync(join(target, 'notes.txt'))).toBe(false);
+    expect(log).toContain('installed cron scripts briefing_context.py for chief');
+  });
+
   it('copies plugin code, writes the policy with the workspaces root and the chief approver config', async () => {
     const { home, opts } = setup();
     const template = JSON.stringify({ version: 1, default: 'allow', workspaces_root: '', rules: [{ id: 'x', action: 'deny', match: {} }] });

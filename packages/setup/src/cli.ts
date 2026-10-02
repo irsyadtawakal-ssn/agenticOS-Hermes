@@ -55,6 +55,7 @@ async function main(cmd: string | undefined): Promise<number> {
         policyTemplate: readFileSync(join(repoRoot, 'infra/policy/policy.json'), 'utf8'),
         workspacesRoot: process.env.AOS_WORKSPACES_ROOT?.trim() || undefined,
         approver: { coreUrl, token: required('AOS_APPROVER_TOKEN') },
+        scriptsRoot: join(repoRoot, 'packages/hermes-cron-scripts'),
       });
       for (const line of log) console.log(line);
       return 0;

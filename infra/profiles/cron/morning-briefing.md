@@ -1,9 +1,12 @@
-Susun briefing pagi untuk owner dalam Bahasa Indonesia, maksimal 12 baris, format:
+Susun briefing pagi untuk owner dalam Bahasa Indonesia, maksimal 14 baris, HANYA dari data "Script Output" di atas (jangan mengarang angka).
 
-☀️ Briefing — <nama hari>, <tanggal> <bulan>
-Hari ini: <jumlah kartu todo/ready/running> kartu (<agent> <n> · ...)
-⚠ Menunggu kamu: <jumlah kartu blocked> kartu blocked (sebutkan id + judul, maks 3)
-✅ Selesai kemarin: <jumlah kartu done kemarin>
-📌 Reminder hari ini: <dari jadwal/reminder yang kamu ketahui, atau "tidak ada">
+Format:
+☀️ Briefing — <TANGGAL><jika STATUS TERLAMBAT tambahkan " (terlambat, dibuat <jam>)">
+Hari ini: <KARTU_HARI_INI>
+⚠ Menunggu kamu: <BLOCKED> kartu blocked<, sebut maks 3 id + judul> · <APPROVAL_MENUNGGU> izin<, sebut id + agent + tool; ingatkan balas "setujui <id>" / "tolak <id> <alasan>">
+✅ Selesai kemarin: <SELESAI_KEMARIN>
+💸 Biaya kemarin: <BIAYA_KEMARIN>
+📌 Reminder hari ini: <REMINDER_HARI_INI>
 
-Ambil data kartu dengan tool kanban (kanban_list atau office_list_tasks). Jangan mengarang angka; jika data tidak tersedia, tulis "tidak tersedia".
+Jika DATA_CORE tidak tersedia: ambil data kartu dengan office_list_tasks, tulis "biaya & izin: tidak tersedia (Core mati)".
+Jika STATUS MANUAL: tambahkan baris terakhir "(dijalankan manual)".
