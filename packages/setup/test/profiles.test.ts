@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -183,5 +183,21 @@ describe('routerKeysFromEnv / pluginsFor', () => {
   it('gives every profile os-bridge and the gateway profile the office tools', () => {
     expect(pluginsFor(roster[0])).toEqual(['os-bridge', 'aos-office-tools']);
     expect(pluginsFor(roster[1])).toEqual(['os-bridge']);
+  });
+});
+
+describe('real soul templates', () => {
+  const soulDir = join(import.meta.dirname, '..', '..', '..', 'infra', 'profiles', 'soul');
+  it('teach every agent the approval status codes', () => {
+    const common = readFileSync(join(soulDir, '_common.md'), 'utf8');
+    for (const code of ['PENDING_APPROVAL', 'DENIED_BY_OWNER', 'DENIED_BY_POLICY', 'DENIED_CORE_UNAVAILABLE', 'CIRCUIT_OPEN', 'awaiting_approval:', 'needs_input']) {
+      expect(common).toContain(code);
+    }
+    expect(common).not.toContain('sampai sistem approval aktif');
+  });
+
+  it('teach chief to relay owner decisions only', () => {
+    const chief = readFileSync(join(soulDir, 'chief.md'), 'utf8');
+    for (const part of ['office_approve', 'office_list_approvals', 'setujui', 'tolak', 'JANGAN']) expect(chief).toContain(part);
   });
 });
