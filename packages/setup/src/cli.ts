@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path';
 import { applyProfiles } from './apply.js';
 import { formatResults } from './check.js';
 import { realExec } from './exec.js';
-import { resolveHermesHome } from './hermesHome.js';
+import { cleanStaleUpdateLock, resolveHermesHome } from './hermesHome.js';
 import { loadRoster, routerKeysFromEnv, tierModelsFromEnv } from './profiles.js';
 import { runDoctor } from './doctor.js';
 import { officeLoginUrl, officePublicUrl, openInBrowser } from './office.js';
@@ -33,6 +33,7 @@ async function main(cmd: string | undefined): Promise<number> {
   const routerBaseUrl = rawRouterUrl.endsWith('/v1') ? rawRouterUrl : `${rawRouterUrl}/v1`;
   const useHermesHome = (): string => {
     const home = resolveHermesHome({ env: process.env, exists: existsSync });
+    cleanStaleUpdateLock(home);
     process.env.HERMES_HOME = home;
     console.log(`HERMES_HOME=${home}`);
     return home;

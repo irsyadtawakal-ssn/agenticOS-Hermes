@@ -1,3 +1,4 @@
+import { existsSync, readFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 
 export interface HomeProbe {
@@ -48,4 +49,33 @@ export function parseLock(text: string): { commit: string } {
   const match = /^commit=([0-9a-f]{7,40})\s*$/m.exec(text);
   if (!match) throw new Error('infra/hermes.lock must contain a line commit=<git sha>');
   return { commit: match[1] };
+}
+
+export function cleanStaleUpdateLock(
+  home: string,
+  exists: (p: string) => boolean = existsSync,
+  read: (p: string) => string = (p) => readFileSync(p, 'utf8'),
+  unlink: (p: string) => void = unlinkSync,
+  isAlive: (pid: number) => boolean = (pid) => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  },
+): boolean {
+  const lockFile = join(home, '.hermes-update-in-progress');
+  if (!exists(lockFile)) return false;
+  try {
+    const raw = read(lockFile).trim().split('\n')[0]?.trim();
+    const pid = Number(raw);
+    if (!pid || isNaN(pid) || !isAlive(pid)) {
+      unlink(lockFile);
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
 }

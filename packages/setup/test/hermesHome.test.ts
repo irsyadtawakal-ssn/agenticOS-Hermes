@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { hermesHomeCandidates, hermesSourceDir, parseInstallDir, parseLock, resolveHermesHome } from '../src/hermesHome.js';
+import { cleanStaleUpdateLock, hermesHomeCandidates, hermesSourceDir, parseInstallDir, parseLock, resolveHermesHome } from '../src/hermesHome.js';
 
 const LOCAL = 'C:\\Users\\me\\AppData\\Local';
 
@@ -86,5 +86,37 @@ describe('parseInstallDir', () => {
   });
   it('throws when the Install directory line is absent', () => {
     expect(() => parseInstallDir('Hermes Agent v0.21.5\nPython: 3.14.7\n')).toThrow(/Install directory/);
+  });
+});
+
+describe('cleanStaleUpdateLock', () => {
+  it('returns false when lock file does not exist', () => {
+    expect(cleanStaleUpdateLock('D:\\home', () => false)).toBe(false);
+  });
+
+  it('unlinks stale lock when PID is dead', () => {
+    let unlinked = false;
+    const res = cleanStaleUpdateLock(
+      'D:\\home',
+      () => true,
+      () => '12345\n',
+      () => { unlinked = true; },
+      () => false // dead
+    );
+    expect(res).toBe(true);
+    expect(unlinked).toBe(true);
+  });
+
+  it('leaves lock untouched when PID is alive', () => {
+    let unlinked = false;
+    const res = cleanStaleUpdateLock(
+      'D:\\home',
+      () => true,
+      () => '12345\n',
+      () => { unlinked = true; },
+      () => true // alive
+    );
+    expect(res).toBe(false);
+    expect(unlinked).toBe(false);
   });
 });
