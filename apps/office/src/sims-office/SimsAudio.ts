@@ -178,6 +178,32 @@ class SimsAudioManager {
     });
   }
 
+  /** Broadcast / Chat All sound - resonant intercom / announcement chime */
+  public playBroadcast(): void {
+    const ctx = this.initCtx();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+
+    const tones = [698.46, 880.0]; // F5 then A5
+    tones.forEach((freq, idx) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      const t = now + idx * 0.12;
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, t);
+
+      gain.gain.setValueAtTime(0.08, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start(t);
+      osc.stop(t + 0.38);
+    });
+  }
+
   /** Bouncy The Sims 2 UI bubble click */
   public playBubbleClick(): void {
     const ctx = this.initCtx();

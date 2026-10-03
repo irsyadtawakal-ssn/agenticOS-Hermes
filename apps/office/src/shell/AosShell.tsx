@@ -50,6 +50,14 @@ export default function AosShell() {
           const el = document.querySelector('.sims-chat-textarea') as HTMLTextAreaElement | null;
           el?.focus();
         }, 60);
+      } else if (action.type === 'chat_all') {
+        simsAudio.playBubbleClick();
+        shell.select('all');
+        shell.setTab('chat');
+        setTimeout(() => {
+          const el = document.querySelector('.sims-chat-textarea') as HTMLTextAreaElement | null;
+          el?.focus();
+        }, 60);
       }
       e.preventDefault();
     };

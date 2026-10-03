@@ -25,17 +25,22 @@ export function Dock({ profile }: { profile: string }) {
   const health = useShell((s) => s.health);
   const approvals = useShell((s) => s.approvals);
 
+  const isAll = profile === 'all';
   const agent = agents.find((a) => a.profile === profile);
-  const mine = tasks.filter((t) => t.assignee === profile);
+  const mine = tasks.filter((t) => (isAll ? true : t.assignee === profile));
   const active = mine.filter((t) => ACTIVE.has(t.status));
   const history = mine.filter((t) => !ACTIVE.has(t.status)).slice(0, 10);
   const cost = costs?.byProfile.find((p) => p.profile === profile);
-  const log = activity[profile] ?? [];
+  const log = isAll
+    ? Object.values(activity).flat().sort((a, b) => b.ts - a.ts)
+    : activity[profile] ?? [];
 
-  const meta = getProfileMeta(profile);
+  const meta = isAll
+    ? { title: 'Broadcast Serentak', aspiration: 'Harmoni & Kolaborasi Tim', traits: ['Terkoordinasi', 'Multi-Agen'] }
+    : getProfileMeta(profile);
   const report = useMemo(() => {
-    return calculateMotives(profile, { approvals, tasks, costs, daily, health, agents });
-  }, [profile, approvals, tasks, costs, daily, health, agents]);
+    return calculateMotives(isAll ? 'chief' : profile, { approvals, tasks, costs, daily, health, agents });
+  }, [profile, isAll, approvals, tasks, costs, daily, health, agents]);
 
   const handleTabClick = (nextTab: DockTab) => {
     simsAudio.playTabSwitch();
@@ -52,6 +57,14 @@ export function Dock({ profile }: { profile: string }) {
     shell.select(null);
   };
 
+  const currentTabs: Array<[DockTab, string]> = isAll
+    ? [
+        ['chat', '📢 Chat All'],
+        ['cards', '📋 Semua Kartu'],
+        ['activity', '⚡ Aktivitas Tim'],
+      ]
+    : TABS;
+
   return (
     <aside aria-label={`Dock ${profile}`} className="sims-dock">
       {/* Sims 2 Aqua/Steel Dock Header */}
@@ -60,14 +73,14 @@ export function Dock({ profile }: { profile: string }) {
           <div
             className="sims-dock-avatar"
             style={{
-              borderColor: report.plumbobColor,
-              boxShadow: `0 0 10px ${report.plumbobColor}66`,
+              borderColor: isAll ? '#38bdf8' : report.plumbobColor,
+              boxShadow: `0 0 10px ${isAll ? '#38bdf8' : report.plumbobColor}66`,
             }}
           >
-            {profile.slice(0, 2).toUpperCase()}
+            {isAll ? '📢' : profile.slice(0, 2).toUpperCase()}
             <span
               className="sims-dock-avatar-dot"
-              style={{ backgroundColor: report.plumbobColor }}
+              style={{ backgroundColor: isAll ? '#38bdf8' : report.plumbobColor }}
             />
           </div>
           <div>
@@ -77,6 +90,7 @@ export function Dock({ profile }: { profile: string }) {
               onChange={(e) => handleSelectProfile(e.target.value)}
               className="sims-dock-select"
             >
+              <option value="all">📢 CHAT ALL (SEMUA AGENT)</option>
               {PROFILES.map((p) => (
                 <option key={p} value={p}>
                   {p.toUpperCase()}
@@ -86,7 +100,7 @@ export function Dock({ profile }: { profile: string }) {
             <div className="sims-dock-status-pill">
               <span>{meta.title}</span>
               <span>·</span>
-              <span className="capitalize">{agent?.state ?? 'offline'}</span>
+              <span className="capitalize">{isAll ? `${PROFILES.length} agen terhubung` : agent?.state ?? 'offline'}</span>
             </div>
           </div>
         </div>
@@ -102,7 +116,7 @@ export function Dock({ profile }: { profile: string }) {
 
       {/* Tabs navigation */}
       <nav className="sims-dock-nav" role="tablist" aria-label="Tab dock">
-        {TABS.map(([id, label]) => (
+        {currentTabs.map(([id, label]) => (
           <button
             key={id}
             type="button"

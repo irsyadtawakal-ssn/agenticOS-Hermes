@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import { applyChatEvent, type ChatItem, fromTranscript, newItemId, requestItem, resolveRequest, type SessionRow, type TranscriptMessage } from './model.ts';
 import { type ChatEvent, ChatRpc, type ChatState, type ServerRequest } from './rpc.ts';
+import { PROFILES } from '../hermes/labels.ts';
 
 export interface ProfileChat {
   runtimeId: string | null;
@@ -10,17 +11,27 @@ export interface ProfileChat {
   sessions: SessionRow[];
 }
 
+export interface BroadcastMessage {
+  id: string;
+  text: string;
+  timestamp: number;
+  targets: string[];
+}
+
 export interface ChatStoreState {
   connection: ChatState;
   closeCode: number | null;
   chats: Record<string, ProfileChat>;
+  broadcasts: BroadcastMessage[];
 }
 
 const EMPTY: ProfileChat = { runtimeId: null, storedId: null, items: [], busy: false, sessions: [] };
 const RETRY_MS = [1_000, 3_000, 10_000, 30_000];
 
-let state: ChatStoreState = { connection: 'idle', closeCode: null, chats: {} };
+let state: ChatStoreState = { connection: 'idle', closeCode: null, chats: {}, broadcasts: [] };
 const listeners = new Set<() => void>();
+type BroadcastListener = (targets: string[], text: string) => void;
+const broadcastListeners = new Set<BroadcastListener>();
 let rpc: ChatRpc | null = null;
 let retry = 0;
 
@@ -36,7 +47,7 @@ function patchChat(profile: string, patch: Partial<ProfileChat>): void {
 }
 
 function notice(profile: string, text: string): void {
-  patchChat(profile, { items: [...chatOf(profile).items, { kind: 'notice', id: newItemId(), text, tone: 'error' }], busy: false });
+  patchChat(profile, { items: [...chatOf(profile).items, { kind: 'notice', id: newItemId(), text, tone: 'error', profile }], busy: false });
 }
 
 function profileOfSession(sessionId: unknown): string | null {
@@ -48,14 +59,17 @@ function onEvent(ev: ChatEvent): void {
   const profile = profileOfSession(ev.session_id);
   if (!profile) return;
   const c = chatOf(profile);
-  const next = applyChatEvent({ items: c.items, busy: c.busy }, ev);
+  const next = applyChatEvent({ items: c.items, busy: c.busy }, ev, profile);
   if (next.items !== c.items || next.busy !== c.busy) patchChat(profile, next);
 }
 
 function onRequest(req: ServerRequest): void {
   const profile = profileOfSession(req.params.session_id);
   const item = requestItem(req);
-  if (profile && item) patchChat(profile, { items: [...chatOf(profile).items, item] });
+  if (profile && item) {
+    item.profile = profile;
+    patchChat(profile, { items: [...chatOf(profile).items, item] });
+  }
 }
 
 function onState(next: ChatState, code?: number): void {
@@ -166,7 +180,99 @@ export const chat = {
     else return;
     patchChat(profile, { items: resolveRequest(chatOf(profile).items, item.requestId, value) });
   },
+  sendAll: async (text: string, targets?: string[]): Promise<void> => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    const targetProfiles = targets && targets.length > 0 ? targets : PROFILES;
+    const broadcastId = newItemId();
+    const bMsg: BroadcastMessage = {
+      id: broadcastId,
+      text: trimmed,
+      timestamp: Date.now(),
+      targets: [...targetProfiles],
+    };
+    set({ broadcasts: [...state.broadcasts, bMsg] });
+    for (const fn of broadcastListeners) {
+      try {
+        fn(targetProfiles, trimmed);
+      } catch {
+        // non-fatal
+      }
+    }
+
+    await Promise.allSettled(
+      targetProfiles.map((p) =>
+        guarded(p, async () => {
+          if (!chatOf(p).runtimeId) await newSession(p);
+          const c = chatOf(p);
+          patchChat(p, {
+            items: [
+              ...c.items,
+              {
+                kind: 'user',
+                id: newItemId(),
+                text: trimmed,
+                broadcast: true,
+                broadcastId,
+                targetCount: targetProfiles.length,
+                targetProfiles,
+              },
+            ],
+            busy: true,
+          });
+          await (await ready()).request('prompt.submit', { session_id: c.runtimeId, text: trimmed });
+        })
+      )
+    );
+  },
+  interruptAll: async (targets?: string[]): Promise<void> => {
+    const targetProfiles = targets && targets.length > 0 ? targets : PROFILES;
+    await Promise.allSettled(
+      targetProfiles.map((p) => {
+        const c = chatOf(p);
+        if (c.runtimeId && c.busy) return chat.interrupt(p);
+        return Promise.resolve();
+      })
+    );
+  },
+  newSessionAll: async (targets?: string[]): Promise<void> => {
+    const targetProfiles = targets && targets.length > 0 ? targets : PROFILES;
+    await Promise.allSettled(targetProfiles.map((p) => chat.newSession(p)));
+  },
+  onBroadcast(fn: BroadcastListener): () => void {
+    broadcastListeners.add(fn);
+    return () => {
+      broadcastListeners.delete(fn);
+    };
+  },
 };
+
+export function getChatAllTimeline(s: ChatStoreState, filterProfile?: string | null): ChatItem[] {
+  if (filterProfile && filterProfile !== 'all') {
+    return s.chats[filterProfile]?.items ?? [];
+  }
+  const allItems: ChatItem[] = [];
+  const seenBroadcastIds = new Set<string>();
+
+  for (const [prof, c] of Object.entries(s.chats)) {
+    for (const item of c.items) {
+      if (item.kind === 'user' && item.broadcast && item.broadcastId) {
+        if (!seenBroadcastIds.has(item.broadcastId)) {
+          seenBroadcastIds.add(item.broadcastId);
+          allItems.push(item);
+        }
+      } else {
+        allItems.push(item.profile ? item : { ...item, profile: prof });
+      }
+    }
+  }
+
+  return allItems.sort((a, b) => {
+    const na = Number(a.id.replace(/\D/g, '')) || 0;
+    const nb = Number(b.id.replace(/\D/g, '')) || 0;
+    return na - nb;
+  });
+}
 
 export function useChat<T>(selector: (s: ChatStoreState) => T): T {
   return useSyncExternalStore(

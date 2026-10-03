@@ -15,6 +15,7 @@ import { AnchorRegistry } from './AnchorRegistry.ts';
 import { ScreenManager } from './ScreenStates.ts';
 import { DecorManager } from './DecorManager.ts';
 import { simsAmbience } from './SimsAmbience.ts';
+import type { ThoughtIcon } from './ThoughtBubble.ts';
 
 export interface SimsSceneCallbacks {
   onSelectAgent: (profile: string) => void;
@@ -190,6 +191,16 @@ export class SimsScene {
 
   public selectAgent(profile: string, smoothFocus: boolean = true): void {
     this.selectedProfile = profile;
+    if (profile === 'all') {
+      for (const agent of this.agents.values()) {
+        agent.plumbob.setVisible(true);
+      }
+      if (smoothFocus) {
+        this.cameraCtrl.focusOn(0, 0);
+      }
+      this.callbacks.onSelectAgent(profile);
+      return;
+    }
     for (const [p, agent] of this.agents.entries()) {
       // Plumbob is highlighted above selected agent
       agent.plumbob.setVisible(p === profile);
@@ -201,6 +212,16 @@ export class SimsScene {
       }
     }
     this.callbacks.onSelectAgent(profile);
+  }
+
+  public broadcastThought(icon: ThoughtIcon = 'chat', targets?: string[]): void {
+    const list = targets && targets.length > 0 ? targets : Array.from(this.agents.keys());
+    for (const p of list) {
+      const agent = this.agents.get(p);
+      if (agent) {
+        agent.showThought(icon);
+      }
+    }
   }
 
   public updateLiveStates(

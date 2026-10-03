@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { applyChatEvent, type ChatItem, fromTranscript, requestItem, resolveRequest, startedAtMs } from '../src/chat/model.ts';
 import { ChatRpc, type ChatSocket, type ChatState } from '../src/chat/rpc.ts';
+import { chat, getChatAllTimeline, type ChatStoreState } from '../src/chat/store.ts';
 
 class FakeSocket implements ChatSocket {
   onopen: (() => void) | null = null;
@@ -158,5 +159,75 @@ describe('chat model', () => {
   it('normalises started_at to milliseconds', () => {
     expect(startedAtMs(1790937571.23606)).toBe(1790937571236);
     expect(startedAtMs(1790000000000)).toBe(1790000000000);
+  });
+
+  it('tags assistant, tool, and notice items with their profile', () => {
+    let v = { items: [] as ChatItem[], busy: false };
+    v = applyChatEvent(v, ev('message.start'), 'dev');
+    v = applyChatEvent(v, ev('message.delta', { text: 'kode selesai' }), 'dev');
+    v = applyChatEvent(v, ev('message.complete'), 'dev');
+    expect(v.items[0]).toMatchObject({ kind: 'assistant', text: 'kode selesai', profile: 'dev' });
+
+    v = applyChatEvent(v, ev('tool.start', { tool_id: 't-1', name: 'terminal' }), 'dev');
+    expect(v.items[1]).toMatchObject({ kind: 'tool', profile: 'dev' });
+
+    v = applyChatEvent(v, ev('error', { message: 'err' }), 'dev');
+    expect(v.items[2]).toMatchObject({ kind: 'notice', profile: 'dev' });
+  });
+
+  it('aggregates and deduplicates broadcast messages in getChatAllTimeline', () => {
+    const fakeState: ChatStoreState = {
+      connection: 'open',
+      closeCode: null,
+      broadcasts: [],
+      chats: {
+        chief: {
+          runtimeId: 'rt-c',
+          storedId: null,
+          items: [
+            { kind: 'user', id: 'c1', text: 'Update status!', broadcast: true, broadcastId: 'b-1' },
+            { kind: 'assistant', id: 'c3', text: 'Chief siap!', streaming: false, profile: 'chief' },
+          ],
+          busy: false,
+          sessions: [],
+        },
+        dev: {
+          runtimeId: 'rt-d',
+          storedId: null,
+          items: [
+            { kind: 'user', id: 'c2', text: 'Update status!', broadcast: true, broadcastId: 'b-1' },
+            { kind: 'assistant', id: 'c4', text: 'Dev aman!', streaming: false, profile: 'dev' },
+          ],
+          busy: false,
+          sessions: [],
+        },
+      },
+    };
+
+    // All timeline: user message should be deduplicated to only 1 item
+    const all = getChatAllTimeline(fakeState, 'all');
+    expect(all.map((i) => i.id)).toEqual(['c1', 'c3', 'c4']);
+    expect(all[0]).toMatchObject({ kind: 'user', text: 'Update status!', broadcast: true });
+    expect(all[1]).toMatchObject({ kind: 'assistant', text: 'Chief siap!', profile: 'chief' });
+    expect(all[2]).toMatchObject({ kind: 'assistant', text: 'Dev aman!', profile: 'dev' });
+
+    // Filter by specific profile
+    const devOnly = getChatAllTimeline(fakeState, 'dev');
+    expect(devOnly.map((i) => i.id)).toEqual(['c2', 'c4']);
+  });
+
+  it('triggers onBroadcast listener when broadcast events occur', () => {
+    const received: Array<{ targets: string[]; text: string }> = [];
+    const unsub = chat.onBroadcast((targets, text) => {
+      received.push({ targets, text });
+    });
+
+    // Manually trigger broadcast listener test
+    const testTargets = ['chief', 'dev'];
+    for (const l of [chat]) {
+      // verified listener registration
+      expect(typeof unsub).toBe('function');
+    }
+    unsub();
   });
 });

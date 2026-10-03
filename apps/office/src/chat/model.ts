@@ -3,12 +3,12 @@ import type { ChatEvent, ServerRequest } from './rpc.ts';
 export type ApprovalChoice = 'once' | 'session' | 'always' | 'deny';
 
 export type ChatItem =
-  | { kind: 'user'; id: string; text: string }
-  | { kind: 'assistant'; id: string; text: string; streaming: boolean }
-  | { kind: 'tool'; id: string; name: string; label: string; status: 'running' | 'done'; durationMs?: number }
-  | { kind: 'approval'; id: string; requestId: string; command: string; description: string; choices: ApprovalChoice[]; decided?: ApprovalChoice }
-  | { kind: 'clarify'; id: string; requestId: string; qid?: string; question: string; choices: string[]; answered?: string }
-  | { kind: 'notice'; id: string; text: string; tone: 'info' | 'error' };
+  | { kind: 'user'; id: string; text: string; broadcast?: boolean; broadcastId?: string; targetCount?: number; targetProfiles?: string[] }
+  | { kind: 'assistant'; id: string; text: string; streaming: boolean; profile?: string }
+  | { kind: 'tool'; id: string; name: string; label: string; status: 'running' | 'done'; durationMs?: number; profile?: string }
+  | { kind: 'approval'; id: string; requestId: string; command: string; description: string; choices: ApprovalChoice[]; decided?: ApprovalChoice; profile?: string }
+  | { kind: 'clarify'; id: string; requestId: string; qid?: string; question: string; choices: string[]; answered?: string; profile?: string }
+  | { kind: 'notice'; id: string; text: string; tone: 'info' | 'error'; profile?: string };
 
 export interface ChatView {
   items: ChatItem[];
@@ -60,35 +60,36 @@ function answeredSinceLastUser(items: ChatItem[]): boolean {
   return false;
 }
 
-export function applyChatEvent(view: ChatView, ev: ChatEvent): ChatView {
+export function applyChatEvent(view: ChatView, ev: ChatEvent, profile?: string): ChatView {
   const p = ev.payload ?? {};
   const items = view.items;
   const last = items[items.length - 1];
+  const prof = profile ? { profile } : {};
   switch (ev.type) {
     case 'message.start':
       if (last?.kind === 'assistant' && last.streaming) return { items, busy: true };
-      return { items: [...items, { kind: 'assistant', id: newItemId(), text: '', streaming: true }], busy: true };
+      return { items: [...items, { kind: 'assistant', id: newItemId(), text: '', streaming: true, ...prof }], busy: true };
     case 'message.delta': {
       const text = s(p.text);
       if (last?.kind === 'assistant' && last.streaming) return { items: [...items.slice(0, -1), { ...last, text: last.text + text }], busy: true };
-      return { items: [...items, { kind: 'assistant', id: newItemId(), text, streaming: true }], busy: true };
+      return { items: [...items, { kind: 'assistant', id: newItemId(), text, streaming: true, ...prof }], busy: true };
     }
     case 'message.complete': {
       const text = s(p.text);
       let next = settle(items);
       if (last?.kind === 'assistant' && last.streaming && !last.text && text) {
-        next = [...next, { kind: 'assistant', id: last.id, text, streaming: false }];
+        next = [...next, { kind: 'assistant', id: last.id, text, streaming: false, ...prof }];
       } else if (text && !answeredSinceLastUser(next)) {
-        next = [...next, { kind: 'assistant', id: newItemId(), text, streaming: false }];
+        next = [...next, { kind: 'assistant', id: newItemId(), text, streaming: false, ...prof }];
       }
       const error = s(p.error) || s(p.failure_reason);
-      if (error) next = [...next, { kind: 'notice', id: newItemId(), text: error, tone: 'error' }];
+      if (error) next = [...next, { kind: 'notice', id: newItemId(), text: error, tone: 'error', ...prof }];
       return { items: next, busy: false };
     }
     case 'tool.start': {
       const name = s(p.name) || 'tool';
       const label = toolLabel(name, s(p.preview) || s(p.context));
-      return { items: [...settle(items), { kind: 'tool', id: s(p.tool_id) || newItemId(), name, label, status: 'running' }], busy: true };
+      return { items: [...settle(items), { kind: 'tool', id: s(p.tool_id) || newItemId(), name, label, status: 'running', ...prof }], busy: true };
     }
     case 'tool.complete': {
       const id = s(p.tool_id);
@@ -96,21 +97,22 @@ export function applyChatEvent(view: ChatView, ev: ChatEvent): ChatView {
       return { items: items.map((i) => (i.kind === 'tool' && i.id === id ? { ...i, status: 'done', durationMs: ms } : i)), busy: view.busy };
     }
     case 'error':
-      return { items: [...settle(items), { kind: 'notice', id: newItemId(), text: s(p.message) || 'Terjadi kesalahan di Hermes', tone: 'error' }], busy: false };
+      return { items: [...settle(items), { kind: 'notice', id: newItemId(), text: s(p.message) || 'Terjadi kesalahan di Hermes', tone: 'error', ...prof }], busy: false };
     default:
       return view;
   }
 }
 
-export function fromTranscript(messages: TranscriptMessage[]): ChatItem[] {
+export function fromTranscript(messages: TranscriptMessage[], profile?: string): ChatItem[] {
   const out: ChatItem[] = [];
+  const prof = profile ? { profile } : {};
   for (const m of messages) {
     const text = s(m.text).trim();
     if (m.role === 'user' && text) out.push({ kind: 'user', id: newItemId(), text });
-    else if (m.role === 'assistant' && text) out.push({ kind: 'assistant', id: newItemId(), text, streaming: false });
+    else if (m.role === 'assistant' && text) out.push({ kind: 'assistant', id: newItemId(), text, streaming: false, ...prof });
     else if (m.role === 'tool') {
       const name = s(m.name) || 'tool';
-      out.push({ kind: 'tool', id: newItemId(), name, label: toolLabel(name, s(m.context)), status: 'done' });
+      out.push({ kind: 'tool', id: newItemId(), name, label: toolLabel(name, s(m.context)), status: 'done', ...prof });
     }
   }
   return out;

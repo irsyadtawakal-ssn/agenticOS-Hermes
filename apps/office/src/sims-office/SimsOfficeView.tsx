@@ -7,6 +7,7 @@ import { simsAudio } from './SimsAudio.ts';
 import { DECOR_CATALOG } from './DecorLayout.ts';
 import type { DecorCatalogEntry } from './DecorLayout.ts';
 import { SimsConsole } from './SimsConsole.tsx';
+import { chat } from '../chat/store.ts';
 import './sims.css';
 
 interface SimsOfficeViewProps {
@@ -68,6 +69,15 @@ export function SimsOfficeView({ onSwitchClassic }: SimsOfficeViewProps) {
       scene.destroy();
       sceneRef.current = null;
     };
+  }, []);
+
+  // Listen to Chat All Broadcasts
+  useEffect(() => {
+    return chat.onBroadcast((targets) => {
+      simsAudio.playBroadcast();
+      sceneRef.current?.broadcastThought('chat', targets);
+      showLocalToast(`📢 Broadcast terkirim ke ${targets.length} agen!`);
+    });
   }, []);
 
   // Sync Live Agent States

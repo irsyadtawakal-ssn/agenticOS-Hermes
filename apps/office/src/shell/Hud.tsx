@@ -18,10 +18,29 @@ export function Hud() {
   const approvalsOpen = useShell((s) => s.approvalsOpen);
   const costsOpen = useShell((s) => s.costsOpen);
   const drawerOpen = useShell((s) => s.drawerOpen);
+  const selected = useShell((s) => s.selected);
   const waiting = approvals.length > 0;
 
   return (
     <div className="sims-hud-bar relative h-full flex items-center gap-12 px-12 text-xs whitespace-nowrap overflow-x-auto [scrollbar-width:thin] text-slate-200">
+      <button
+        type="button"
+        onClick={() => {
+          simsAudio.playBubbleClick();
+          shell.select('all');
+          shell.setTab('chat');
+        }}
+        aria-pressed={selected === 'all'}
+        className={`px-8 py-2 rounded-full border cursor-pointer font-bold transition ${
+          selected === 'all'
+            ? 'border-cyan-400 text-cyan-200 bg-cyan-500/25 shadow-[0_0_8px_rgba(6,182,212,0.4)]'
+            : 'border-white/10 hover:border-cyan-400/40 hover:bg-cyan-500/10 text-slate-300'
+        }`}
+        title="Buka Chat All / Broadcast ke Semua Agent (Shortcut: Shift+C)"
+      >
+        📢 Chat All (Shift+C)
+      </button>
+
       <button
         type="button"
         onClick={() => {
@@ -86,7 +105,7 @@ export function Hud() {
       </ul>
 
       <span className="ml-auto pl-16 text-slate-400 text-[11px]">
-        1–9 agent · C chat · B kanban · A approval · Esc tutup
+        1–9 agent · Shift+C chat all · C chat · B kanban · A approval · Esc tutup
       </span>
 
       {approvalsOpen && <ApprovalsPanel />}
