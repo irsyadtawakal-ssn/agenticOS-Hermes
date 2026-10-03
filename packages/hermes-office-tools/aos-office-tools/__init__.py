@@ -10,6 +10,13 @@ import urllib.request
 from pathlib import Path
 
 ALLOWED_ASSIGNEES = ("chief", "researcher", "secretary", "content", "dev")
+try:
+    _office_config = json.loads((Path(__file__).parent / "config.json").read_text(encoding="utf-8"))
+    _assignees = _office_config.get("assignees")
+    if isinstance(_assignees, list) and _assignees and all(isinstance(p, str) and re.fullmatch(r"[a-z][a-z0-9_-]{0,63}", p) for p in _assignees):
+        ALLOWED_ASSIGNEES = tuple(_assignees)
+except (OSError, ValueError):
+    pass
 ALLOWED_STATUSES = ("triage", "todo", "ready", "running", "blocked", "review", "done", "archived")
 
 CREATE_SCHEMA = {

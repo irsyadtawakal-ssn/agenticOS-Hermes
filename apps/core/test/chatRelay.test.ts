@@ -2,6 +2,16 @@ import { describe, expect, it } from 'vitest';
 import { ChatRelay, type RelayContext } from '../src/chatRelay.js';
 import { knownChatSessions, rememberChatSession } from '../src/chatSessions.js';
 import { openCoreDb } from '../src/db.js';
+import { PROFILES } from '../src/config.js';
+
+it('allows office sessions for imported Desktop agents while rejecting unknown profiles', () => {
+  const relay = new ChatRelay({ profiles: PROFILES, sessionCwd: () => '/workspace', known: () => new Set(), remember: () => {} });
+  for (const profile of ['hermes-default', 'adelia', 'clara', 'crib', 'maya']) {
+    const output = relay.fromClient(JSON.stringify({ jsonrpc: '2.0', id: profile, method: 'session.create', params: { profile, cwd: 'C:/owner' } }));
+    expect(JSON.parse(output.toServer!).params).toEqual({ profile, cwd: '/workspace', cwd_explicit: true });
+  }
+  expect(JSON.parse(relay.fromClient(JSON.stringify({ id: 'x', method: 'session.create', params: { profile: 'unknown' } })).toClient!).error.code).toBe(-32602);
+});
 
 function ctx(seed: Record<string, string[]> = {}) {
   const known: Record<string, string[]> = { ...seed };

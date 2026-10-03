@@ -1,6 +1,7 @@
 import { join } from 'node:path';
+import officeRoster from '../../../infra/profiles/office-roster.json' with { type: 'json' };
 
-export const PROFILES = ['chief', 'researcher', 'secretary', 'content', 'dev'] as const;
+export const PROFILES = officeRoster.map((p) => p.name);
 
 export interface CoreConfig {
   host: '127.0.0.1';

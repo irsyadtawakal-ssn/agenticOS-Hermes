@@ -19,7 +19,7 @@ const coreUrl = process.env.AOS_CORE_URL ?? 'http://127.0.0.1:7400';
 const token = uiTokenFromEnvLocal();
 
 export default defineConfig({
-  root: resolve(here, 'vendor/pixel-agents/webview-ui'),
+  root: here,
   base: './',
   plugins: [tailwindcss(), react(), browserMockAssetsPlugin()],
   build: { outDir: resolve(here, 'dist'), emptyOutDir: true },
@@ -27,7 +27,7 @@ export default defineConfig({
     host: '127.0.0.1',
     port: 5173,
     strictPort: true,
-    fs: { allow: [here] },
+    fs: { allow: [here, resolve(here, '../../infra/profiles')] },
     proxy: {
       '/v1': { target: coreUrl, changeOrigin: true, ws: true, headers: token ? { authorization: `Bearer ${token}` } : {} },
     },

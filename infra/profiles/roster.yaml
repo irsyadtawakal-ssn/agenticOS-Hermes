@@ -1,7 +1,7 @@
-# Sumber kebenaran roster agent. Dibaca oleh "pnpm aos apply-profiles" dan "pnpm aos doctor".
 profiles:
   - name: chief
-    description: Chief of Staff - pintu masuk Telegram, memecah brief jadi kartu kanban, briefing pagi.
+    description: Chief of Staff - pintu masuk Telegram, memecah brief jadi kartu
+      kanban, briefing pagi.
     tier: os-brain
     docker_network: false
     gateway: true
@@ -10,7 +10,8 @@ profiles:
     tier: os-worker
     docker_network: false
   - name: secretary
-    description: Reminder, catatan, jadwal, dan kerapian kanban; satu-satunya yang menangani data pribadi owner.
+    description: Reminder, catatan, jadwal, dan kerapian kanban; satu-satunya yang
+      menangani data pribadi owner.
     tier: os-private
     docker_network: false
   - name: content
@@ -22,3 +23,33 @@ profiles:
     tier: os-brain
     docker_network: true
     egress_proxy: true
+  - name: hermes-default
+    description: Hermes Desktop hermes-default
+    tier: os-brain
+    docker_network: true
+    egress_proxy: true
+    desktop_source: default
+  - name: adelia
+    description: Hermes Desktop adelia
+    tier: os-brain
+    docker_network: true
+    egress_proxy: true
+    desktop_source: adelia
+  - name: clara
+    description: Hermes Desktop clara
+    tier: os-brain
+    docker_network: true
+    egress_proxy: true
+    desktop_source: clara
+  - name: crib
+    description: Hermes Desktop crib
+    tier: os-brain
+    docker_network: true
+    egress_proxy: true
+    desktop_source: crib
+  - name: maya
+    description: Hermes Desktop maya
+    tier: os-brain
+    docker_network: true
+    egress_proxy: true
+    desktop_source: maya

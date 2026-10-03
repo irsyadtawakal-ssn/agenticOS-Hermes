@@ -83,7 +83,7 @@ async function installPlugins(o: ApplyOptions, spec: ProfileSpec, dir: string): 
       writeFileSync(join(target, 'policy.json'), buildPolicy(o.policyTemplate, o.workspacesRoot ?? join(o.home, 'workspaces')), 'utf8');
     }
     if (name === 'aos-office-tools' && o.approver) {
-      writeFileSync(join(target, 'config.json'), JSON.stringify({ core_url: o.approver.coreUrl, token: o.approver.token }), 'utf8');
+      writeFileSync(join(target, 'config.json'), JSON.stringify({ core_url: o.approver.coreUrl, token: o.approver.token, assignees: o.roster.map((p) => p.name) }), 'utf8');
     }
     const r = await o.exec('hermes', ['-p', spec.name, 'plugins', 'enable', name], { timeoutMs: 120_000 });
     if (r.code !== 0) throw new Error(`hermes -p ${spec.name} plugins enable ${name} failed: ${(r.stderr || r.stdout).trim()}`);
@@ -114,14 +114,22 @@ export async function applyProfiles(o: ApplyOptions): Promise<string[]> {
     mkdirSync(dir, { recursive: true });
 
     const configPath = join(dir, 'config.yaml');
-    writeConfig(configPath, buildOverlay(spec, o.roster, o.routerBaseUrl, o.tierModels ?? DEFAULT_TIER_MODELS), o.stamp);
+    const overlay = buildOverlay(spec, o.roster, o.routerBaseUrl, o.tierModels ?? DEFAULT_TIER_MODELS);
+    if (spec.desktopSource) {
+      // Desktop models and auxiliary providers remain as configured by the owner.
+      delete overlay.model;
+      delete overlay.auxiliary;
+    }
+    writeConfig(configPath, overlay, o.stamp);
 
     const envPath = join(dir, '.env');
-    writeEnv(envPath, { OPENAI_API_KEY: o.routerKeys?.[spec.name] ?? o.routerKey, HERMES_TIMEZONE: o.timezone }, o.stamp);
+    writeEnv(envPath, { ...(spec.desktopSource ? {} : { OPENAI_API_KEY: o.routerKeys?.[spec.name] ?? o.routerKey }), HERMES_TIMEZONE: o.timezone }, o.stamp);
 
     const soulPath = join(dir, 'SOUL.md');
-    backup(soulPath, o.stamp);
-    writeFileSync(soulPath, buildSoul(spec, o.templatesDir), 'utf8');
+    if (!spec.desktopSource) {
+      backup(soulPath, o.stamp);
+      writeFileSync(soulPath, buildSoul(spec, o.templatesDir), 'utf8');
+    }
     const installed = await installPlugins(o, spec, dir);
     if (installed) log.push(installed);
     const scripts = installScripts(o, spec, dir);

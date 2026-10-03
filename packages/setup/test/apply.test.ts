@@ -142,7 +142,7 @@ describe('applyProfiles', () => {
     expect(policy.workspaces_root).toBe(join(home, 'workspaces'));
     expect(policy.rules).toHaveLength(1);
     const office = JSON.parse(readFileSync(join(profileDir(home, 'chief'), 'plugins', 'aos-office-tools', 'config.json'), 'utf8'));
-    expect(office).toEqual({ core_url: 'http://127.0.0.1:7400', token: 'appr' });
+    expect(office).toEqual({ core_url: 'http://127.0.0.1:7400', token: 'appr', assignees: opts.roster.map((p) => p.name) });
   });
 
   it('honours an explicit workspaces root and rejects an invalid policy template', () => {

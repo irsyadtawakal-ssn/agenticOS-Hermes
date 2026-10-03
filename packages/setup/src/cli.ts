@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { applyProfiles } from './apply.js';
 import { formatResults } from './check.js';
@@ -8,6 +8,7 @@ import { loadRoster, routerKeysFromEnv, tierModelsFromEnv } from './profiles.js'
 import { runDoctor } from './doctor.js';
 import { officeLoginUrl, officePublicUrl, openInBrowser } from './office.js';
 import { smokeKanban, smokeChief } from './smoke.js';
+import { importDesktop } from './desktopImport.js';
 
 const repoRoot = resolve(import.meta.dirname, '../../..');
 const envFile = join(repoRoot, '.env.local');
@@ -38,7 +39,13 @@ async function main(cmd: string | undefined): Promise<number> {
   };
 
   switch (cmd) {
+    case 'import-desktop': {
+      const source = process.argv[3] ?? join(process.env.LOCALAPPDATA ?? '', 'hermes');
+      for (const line of importDesktop(source, useHermesHome(), repoRoot)) console.log(line);
+      return main('apply-profiles');
+    }
     case 'apply-profiles': {
+      writeFileSync(join(repoRoot, 'infra/profiles/office-roster.json'), JSON.stringify(roster.map((p) => ({ name: p.name, tier: p.tier })), null, 2) + '\n');
       const log = await applyProfiles({
         home: useHermesHome(),
         roster,

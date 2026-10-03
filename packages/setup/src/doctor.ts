@@ -111,15 +111,17 @@ export function checkProfile(
     return [{ name: `${label}:config`, ok: false, detail: `config.yaml is not valid YAML: ${(err as Error).message}` }];
   }
   const model = cfg.model ?? {};
-  const modelOk = model.provider === 'custom' && model.base_url === routerBaseUrl && model.default === tierModels[spec.tier];
+  const modelOk = spec.desktopSource
+    ? typeof model.provider === 'string' && typeof model.default === 'string' && model.default.length > 0
+    : model.provider === 'custom' && model.base_url === routerBaseUrl && model.default === tierModels[spec.tier];
   const env = parseEnv(readText(join(dir, '.env')));
   const results: CheckResult[] = [
-    { name: `${label}:model`, ok: modelOk, detail: modelOk ? `${spec.tier} -> ${tierModels[spec.tier]} via ${routerBaseUrl}` : `model=${JSON.stringify(model)}` },
-    checkEnvFile(join(dir, '.env'), label),
+    { name: `${label}:model`, ok: modelOk, detail: spec.desktopSource ? `Desktop model configuration ${modelOk ? 'present' : 'missing'}` : modelOk ? `${spec.tier} -> ${tierModels[spec.tier]} via ${routerBaseUrl}` : 'model does not match configured tier/router' },
+    ...(spec.desktopSource ? [] : [checkEnvFile(join(dir, '.env'), label)]),
     {
       name: `${label}:router-key`,
-      ok: env.OPENAI_API_KEY === expectedKey,
-      detail: env.OPENAI_API_KEY === expectedKey ? 'OPENAI_API_KEY is the 9Router key' : 'OPENAI_API_KEY is not the 9Router key',
+      ok: spec.desktopSource ? !env.HERMES_YOLO_MODE : env.OPENAI_API_KEY === expectedKey,
+      detail: spec.desktopSource ? 'Desktop credentials retained; YOLO disabled' : env.OPENAI_API_KEY === expectedKey ? 'OPENAI_API_KEY is the 9Router key' : 'OPENAI_API_KEY is not the 9Router key',
     },
     { name: `${label}:soul`, ok: existsSync(join(dir, 'SOUL.md')), detail: existsSync(join(dir, 'SOUL.md')) ? 'SOUL.md present' : 'SOUL.md missing' },
     checkApprovals(cfg.approvals, label),

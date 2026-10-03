@@ -1,16 +1,22 @@
-import { useEffect } from 'react';
-import App from '../../vendor/pixel-agents/webview-ui/src/App.tsx';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { agentIdFor, PROFILES } from '../hermes/labels.ts';
 import { officeTransport } from '../hermes/transport.ts';
+import { simsAudio } from '../sims-office/SimsAudio.ts';
 import { Dock } from './Dock.tsx';
 import { Hud } from './Hud.tsx';
+import './sims-shell.css';
 import { KanbanDrawer } from './KanbanDrawer.tsx';
 import { keyAction } from './model.ts';
 import { shell, useShell } from './store.ts';
 
+const SimsOfficeView = lazy(() => import('../sims-office/SimsOfficeView.tsx').then((m) => ({ default: m.SimsOfficeView })));
+const ClaudeOfficeView = lazy(() => import('../claude-office/ClaudeOfficeView.tsx').then(module => ({ default: module.ClaudeOfficeView })));
+
 export default function AosShell() {
   const selected = useShell((s) => s.selected);
+  const drawerOpen = useShell((s) => s.drawerOpen);
   const toast = useShell((s) => s.toast);
+  const [viewMode, setViewMode] = useState<'sims' | 'claude'>('sims');
 
   useEffect(() => {
     shell.refreshAll();
@@ -24,16 +30,38 @@ export default function AosShell() {
         shell.select(action.profile);
         const id = agentIdFor(action.profile);
         if (id !== null) t?.select(id);
-      } else if (action.type === 'approvals') shell.toggleApprovals();
-      else if (action.type === 'kanban') shell.toggleDrawer();
-      else if (action.type === 'close') shell.closeAll();
-      else if (action.type === 'chat') {
-        shell.select('chief');
+      } else if (action.type === 'approvals') {
+        simsAudio.playBubbleClick();
+        shell.toggleApprovals();
+      } else if (action.type === 'kanban') {
+        simsAudio.playBubbleClick();
+        shell.toggleDrawer();
+      } else if (action.type === 'close') {
+        simsAudio.playBubbleClick();
+        shell.closeAll();
+      } else if (action.type === 'chat') {
+        simsAudio.playBubbleClick();
+        const currentSel = shell.getState().selected;
+        if (!currentSel) {
+          shell.select('chief');
+        }
         shell.setTab('chat');
+        setTimeout(() => {
+          const el = document.querySelector('.sims-chat-textarea') as HTMLTextAreaElement | null;
+          el?.focus();
+        }, 60);
       }
       e.preventDefault();
     };
     window.addEventListener('keydown', onKey);
+    try {
+      const sp = new URLSearchParams(window.location.search);
+      if (sp.get('kanban')) shell.toggleDrawer();
+      const tp = sp.get('tab');
+      if (tp === 'chat' || tp === 'cards' || tp === 'activity' || tp === 'agent') {
+        shell.setTab(tp);
+      }
+    } catch {}
     return () => {
       offTopic?.();
       offFocus?.();
@@ -50,16 +78,47 @@ export default function AosShell() {
   return (
     <div
       className="w-full h-full grid bg-bg"
-      style={{ gridTemplateColumns: selected ? 'minmax(0, 1fr) 380px' : 'minmax(0, 1fr)', gridTemplateRows: 'minmax(0, 1fr) 48px' }}
+      style={{
+        gridTemplateColumns: selected ? 'minmax(0, 1fr) 420px' : 'minmax(0, 1fr)',
+        gridTemplateRows: 'minmax(0, 1fr) 48px',
+      }}
     >
       <div className="relative min-w-0 min-h-0">
         <div className="isolate h-full">
-          <App />
+          <Suspense fallback={<div role="status" className="p-24">Memuat The Sims 2 Office…</div>}>
+            {viewMode === 'sims' ? (
+              <SimsOfficeView onSwitchClassic={() => setViewMode('claude')} />
+            ) : (
+              <div className="relative w-full h-full">
+                <button
+                  onClick={() => setViewMode('sims')}
+                  className="absolute top-3 left-3 z-30 px-3 py-1.5 bg-sky-600 hover:bg-sky-500 text-white rounded-full text-xs font-semibold shadow-lg cursor-pointer"
+                >
+                  ← The Sims 2 Office
+                </button>
+                <ClaudeOfficeView />
+              </div>
+            )}
+          </Suspense>
         </div>
         <KanbanDrawer />
+        {!drawerOpen && (
+          <button
+            type="button"
+            onClick={() => {
+              simsAudio.playBubbleClick();
+              shell.toggleDrawer();
+            }}
+            className="sims-floating-drawer-btn"
+            title="Buka Papan Tugas Kanban (Shortcut: B)"
+            aria-label="Buka Papan Tugas Kanban"
+          >
+            📋 Papan Kanban (B) ▲
+          </button>
+        )}
       </div>
       {selected && (
-        <div className="min-h-0 border-l-2 border-border bg-bg-dark">
+        <div className="min-h-0 border-l-2 border-sky-400/40 bg-slate-950">
           <Dock profile={selected} />
         </div>
       )}

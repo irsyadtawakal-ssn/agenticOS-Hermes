@@ -1,4 +1,7 @@
-export const PROFILES = ['chief', 'researcher', 'secretary', 'content', 'dev'] as const;
+import officeRoster from '../../../../infra/profiles/office-roster.json';
+
+export const PROFILES = officeRoster.map((p) => p.name);
+export const PROFILE_TIERS = Object.fromEntries(officeRoster.map((p) => [p.name, p.tier]));
 
 export function agentIdFor(profile: string): number | null {
   const index = (PROFILES as readonly string[]).indexOf(profile);

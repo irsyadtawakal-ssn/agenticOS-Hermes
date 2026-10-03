@@ -94,11 +94,8 @@
   html,
   body,
   #root {
-    @apply m-0 w-full h-full overflow-hidden font-pixel text-base text-text;
-  }
-
-  * {
-    @apply font-pixel;
+    @apply m-0 w-full h-full overflow-hidden text-base text-text;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   }
 }
 

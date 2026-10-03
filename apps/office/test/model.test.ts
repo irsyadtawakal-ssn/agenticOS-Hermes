@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { activityLine, applyKanbanChanges, canMove, formatUsd, keyAction, pushActivity, sparkline, TIERS, todayCost } from '../src/shell/model.ts';
+import officeRoster from '../../../infra/profiles/office-roster.json';
 
 describe('model', () => {
   it('mirrors the roster tiers', () => {
-    expect(TIERS).toEqual({ chief: 'os-brain', researcher: 'os-worker', secretary: 'os-private', content: 'os-worker', dev: 'os-brain' });
+    expect(TIERS).toEqual(Object.fromEntries(officeRoster.map((p) => [p.name, p.tier])));
   });
 
   it('allows exactly the moves Core supports', () => {
@@ -52,6 +53,8 @@ describe('model', () => {
     expect(keyAction(k('5'))).toEqual({ type: 'focus', profile: 'dev' });
     expect(keyAction(k('a'))).toEqual({ type: 'approvals' });
     expect(keyAction(k('B'))).toEqual({ type: 'kanban' });
+    expect(keyAction(k('c'))).toEqual({ type: 'chat' });
+    expect(keyAction(k('C'))).toEqual({ type: 'chat' });
     expect(keyAction(k('Escape'))).toEqual({ type: 'close' });
     expect(keyAction(k('k', { ctrlKey: true }))).toEqual({ type: 'chat' });
     expect(keyAction(k('a', { target: { tagName: 'INPUT', isContentEditable: false } }))).toBeNull();

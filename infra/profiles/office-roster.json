@@ -1,0 +1,42 @@
+[
+  {
+    "name": "chief",
+    "tier": "os-brain"
+  },
+  {
+    "name": "researcher",
+    "tier": "os-worker"
+  },
+  {
+    "name": "secretary",
+    "tier": "os-private"
+  },
+  {
+    "name": "content",
+    "tier": "os-worker"
+  },
+  {
+    "name": "dev",
+    "tier": "os-brain"
+  },
+  {
+    "name": "hermes-default",
+    "tier": "os-brain"
+  },
+  {
+    "name": "adelia",
+    "tier": "os-brain"
+  },
+  {
+    "name": "clara",
+    "tier": "os-brain"
+  },
+  {
+    "name": "crib",
+    "tier": "os-brain"
+  },
+  {
+    "name": "maya",
+    "tier": "os-brain"
+  }
+]

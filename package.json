@@ -9,7 +9,8 @@
     "aos": "tsx packages/setup/src/cli.ts",
     "test": "pnpm -r test",
     "office:dev": "pnpm -F @aos/office dev",
-    "office:build": "pnpm -F @aos/office build"
+    "office:build": "pnpm -F @aos/office build",
+    "star-office:start": "powershell -NoProfile -ExecutionPolicy Bypass -File packages/star-office/start.ps1"
   },
   "devDependencies": {
     "tsx": "^4.23.15"

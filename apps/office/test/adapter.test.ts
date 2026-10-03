@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { HermesAdapter, type CoreApproval, type CoreEvent } from '../src/hermes/adapter.ts';
-import { activityLabel, agentIdFor, READING_TOOLS } from '../src/hermes/labels.ts';
+import { activityLabel, agentIdFor, PROFILES, READING_TOOLS } from '../src/hermes/labels.ts';
 
 let n = 0;
 function ev(type: string, profile: string, payload: Record<string, unknown> = {}): CoreEvent {
@@ -48,14 +48,15 @@ describe('HermesAdapter', () => {
     );
     expect(msgs[0]).toEqual({
       type: 'existingAgents',
-      agents: [1, 2, 3, 4, 5],
-      folderNames: { '1': 'chief', '2': 'researcher', '3': 'secretary', '4': 'content', '5': 'dev' },
+      agents: PROFILES.map((_, i) => i + 1),
+      folderNames: Object.fromEntries(PROFILES.map((p, i) => [String(i + 1), p])),
       agentMeta: {
         '1': { palette: 0, hueShift: 0 },
         '2': { palette: 4, hueShift: 30, seatId: 'seat-x' },
         '3': { palette: 2, hueShift: 0 },
         '4': { palette: 3, hueShift: 0 },
         '5': { palette: 4, hueShift: 0 },
+        ...Object.fromEntries(PROFILES.slice(5).map((_, i) => [String(i + 6), { palette: i + 5, hueShift: 0 }])),
       },
       externalAgents: {},
     });

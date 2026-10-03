@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { openCoreDb } from '../src/db.js';
 import type { AosEvent } from '../src/events.js';
 import { listAgentStates, nextState, projectState } from '../src/state.js';
+import { PROFILES } from '../src/config.js';
 
 function ev(type: AosEvent['type'], payload: Record<string, unknown>, ts = 1, profile = 'researcher'): AosEvent {
   return { id: `e${ts}${type}`, ts, type, profile, session_id: 's', task_id: 't_1', mode: 'kanban', payload };
@@ -27,7 +28,7 @@ describe('projectState / listAgentStates', () => {
     projectState(db, ev('tool.started', { tool: 'terminal', category: 'run' }, 20));
     projectState(db, ev('llm.started', { model: 'm' }, 10));
     const states = listAgentStates(db);
-    expect(states.map((s) => s.profile)).toEqual(['chief', 'researcher', 'secretary', 'content', 'dev']);
+    expect(states.map((s) => s.profile)).toEqual(PROFILES);
     expect(states[1]).toEqual({ profile: 'researcher', state: 'running', task_id: 't_1', session_id: 's', detail: 'terminal', updated_at: 20 });
     expect(states[0]).toEqual({ profile: 'chief', state: 'offline', task_id: null, session_id: null, detail: null, updated_at: null });
   });

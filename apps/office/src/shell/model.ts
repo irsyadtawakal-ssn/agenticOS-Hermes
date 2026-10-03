@@ -1,15 +1,9 @@
-import { activityLabel, PROFILES } from '../hermes/labels.ts';
+import { activityLabel, PROFILES, PROFILE_TIERS } from '../hermes/labels.ts';
 
 export type Profile = (typeof PROFILES)[number];
 
 // Mirrors infra/profiles/roster.yaml.
-export const TIERS: Record<Profile, 'os-brain' | 'os-worker' | 'os-private'> = {
-  chief: 'os-brain',
-  researcher: 'os-worker',
-  secretary: 'os-private',
-  content: 'os-worker',
-  dev: 'os-brain',
-};
+export const TIERS = PROFILE_TIERS;
 
 export const KANBAN_COLUMNS = ['triage', 'todo', 'ready', 'running', 'blocked', 'review', 'done'] as const;
 
@@ -105,9 +99,10 @@ export function keyAction(e: KeyLike): KeyAction | null {
   if (e.key === 'Escape') return { type: 'close' };
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') return { type: 'chat' };
   if (e.ctrlKey || e.metaKey || e.altKey || typing(e.target)) return null;
-  const index = ['1', '2', '3', '4', '5'].indexOf(e.key);
-  if (index >= 0) return { type: 'focus', profile: PROFILES[index] };
+  const index = '1234567890'.indexOf(e.key);
+  if (e.key.length === 1 && index >= 0 && index < PROFILES.length) return { type: 'focus', profile: PROFILES[index] };
   if (e.key.toLowerCase() === 'a') return { type: 'approvals' };
   if (e.key.toLowerCase() === 'b') return { type: 'kanban' };
+  if (e.key.toLowerCase() === 'c') return { type: 'chat' };
   return null;
 }

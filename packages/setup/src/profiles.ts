@@ -12,6 +12,7 @@ export interface ProfileSpec {
   dockerNetwork: boolean;
   gateway: boolean;
   egressProxy: boolean;
+  desktopSource?: string;
 }
 
 export const EGRESS = { network: 'aos-egress', proxy: 'http://aos-egress-proxy:3128' } as const;
@@ -31,6 +32,7 @@ export function loadRoster(yamlText: string): ProfileSpec[] {
       dockerNetwork: p.docker_network === true,
       gateway: p.gateway === true,
       egressProxy: p.egress_proxy === true,
+      ...(typeof p.desktop_source === 'string' ? { desktopSource: p.desktop_source } : {}),
     };
   });
   const gateways = roster.filter((p) => p.gateway).length;
