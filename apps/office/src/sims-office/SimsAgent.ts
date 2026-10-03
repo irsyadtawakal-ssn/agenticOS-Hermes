@@ -82,6 +82,7 @@ export class SimsAgent {
   // State
   public actionState: AgentActionState = 'idle_seat';
   public liveStatus: string = 'idle';
+  public inMeeting: boolean = false;
   private hasApproval = false;
   private activeBubble: ThoughtBubble | null = null;
   private nextFreeWillTime: number = 5 + Math.random() * 8;
@@ -293,7 +294,7 @@ export class SimsAgent {
       this.group.position.z = this.currentPos.z;
     } else {
       // Idle Free Will Logic
-      if (!BUSY.has(this.liveStatus)) {
+      if (!BUSY.has(this.liveStatus) && !this.inMeeting) {
         this.nextFreeWillTime -= dt;
         if (this.nextFreeWillTime <= 0) {
           this.triggerFreeWill();
@@ -327,7 +328,12 @@ export class SimsAgent {
       if (a.activity === 'coffee') {
         this.showThought('coffee');
         simsAudio.playCoffee();
+      } else if (a.activity === 'whiteboard') {
+        this.showThought('idea');
       }
+    } else if (a.activity === 'meeting') {
+      this.actionState = 'idle_seat';
+      this.showThought('idea');
     } else if (a.activity === 'couch') {
       this.actionState = 'idle_seat';
       this.showThought('rest');

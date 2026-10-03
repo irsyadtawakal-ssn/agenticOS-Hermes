@@ -8,6 +8,7 @@ import './sims-shell.css';
 import { KanbanDrawer } from './KanbanDrawer.tsx';
 import { keyAction } from './model.ts';
 import { shell, useShell } from './store.ts';
+import { requestNotificationPermission } from './notifications.ts';
 
 const SimsOfficeView = lazy(() => import('../sims-office/SimsOfficeView.tsx').then((m) => ({ default: m.SimsOfficeView })));
 const ClaudeOfficeView = lazy(() => import('../claude-office/ClaudeOfficeView.tsx').then(module => ({ default: module.ClaudeOfficeView })));
@@ -20,6 +21,12 @@ export default function AosShell() {
 
   useEffect(() => {
     shell.refreshAll();
+    void requestNotificationPermission();
+    const handleFirstInteraction = () => {
+      void requestNotificationPermission();
+      window.removeEventListener('click', handleFirstInteraction);
+    };
+    window.addEventListener('click', handleFirstInteraction);
     const t = officeTransport;
     const offTopic = t?.onCoreTopic((topic, data) => shell.onTopic(topic, data));
     const offFocus = t?.onFocus((id) => shell.select(PROFILES[id - 1] ?? null));
@@ -74,6 +81,7 @@ export default function AosShell() {
       offTopic?.();
       offFocus?.();
       window.removeEventListener('keydown', onKey);
+      window.removeEventListener('click', handleFirstInteraction);
     };
   }, []);
 

@@ -22,6 +22,8 @@ export interface SimsConsoleProps {
   onToggleMute: () => void;
   isMusicOn: boolean;
   onToggleMusic: () => void;
+  isMeetingActive?: boolean;
+  onToggleMeeting?: () => void;
   onSwitchClassic?: () => void;
 }
 
@@ -44,6 +46,8 @@ export function SimsConsole({
   onToggleMute,
   isMusicOn,
   onToggleMusic,
+  isMeetingActive = false,
+  onToggleMeeting,
   onSwitchClassic,
 }: SimsConsoleProps) {
   const [activeTab, setActiveTab] = useState<ConsoleTab>('motives');
@@ -398,6 +402,19 @@ export function SimsConsole({
             >
               🛠 {isBuildMode ? 'Tutup' : 'Build'}
             </button>
+
+            {onToggleMeeting && (
+              <button
+                className={`sims-mini-toggle ${isMeetingActive ? 'active-build' : ''}`}
+                onClick={() => {
+                  simsAudio.playBubbleClick();
+                  onToggleMeeting();
+                }}
+                title={isMeetingActive ? 'Bubarkan Rapat (Kembali ke Meja)' : 'Panggil Rapat Tim di Ruang Rapat'}
+              >
+                👥 {isMeetingActive ? 'Bubarkan' : 'Rapat'}
+              </button>
+            )}
 
             <button
               className={`sims-mini-toggle ${isMusicOn ? 'active-music' : ''}`}

@@ -4,6 +4,8 @@ import { chat, getChatAllTimeline, useChat } from './store.ts';
 import { PROFILES } from '../hermes/labels.ts';
 import { getProfileMeta } from '../sims-office/SimsMotives.ts';
 import { simsAudio } from '../sims-office/SimsAudio.ts';
+import { createCard } from '../shell/api.ts';
+import { shell } from '../shell/store.ts';
 import '../shell/sims-shell.css';
 
 const CHOICE_LABEL: Record<ApprovalChoice, string> = {
@@ -63,7 +65,15 @@ function Clarify({ profile, item }: { profile: string; item: Extract<ChatItem, {
   );
 }
 
-function Item({ profile, item }: { profile: string; item: ChatItem }) {
+function Item({
+  profile,
+  item,
+  onMakeCard,
+}: {
+  profile: string;
+  item: ChatItem;
+  onMakeCard?: (assignee: string, text: string) => void;
+}) {
   const itemProfile = item.profile ?? (profile === 'all' ? undefined : profile);
   const meta = itemProfile ? getProfileMeta(itemProfile) : null;
   switch (item.kind) {
@@ -94,6 +104,22 @@ function Item({ profile, item }: { profile: string; item: ChatItem }) {
           )}
           {item.text}
           {item.streaming && <span className="sims-streaming-cursor">▍</span>}
+          {!item.streaming && item.text.trim() && (
+            <div className="flex items-center justify-end mt-2 pt-1.5 border-t border-white/10">
+              <button
+                type="button"
+                className="text-[10px] text-sky-300 hover:text-sky-100 bg-sky-500/15 hover:bg-sky-500/30 border border-sky-400/30 rounded-md px-2 py-0.5 flex items-center gap-1 transition cursor-pointer"
+                onClick={() => {
+                  simsAudio.playBubbleClick();
+                  onMakeCard?.(itemProfile ?? 'chief', item.text);
+                }}
+                title="Konversi ide / jawaban ini menjadi kartu Kanban baru"
+              >
+                <span>📋</span>
+                <span>Jadikan Kartu</span>
+              </button>
+            </div>
+          )}
         </div>
       );
     case 'tool':
@@ -169,6 +195,95 @@ export function ChatPanel({ profile }: { profile: string }) {
   const [selectedTargets, setSelectedTargets] = useState<string[]>(() => [...PROFILES]);
   const [draft, setDraft] = useState('');
   const endRef = useRef<HTMLDivElement>(null);
+
+  // Card modal state
+  const [cardModal, setCardModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    assignee: string;
+    body: string;
+  } | null>(null);
+
+  // Speech-to-text voice dictation
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef<any>(null);
+
+  const toggleVoiceInput = () => {
+    simsAudio.playBubbleClick();
+    const SpeechRec =
+      (window as unknown as { SpeechRecognition?: any; webkitSpeechRecognition?: any }).SpeechRecognition ||
+      (window as unknown as { SpeechRecognition?: any; webkitSpeechRecognition?: any }).webkitSpeechRecognition;
+    if (!SpeechRec) {
+      alert('Browser ini belum mendukung Web Speech API untuk dikte suara.');
+      return;
+    }
+
+    if (isListening && recognitionRef.current) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRec();
+      recognition.lang = 'id-ID';
+      recognition.continuous = false;
+      recognition.interimResults = false;
+
+      recognition.onstart = () => {
+        setIsListening(true);
+      };
+
+      recognition.onresult = (event: any) => {
+        const transcript = event.results?.[0]?.[0]?.transcript;
+        if (transcript) {
+          setDraft((prev) => (prev ? `${prev} ${transcript}` : transcript));
+        }
+      };
+
+      recognition.onerror = (event: any) => {
+        console.warn('Speech recognition error:', event.error);
+        setIsListening(false);
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+      };
+
+      recognitionRef.current = recognition;
+      recognition.start();
+    } catch (err) {
+      console.warn('Speech recognition failed to start:', err);
+      setIsListening(false);
+    }
+  };
+
+  const handleMakeCard = (assignee: string, text: string) => {
+    const lines = text.trim().split('\n').filter(Boolean);
+    const rawTitle = lines[0]?.replace(/^[#*\-•\s]+/, '').slice(0, 60) || 'Tugas Baru';
+    setCardModal({
+      isOpen: true,
+      title: rawTitle,
+      assignee,
+      body: text.trim(),
+    });
+  };
+
+  const handleSaveCard = async () => {
+    if (!cardModal || !cardModal.title.trim()) return;
+    simsAudio.playBubbleClick();
+    try {
+      await createCard({
+        title: cardModal.title.trim(),
+        assignee: cardModal.assignee,
+        body: cardModal.body.trim(),
+      });
+      await shell.refreshKanban();
+      setCardModal(null);
+    } catch (err) {
+      console.error('Failed to create card:', err);
+    }
+  };
 
   const timelineItems = useChat((s) => (isAll ? getChatAllTimeline(s, filterProfile) : []));
   const items = isAll ? timelineItems : current?.items ?? [];
@@ -382,13 +497,22 @@ export function ChatPanel({ profile }: { profile: string }) {
           </div>
         )}
         {items.map((item) => (
-          <Item key={item.id} profile={profile} item={item} />
+          <Item key={item.id} profile={profile} item={item} onMakeCard={handleMakeCard} />
         ))}
         <div ref={endRef} />
       </div>
 
       {/* Message Input Bar */}
       <div className="sims-chat-input-bar">
+        <button
+          type="button"
+          className={`sims-mic-btn ${isListening ? 'active' : ''}`}
+          onClick={toggleVoiceInput}
+          title={isListening ? 'Mendengarkan suara… Klik untuk berhenti' : 'Dikte Suara (Speech to Text)'}
+          aria-label="Dikte suara"
+        >
+          {isListening ? '🔴' : '🎤'}
+        </button>
         <textarea
           aria-label={isAll ? `Pesan broadcast untuk ${selectedTargets.length} agent` : `Pesan untuk ${profile}`}
           autoFocus
@@ -412,6 +536,88 @@ export function ChatPanel({ profile }: { profile: string }) {
           {isAll ? `📢 Kirim (${selectedTargets.length}) ↵` : 'Kirim ↵'}
         </button>
       </div>
+
+      {/* Card Modal from Chat */}
+      {cardModal && cardModal.isOpen && (
+        <div className="sims-card-modal-backdrop" onClick={() => setCardModal(null)}>
+          <div
+            className="sims-card-modal"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="card-modal-title"
+          >
+            <div className="flex items-center justify-between pb-2 border-b border-white/10">
+              <h3 id="card-modal-title" className="font-bold text-sm text-sky-300 flex items-center gap-1.5">
+                <span>📋</span>
+                <span>Buat Kartu Kanban dari Chat</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setCardModal(null)}
+                className="text-slate-400 hover:text-white text-xs px-2 py-1 rounded hover:bg-white/10 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs my-3">
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">Judul Kartu</label>
+                <input
+                  type="text"
+                  className="sims-chat-textarea w-full h-8 px-2 py-1 text-xs"
+                  value={cardModal.title}
+                  onChange={(e) => setCardModal({ ...cardModal, title: e.target.value })}
+                  placeholder="Judul tugas..."
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">Assignee</label>
+                <select
+                  className="sims-chat-session-select w-full h-8 text-xs"
+                  value={cardModal.assignee}
+                  onChange={(e) => setCardModal({ ...cardModal, assignee: e.target.value })}
+                >
+                  {PROFILES.map((p) => (
+                    <option key={p} value={p}>
+                      {p.toUpperCase()}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">Deskripsi / Isi Tugas</label>
+                <textarea
+                  rows={4}
+                  className="sims-chat-textarea w-full text-xs"
+                  value={cardModal.body}
+                  onChange={(e) => setCardModal({ ...cardModal, body: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/10">
+              <button
+                type="button"
+                className="sims-chat-session-btn"
+                onClick={() => setCardModal(null)}
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                className="sims-chat-send-btn text-xs py-1.5 px-3"
+                onClick={handleSaveCard}
+              >
+                Simpan ke Kanban ↵
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

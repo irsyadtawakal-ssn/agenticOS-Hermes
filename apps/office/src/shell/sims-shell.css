@@ -777,3 +777,53 @@ body,
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6), 0 0 16px rgba(88, 180, 248, 0.6);
   border-color: #7dd3fc;
 }
+
+/* Mic Voice Input Button */
+.sims-mic-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  padding: 0 10px;
+  background: rgba(30, 41, 59, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  color: #e2e8f0;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.sims-mic-btn:hover {
+  background: rgba(56, 189, 248, 0.2);
+  border-color: rgba(56, 189, 248, 0.5);
+}
+
+.sims-mic-btn.active {
+  background: rgba(244, 63, 94, 0.35);
+  border-color: #f43f5e;
+  animation: plumbobPulse 1s infinite;
+}
+
+/* Inline Card Modal */
+.sims-card-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(4px);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.sims-card-modal {
+  width: 100%;
+  max-width: 380px;
+  background: #0f172a;
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6), 0 0 20px rgba(56, 189, 248, 0.2);
+  border-radius: 12px;
+  padding: 16px;
+}

@@ -82,7 +82,7 @@ export const MEETING_CHAIRS: Array<{ x: number; z: number; rot: number }> = [
   { x: 8.0, z: 7.45, rot: Math.PI },
 ];
 
-function meetingSeat(i: number, activity: AnchorActivity): AnchorPoint {
+export function meetingSeat(i: number, activity: AnchorActivity = 'meeting'): AnchorPoint {
   const c = MEETING_CHAIRS[i];
   // step back from the table along the facing direction
   const ax = c.x - Math.sin(c.rot) * 0.5;

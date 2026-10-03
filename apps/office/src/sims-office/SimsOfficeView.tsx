@@ -26,6 +26,7 @@ export function SimsOfficeView({ onSwitchClassic }: SimsOfficeViewProps) {
   const [isMuted, setIsMuted] = useState(() => simsAudio.isMuted());
   const [isMusicOn, setIsMusicOn] = useState(false);
   const [isBuildMode, setIsBuildMode] = useState(false);
+  const [isMeetingActive, setIsMeetingActive] = useState(false);
   const [buildCategory, setBuildCategory] = useState<string>('all');
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [timeLabel, setTimeLabel] = useState('');
@@ -141,6 +142,12 @@ export function SimsOfficeView({ onSwitchClassic }: SimsOfficeViewProps) {
     sceneRef.current.setBuildMode(next);
     setIsBuildMode(next);
     showLocalToast(next ? '🛠 Mode Build/Buy Aktif' : 'Mode Live Aktif');
+  };
+
+  const handleToggleMeeting = () => {
+    if (!sceneRef.current) return;
+    const active = sceneRef.current.toggleMeeting();
+    setIsMeetingActive(active);
   };
 
   const handleSelectAgent = (profile: string) => {
@@ -371,6 +378,8 @@ export function SimsOfficeView({ onSwitchClassic }: SimsOfficeViewProps) {
         onToggleMute={handleToggleMute}
         isMusicOn={isMusicOn}
         onToggleMusic={handleToggleMusic}
+        isMeetingActive={isMeetingActive}
+        onToggleMeeting={handleToggleMeeting}
         onSwitchClassic={onSwitchClassic}
       />
 

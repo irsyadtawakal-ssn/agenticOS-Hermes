@@ -5,7 +5,7 @@ import type { WallDisplayMode } from './WallManager.ts';
 import { RoomBuilder } from './RoomBuilder.ts';
 import { SimsAgent } from './SimsAgent.ts';
 import { PROFILES } from '../hermes/labels.ts';
-import { IDLE_ANCHORS, isWalkable } from './NavigationMesh.ts';
+import { IDLE_ANCHORS, isWalkable, meetingSeat, WORKSTATION_ANCHORS, type AnchorPoint } from './NavigationMesh.ts';
 import { simsAudio } from './SimsAudio.ts';
 import { Environment } from './Environment.ts';
 import type { TimeMode } from './Environment.ts';
@@ -222,6 +222,68 @@ export class SimsScene {
         agent.showThought(icon);
       }
     }
+  }
+
+  private isMeetingActive: boolean = false;
+
+  public getMeetingMode(): boolean {
+    return this.isMeetingActive;
+  }
+
+  public toggleMeeting(): boolean {
+    if (this.isMeetingActive) {
+      this.endMeeting();
+    } else {
+      this.startMeeting();
+    }
+    return this.isMeetingActive;
+  }
+
+  public startMeeting(): void {
+    this.isMeetingActive = true;
+    simsAudio.playBroadcast();
+
+    const spots: AnchorPoint[] = [
+      meetingSeat(0, 'meeting'),
+      meetingSeat(1, 'meeting'),
+      meetingSeat(2, 'meeting'),
+      meetingSeat(3, 'meeting'),
+      meetingSeat(4, 'meeting'),
+      meetingSeat(5, 'meeting'),
+      { x: 8.0, z: 9.0, rotationY: Math.PI, activity: 'whiteboard', zone: 'meeting_room' },
+      { x: 6.8, z: 2.2, rotationY: 0, activity: 'meeting', zone: 'meeting_room' },
+      { x: 9.2, z: 2.2, rotationY: 0, activity: 'meeting', zone: 'meeting_room' },
+      { x: 8.0, z: 8.2, rotationY: Math.PI, activity: 'meeting', zone: 'meeting_room' },
+    ];
+
+    let i = 0;
+    for (const agent of this.agents.values()) {
+      agent.inMeeting = true;
+      const s = spots[i % spots.length];
+      i++;
+      agent.goToAnchor(s);
+      const delay = 1000 + i * 350;
+      setTimeout(() => {
+        agent.showThought('idea');
+      }, delay);
+    }
+
+    this.cameraCtrl.focusOn(8.0, 5.0);
+    this.callbacks.onToast?.('👥 Rapat Tim Dimulai! Seluruh agen berkumpul di Ruang Rapat.');
+  }
+
+  public endMeeting(): void {
+    this.isMeetingActive = false;
+    simsAudio.playBubbleClick();
+    for (const [profile, agent] of this.agents.entries()) {
+      agent.inMeeting = false;
+      const ws = WORKSTATION_ANCHORS[profile];
+      if (ws) {
+        agent.goToAnchor(ws);
+      }
+    }
+    this.cameraCtrl.focusOn(0, 0);
+    this.callbacks.onToast?.('Rapat Selesai. Agen kembali ke meja masing-masing.');
   }
 
   public updateLiveStates(

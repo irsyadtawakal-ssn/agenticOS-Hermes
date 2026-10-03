@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import * as api from './api.ts';
 import { type ActivityLog, applyKanbanChanges, type CoreEventLike, pushActivity } from './model.ts';
+import { sendDesktopNotification } from './notifications.ts';
 
 export type DockTab = 'chat' | 'cards' | 'activity' | 'agent';
 
@@ -56,8 +57,45 @@ async function guard(work: () => Promise<void>): Promise<void> {
   }
 }
 
-const refreshKanban = () => guard(async () => set({ tasks: await api.getKanban() }));
-const refreshApprovals = () => guard(async () => set({ approvals: await api.getApprovals() }));
+let knownApprovalIds = new Set<string>();
+let knownCompletedTaskIds = new Set<string>();
+let hasFetchedApprovals = false;
+let hasFetchedKanban = false;
+
+const refreshKanban = () =>
+  guard(async () => {
+    const tasks = await api.getKanban();
+    if (hasFetchedKanban) {
+      for (const t of tasks) {
+        if (t.status === 'done' && !knownCompletedTaskIds.has(t.id)) {
+          sendDesktopNotification(`✅ Tugas Selesai (${t.assignee ?? 'Agen'})`, {
+            body: t.title,
+          });
+        }
+      }
+    }
+    knownCompletedTaskIds = new Set(tasks.filter((t) => t.status === 'done').map((t) => t.id));
+    hasFetchedKanban = true;
+    set({ tasks });
+  });
+
+const refreshApprovals = () =>
+  guard(async () => {
+    const approvals = await api.getApprovals();
+    if (hasFetchedApprovals) {
+      for (const a of approvals) {
+        if (!knownApprovalIds.has(a.id) && a.status === 'pending') {
+          sendDesktopNotification(`🛡️ Izin Operasi: [${a.profile.toUpperCase()}]`, {
+            body: `Perintah: ${a.tool || a.args_preview || 'Aksi sensitif'}`,
+          });
+        }
+      }
+    }
+    knownApprovalIds = new Set(approvals.map((a) => a.id));
+    hasFetchedApprovals = true;
+    set({ approvals });
+  });
+
 const refreshCosts = () => guard(async () => set({ daily: await api.getDailyCosts(7), costs: await api.getCosts(startOfToday()) }));
 
 export const shell = {
