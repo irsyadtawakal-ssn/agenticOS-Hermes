@@ -4,20 +4,20 @@ import { parseOfficeSpatialIntent } from '../src/sims-office/spatialIntent.ts';
 describe('Office Spatial Intent Parser', () => {
   it('detects gather in chief office from user prompt with specific mentioned agent', () => {
     // Exact user prompt from issue: "bisa kumpul di ruangan saya bersama adelia"
-    const res = parseOfficeSpatialIntent('bisa kumpul di ruangan saya bersama adelia', 'crib');
+    const res = parseOfficeSpatialIntent('bisa kumpul di ruangan saya bersama adelia', 'tara');
     expect(res).not.toBeNull();
     expect(res?.action).toBe('gather_chief_office');
     expect(res?.targets).toContain('adelia');
-    expect(res?.targets).toContain('crib');
+    expect(res?.targets).toContain('tara');
     expect(res?.isAll).toBe(false);
   });
 
   it('detects gather in chief office with 1-on-1 chat context ("keruangan saya pak")', () => {
     // Exact user prompt from issue: "keruangan saya pak"
-    const res = parseOfficeSpatialIntent('keruangan saya pak', 'crib');
+    const res = parseOfficeSpatialIntent('keruangan saya pak', 'tara');
     expect(res).not.toBeNull();
     expect(res?.action).toBe('gather_chief_office');
-    expect(res?.targets).toEqual(['crib']);
+    expect(res?.targets).toEqual(['tara']);
     expect(res?.isAll).toBe(false);
   });
 
@@ -49,17 +49,17 @@ describe('Office Spatial Intent Parser', () => {
     expect(res?.targets).toEqual(['adelia']);
   });
 
-  it('targets only selected agents when user broadcasts to a subset ("tolong ke ruangan saya" to clara & crib)', () => {
+  it('targets only selected agents when user broadcasts to a subset ("tolong ke ruangan saya" to clara & tara)', () => {
     // Exact user scenario from screenshot: broadcast to 2 agents
-    const res = parseOfficeSpatialIntent('tolong ke ruangan saya', ['clara', 'crib']);
+    const res = parseOfficeSpatialIntent('tolong ke ruangan saya', ['clara', 'tara']);
     expect(res).not.toBeNull();
     expect(res?.action).toBe('gather_chief_office');
-    expect(res?.targets).toEqual(['clara', 'crib']);
+    expect(res?.targets).toEqual(['clara', 'tara']);
     expect(res?.isAll).toBe(false);
   });
 
   it('overrides subset targets when user explicitly says "semua" in prompt', () => {
-    const res = parseOfficeSpatialIntent('tolong semua ke ruangan saya', ['clara', 'crib']);
+    const res = parseOfficeSpatialIntent('tolong semua ke ruangan saya', ['clara', 'tara']);
     expect(res).not.toBeNull();
     expect(res?.action).toBe('gather_chief_office');
     expect(res?.isAll).toBe(true);
@@ -67,9 +67,9 @@ describe('Office Spatial Intent Parser', () => {
   });
 
   it('handles variations such as "keruangan saya seakrang", "ke sini sekarang", and "ruangan saya"', () => {
-    const res1 = parseOfficeSpatialIntent('keruangan saya seakrang', 'crib');
+    const res1 = parseOfficeSpatialIntent('keruangan saya seakrang', 'tara');
     expect(res1?.action).toBe('gather_chief_office');
-    expect(res1?.targets).toEqual(['crib']);
+    expect(res1?.targets).toEqual(['tara']);
 
     const res2 = parseOfficeSpatialIntent('ke sini sekarang', 'adelia');
     expect(res2?.action).toBe('gather_chief_office');

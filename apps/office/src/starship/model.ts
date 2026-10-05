@@ -45,9 +45,9 @@ export function crewStatus(profile: string, agents: AgentState[], approvals: App
   return 'working';
 }
 export function stationFor(profile: string): typeof ROOMS[number]['id'] {
-  if (profile === 'chief' || profile === 'hermes-default') return 'bridge';
+  if (profile === 'chief' || profile === 'tara') return 'bridge';
   if (profile === 'researcher' || profile === 'clara') return 'research';
-  if (profile === 'dev' || profile === 'crib') return 'engineering';
+  if (profile === 'dev' || profile === 'hermes-default') return 'engineering';
   if (profile === 'content' || profile === 'maya') return 'comms';
   return 'cargo';
 }

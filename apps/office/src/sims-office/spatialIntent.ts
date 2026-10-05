@@ -28,7 +28,7 @@ const ALL_KEYWORDS_REGEX =
  * Parses user or agent chat message for office spatial intent.
  *
  * @param text The message text to analyze.
- * @param recipients The explicit recipients of the message: either a single profile ('crib'), 'all', or an array of profiles (e.g. ['clara', 'crib']).
+ * @param recipients The explicit recipients of the message: either a single profile ('tara'), 'all', or an array of profiles (e.g. ['clara', 'tara']).
  * @returns SpatialIntentResult if a spatial command is detected, null otherwise.
  */
 export function parseOfficeSpatialIntent(
@@ -75,7 +75,7 @@ export function parseOfficeSpatialIntent(
   }
 
   // If specific profiles were mentioned in the prompt, combine them with explicit recipients
-  // (e.g. user chatting with crib says "kumpul di ruangan saya bersama adelia" -> ['crib', 'adelia'])
+  // (e.g. user chatting with tara says "kumpul di ruangan saya bersama adelia" -> ['tara', 'adelia'])
   if (detectedTargets.size > 0) {
     for (const r of explicitRecipients) {
       detectedTargets.add(r);
@@ -85,7 +85,7 @@ export function parseOfficeSpatialIntent(
   // 3. Determine if command targets ALL agents:
   // - If text explicitly says "semua", "all", "tim", "kalian" -> TRUE
   // - Else if no text mentions AND recipients is 'all' (or not specified) -> TRUE
-  // - Else if recipients was specifically chosen (e.g. ['clara', 'crib']) -> FALSE!
+  // - Else if recipients was specifically chosen (e.g. ['clara', 'tara']) -> FALSE!
   const isAll =
     isAllExplicit ||
     (detectedTargets.size === 0 &&

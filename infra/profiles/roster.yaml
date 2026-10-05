@@ -1,7 +1,6 @@
 profiles:
   - name: chief
-    description: Chief of Staff - pintu masuk Telegram, memecah brief jadi kartu
-      kanban, briefing pagi.
+    description: Arthur - Chief of Staff & Executive Orchestrator. Pintu masuk Telegram, memecah brief jadi kartu kanban, briefing pagi.
     tier: os-brain
     docker_network: false
     gateway: true
@@ -41,12 +40,12 @@ profiles:
     docker_network: true
     egress_proxy: true
     desktop_source: clara
-  - name: crib
-    description: The Auditor Man - rekonsiliasi omzet harian 4 platform delivery (GoFood, GrabFood, ShopeeFood, TikTok Go) vs POS 21 cabang.
+  - name: tara
+    description: Tara - Data Intelligence & Scraping Director (Strata Chief). Spesialis penarikan data (data scraping), reverse-engineering transaksi 4 platform delivery resto & marketplace, serta settlement intelligence.
     tier: os-brain
     docker_network: true
     egress_proxy: true
-    desktop_source: crib
+    desktop_source: tara
   - name: maya
     description: E-Commerce Master (SS Online) - penarikan data transaksi TikTok Shop & Shopee Seller, pemetaan SKU, rekap Excel 4-sheet, Discord & Supabase sync.
     tier: os-brain

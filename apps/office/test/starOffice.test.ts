@@ -39,6 +39,6 @@ describe('Odyssey artwork navigation lanes', () => {
     }
     expect(laneRoute(crewPost(0), crewStation('chief'))).toContainEqual(LANES.bridge);
     expect(laneRoute(crewPost(4), crewStation('dev'))).toContainEqual(LANES.engineLeft);
-    expect(laneRoute(crewPost(8), crewStation('crib'))).toContainEqual(LANES.engineRight);
+    expect(laneRoute(crewPost(8), crewStation('tara'))).toContainEqual(LANES.bridge);
   });
 });

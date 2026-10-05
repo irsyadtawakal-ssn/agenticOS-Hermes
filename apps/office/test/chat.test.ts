@@ -235,10 +235,10 @@ describe('chat model', () => {
   it('groups consecutive tool calls into collapsible tool groups', () => {
     const rawItems: ChatItem[] = [
       { kind: 'user', id: 'c1', text: 'keruangan saya yaa, kita bahas yang scraping tanggal 1' },
-      { kind: 'tool', id: 't1', name: 'terminal', label: 'terminal · ls -la', status: 'done', durationMs: 1193, profile: 'crib' },
-      { kind: 'tool', id: 't2', name: 'terminal', label: 'terminal · find . -name "*scrap*"', status: 'done', durationMs: 226, profile: 'crib' },
-      { kind: 'tool', id: 't3', name: 'session_search', label: 'session_search · recall: "scraping tanggal 1"', status: 'done', durationMs: 16, profile: 'crib' },
-      { kind: 'assistant', id: 'c2', text: 'Siap Mas, saya merapat ke ruangan!', streaming: false, profile: 'crib' },
+      { kind: 'tool', id: 't1', name: 'terminal', label: 'terminal · ls -la', status: 'done', durationMs: 1193, profile: 'tara' },
+      { kind: 'tool', id: 't2', name: 'terminal', label: 'terminal · find . -name "*scrap*"', status: 'done', durationMs: 226, profile: 'tara' },
+      { kind: 'tool', id: 't3', name: 'session_search', label: 'session_search · recall: "scraping tanggal 1"', status: 'done', durationMs: 16, profile: 'tara' },
+      { kind: 'assistant', id: 'c2', text: 'Siap Mas, saya merapat ke ruangan!', streaming: false, profile: 'tara' },
     ];
 
     const grouped = groupToolItems(rawItems);
@@ -247,7 +247,7 @@ describe('chat model', () => {
     expect(grouped[1]).toMatchObject({
       kind: 'toolGroup',
       id: 'group-t1',
-      profile: 'crib',
+      profile: 'tara',
       isRunning: false,
       items: [rawItems[1], rawItems[2], rawItems[3]],
     });

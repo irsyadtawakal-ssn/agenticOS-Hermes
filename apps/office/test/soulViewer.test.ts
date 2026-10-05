@@ -28,7 +28,7 @@ describe('Soul.md, LLM Specification & Duties Verification', () => {
 
   it('verifies tier-specific LLM routing matches 9router combos.md', () => {
     // os-brain tier profiles should use Claude 3.5 Sonnet
-    const brainProfiles = ['chief', 'dev', 'hermes-default', 'adelia', 'clara', 'crib', 'maya'];
+    const brainProfiles = ['chief', 'dev', 'hermes-default', 'adelia', 'clara', 'tara', 'maya'];
     for (const p of brainProfiles) {
       const meta = getProfileMeta(p);
       expect(meta.tier).toBe('os-brain');

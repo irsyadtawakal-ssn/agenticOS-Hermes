@@ -33,7 +33,7 @@ export const CHARACTER_OUTFITS: Record<string, Outfit> = {
   'hermes-default': { model: 'business', colors: { Suit: 0x475569, Tie: 0x0ea5e9, Skin: 0xc68e6a, Hair: 0x111111 } },
   adelia: { model: 'sleeves', colors: { Shirt: 0xf59e0b, Pants: 0x1f2937, Hair: 0x3f1d0b, Skin: 0xd9a37e } },
   clara: { model: 'suit', colors: { Shirt: 0x7c3aed, Pants: 0x111827, Hair: 0xfbbf24, Skin: 0xf8d5c0 } },
-  crib: { model: 'casual', colors: { Red_Dark: 0x15803d, LightBlue: 0x78350f, Hair: 0x52525b, Skin: 0xa86b45 } },
+  tara: { model: 'suit', colors: { Shirt: 0x06b6d4, Pants: 0x0f172a, Hair: 0x312e81, Skin: 0xf5d0b5 } },
   maya: { model: 'sleeves', colors: { Shirt: 0xec4899, Pants: 0x0c4a6e, Hair: 0x111111, Skin: 0xe0ac85 } },
 };
 
@@ -129,6 +129,10 @@ export class SimsAgent {
     this.plumbob = new Plumbob('ready');
     if (this.profile === 'owner') {
       this.plumbob.setColorHex(0xf59e0b);
+    } else if (this.profile === 'chief') {
+      this.plumbob.setColorHex(0x3b82f6); // Arthur Royal Blue
+    } else if (this.profile === 'tara') {
+      this.plumbob.setColorHex(0x06b6d4); // Tara Executive Cyan
     }
     this.group.add(this.plumbob.group);
 

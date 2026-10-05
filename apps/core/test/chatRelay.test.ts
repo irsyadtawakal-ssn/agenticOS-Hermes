@@ -6,7 +6,7 @@ import { PROFILES } from '../src/config.js';
 
 it('allows office sessions for imported Desktop agents while rejecting unknown profiles', () => {
   const relay = new ChatRelay({ profiles: PROFILES, sessionCwd: () => '/workspace', known: () => new Set(), remember: () => {} });
-  for (const profile of ['hermes-default', 'adelia', 'clara', 'crib', 'maya']) {
+  for (const profile of ['hermes-default', 'adelia', 'clara', 'tara', 'maya']) {
     const output = relay.fromClient(JSON.stringify({ jsonrpc: '2.0', id: profile, method: 'session.create', params: { profile, cwd: 'C:/owner' } }));
     expect(JSON.parse(output.toServer!).params).toEqual({ profile, cwd: '/workspace', cwd_explicit: true });
   }

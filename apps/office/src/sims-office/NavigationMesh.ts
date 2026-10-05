@@ -128,6 +128,17 @@ export const OWNER_SEAT: AnchorPoint = {
   approach: { x: -8.4, z: -4.5 },
 };
 
+/** Tara's executive workstation in Chief's office (Strata Chief). */
+export const TARA_SEAT: AnchorPoint = {
+  x: -5.9,
+  z: -5.6,
+  rotationY: Math.PI,
+  activity: 'work',
+  zone: 'chief_office',
+  seated: true,
+  approach: { x: -5.9, z: -4.8 },
+};
+
 /** Workstation anchors for each agent: chief office, then desks in roster order, overflow in meeting room. */
 export const WORKSTATION_ANCHORS: Record<string, AnchorPoint> = (() => {
   const out: Record<string, AnchorPoint> = {};
@@ -137,6 +148,10 @@ export const WORKSTATION_ANCHORS: Record<string, AnchorPoint> = (() => {
   for (const profile of PROFILES) {
     if (profile === 'chief') {
       out[profile] = CHIEF_SEAT;
+      continue;
+    }
+    if (profile === 'tara') {
+      out[profile] = TARA_SEAT;
       continue;
     }
     const seat = seats.shift();
