@@ -20,6 +20,9 @@ export function Hud() {
   const settingsOpen = useShell((s) => s.settingsOpen);
   const drawerOpen = useShell((s) => s.drawerOpen);
   const selected = useShell((s) => s.selected);
+  const operatorName = useShell((s) => s.operatorName);
+  const operatorAvatar = useShell((s) => s.operatorAvatar);
+  const operatorTitle = useShell((s) => s.operatorTitle);
   const waiting = approvals.length > 0;
 
   return (
@@ -89,6 +92,24 @@ export function Hud() {
         title="Buka / Tutup Papan Kanban (Shortcut: B)"
       >
         📋 Papan Kanban (B)
+      </button>
+
+      <button
+        type="button"
+        onClick={() => {
+          simsAudio.playBubbleClick();
+          shell.openSettings('workspace');
+        }}
+        className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-amber-500/40 bg-amber-500/15 hover:bg-amber-500/25 text-amber-200 cursor-pointer transition text-xs font-semibold shadow-[0_0_8px_rgba(245,158,11,0.2)]"
+        title={`Owner: ${operatorName} (${operatorTitle}) · Klik untuk kustomisasi Avatar`}
+      >
+        <span className="w-5 h-5 rounded-full bg-amber-400/30 border border-amber-300/50 flex items-center justify-center text-xs">
+          {operatorAvatar}
+        </span>
+        <span className="font-bold">{operatorName}</span>
+        <span className="text-[9px] font-extrabold px-1 rounded bg-amber-400/20 text-amber-300 border border-amber-400/30">
+          OWNER
+        </span>
       </button>
 
       <button

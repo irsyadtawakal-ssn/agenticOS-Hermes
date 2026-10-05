@@ -1,109 +1,39 @@
-export interface Approval {
-  id: string;
-  created_at: number;
-  profile: string;
-  task_id: string | null;
-  mode: string;
-  rule_id: string;
-  tool: string;
-  args_preview: string;
-  reason: string | null;
-  status: string;
-}
+import * as apiClient from '../shared/api-client/index.ts';
+import type {
+  IApproval,
+  IKanbanTask,
+  IDailyCost,
+  ICostTotals,
+  ICostSummary,
+  IHealthComponent,
+  IAgentState,
+  IProfileSpec,
+  ICreateProfileInput,
+} from '../shared/api-client/index.ts';
 
-export interface KanbanTask {
-  id: string;
-  title: string;
-  assignee: string | null;
-  status: string;
-  created_at: number;
-  started_at: number | null;
-  completed_at: number | null;
-  workspace_path: string | null;
-}
+// Legacy Type Aliases for existing callers
+export type Approval = IApproval;
+export type KanbanTask = IKanbanTask;
+export type DailyCost = IDailyCost;
+export type CostTotals = ICostTotals;
+export type CostSummary = ICostSummary;
+export type HealthComponent = IHealthComponent;
+export type AgentState = IAgentState;
+export type ProfileSpec = IProfileSpec;
+export type CreateProfileInput = ICreateProfileInput;
 
-export interface DailyCost {
-  day: string;
-  cost_usd: number;
-  calls: number;
-}
-
-export interface CostTotals {
-  calls: number;
-  prompt_tokens: number;
-  completion_tokens: number;
-  cost_usd: number;
-}
-
-export interface CostSummary {
-  since: number;
-  until: number;
-  total: CostTotals;
-  byProfile: Array<CostTotals & { profile: string }>;
-  byModel: Array<CostTotals & { model: string | null }>;
-  byTask: Array<CostTotals & { task_id: string }>;
-}
-
-export interface HealthComponent {
-  id: string;
-  label: string;
-  status: 'ok' | 'down' | 'absent';
-  detail: string;
-}
-
-export interface AgentState {
-  profile: string;
-  state: string;
-  task_id: string | null;
-  detail: string | null;
-  updated_at: number | null;
-}
-
-async function call<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, { credentials: 'same-origin', ...init });
-  const body = (await res.json().catch(() => ({}))) as { error?: string };
-  if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
-  return body as T;
-}
-
-const post = (body: unknown): RequestInit => ({ method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
-
-export const getApprovals = () => call<Approval[]>('/v1/approvals?status=pending');
-export const decide = (id: string, decision: 'approve' | 'deny', note?: string) =>
-  call<Approval>(`/v1/approvals/${encodeURIComponent(id)}/decision`, post({ decision, ...(note ? { note } : {}), by: 'office' }));
-export const getKanban = () => call<{ tasks: KanbanTask[] }>('/v1/kanban').then((r) => r.tasks);
-export const moveCard = (id: string, to: string, note: string) =>
-  call<{ ok: true; output: string }>(`/v1/kanban/${encodeURIComponent(id)}/move`, post({ to, note }));
-export const createCard = (input: { title: string; assignee: string; body: string }) =>
-  call<{ ok: true; output: string; workspace: string }>('/v1/kanban', post(input));
-export const getDailyCosts = (days: number) => call<DailyCost[]>(`/v1/costs/daily?days=${days}`);
-export const getCosts = (sinceMs: number) => call<CostSummary>(`/v1/costs?since=${sinceMs}`);
-export const getHealth = () => call<HealthComponent[]>('/v1/health/components');
-export const getEvents = (profile: string, limit = 50) =>
-  call<Array<Record<string, unknown>>>(`/v1/events?profile=${encodeURIComponent(profile)}&limit=${limit}`);
-export const getAgents = () => call<AgentState[]>('/v1/agents');
-export const triggerBackup = () =>
-  call<{ path?: string; bytes?: number; timestamp?: number; files?: string[] }>('/v1/backup', post({}));
-
-export interface ProfileSpec {
-  name: string;
-  description: string;
-  tier: 'os-brain' | 'os-worker' | 'os-private';
-  docker_network?: boolean;
-  egress_proxy?: boolean;
-  gateway?: boolean;
-}
-
-export interface CreateProfileInput {
-  name: string;
-  description: string;
-  tier: 'os-brain' | 'os-worker' | 'os-private';
-  docker_network?: boolean;
-  egress_proxy?: boolean;
-  soul?: string;
-}
-
-export const getProfiles = () => call<ProfileSpec[]>('/v1/profiles');
-export const createProfile = (input: CreateProfileInput) =>
-  call<{ ok: true; profile: ProfileSpec }>('/v1/profiles', post(input));
-
+// Re-export all functions & types
+export * from '../shared/api-client/index.ts';
+export const getApprovals = apiClient.getApprovals;
+export const decide = apiClient.decide;
+export const getKanban = apiClient.getKanban;
+export const moveCard = apiClient.moveCard;
+export const createCard = apiClient.createCard;
+export const getDailyCosts = apiClient.getDailyCosts;
+export const getCosts = apiClient.getCosts;
+export const getHealth = apiClient.getHealth;
+export const getEvents = apiClient.getEvents;
+export const getAgents = apiClient.getAgents;
+export const triggerBackup = apiClient.triggerBackup;
+export const getProfiles = apiClient.getProfiles;
+export const createProfile = apiClient.createProfile;

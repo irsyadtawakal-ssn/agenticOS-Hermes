@@ -8,3 +8,6 @@ __pycache__/
 postit/
 .superpowers/
 shot-*.png
+.agents/
+.claude/skills/
+skills-lock.json

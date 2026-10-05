@@ -1,11 +1,11 @@
-import { type KeyboardEvent, useEffect, useRef, useState } from 'react';
-import { type ApprovalChoice, type ChatItem, startedAtMs } from './model.ts';
-import { chat, getChatAllTimeline, useChat } from './store.ts';
+import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { type ApprovalChoice, type ChatItem, type ToolGroupItem, groupToolItems, startedAtMs } from './model.ts';
+import { chat, getChatAllTimeline, useChat, type ChatStoreState } from './store.ts';
 import { PROFILES } from '../hermes/labels.ts';
 import { getProfileMeta } from '../sims-office/SimsMotives.ts';
 import { simsAudio } from '../sims-office/SimsAudio.ts';
 import { createCard } from '../shell/api.ts';
-import { shell } from '../shell/store.ts';
+import { shell, useShell } from '../shell/store.ts';
 import '../shell/sims-shell.css';
 
 const CHOICE_LABEL: Record<ApprovalChoice, string> = {
@@ -74,19 +74,33 @@ function Item({
   item: ChatItem;
   onMakeCard?: (assignee: string, text: string) => void;
 }) {
+  if (!item) return null;
+  const operatorName = useShell((s) => s.operatorName);
+  const operatorAvatar = useShell((s) => s.operatorAvatar);
   const itemProfile = item.profile ?? (profile === 'all' ? undefined : profile);
   const meta = itemProfile ? getProfileMeta(itemProfile) : null;
   switch (item.kind) {
     case 'user':
       return (
         <div className={`sims-bubble-user ${item.broadcast ? 'broadcast' : ''}`}>
-          {item.broadcast && (
-            <div className="flex items-center gap-1.5 text-[10px] text-cyan-200 font-bold mb-1 pb-1 border-b border-cyan-300/30">
-              <span>📢</span>
-              <span>Broadcast ke {item.targetCount ?? item.targetProfiles?.length ?? 'semua'} agent</span>
+          <div className="flex items-center justify-between gap-3 mb-1.5 pb-1 border-b border-white/20 text-[11px]">
+            <div className="flex items-center gap-1.5 font-bold">
+              <span className="w-5 h-5 rounded-full bg-amber-400/30 border border-amber-300/50 flex items-center justify-center text-xs shadow-sm shrink-0">
+                {operatorAvatar}
+              </span>
+              <span className="text-amber-100 font-mono tracking-tight">{operatorName}</span>
+              <span className="text-amber-300 font-extrabold text-[8px] px-1.5 py-0.5 rounded bg-amber-400/25 border border-amber-300/30 uppercase tracking-wider">
+                OWNER
+              </span>
             </div>
-          )}
-          {item.text}
+            {item.broadcast && (
+              <span className="text-[10px] text-teal-200 font-semibold flex items-center gap-1 shrink-0">
+                <span>📢</span>
+                <span>Broadcast ({item.targetCount ?? item.targetProfiles?.length ?? 'semua'})</span>
+              </span>
+            )}
+          </div>
+          <div>{item.text}</div>
         </div>
       );
     case 'assistant':
@@ -96,7 +110,7 @@ function Item({
             <div className="flex items-center gap-2 mb-1.5 pb-1 border-b border-white/10 text-[11px] font-bold">
               <span
                 className="w-2.5 h-2.5 rounded-full inline-block shrink-0 shadow-sm"
-                style={{ backgroundColor: meta?.plumbobColor ?? '#38bdf8' }}
+                style={{ backgroundColor: meta?.customPlumbobColor ?? '#38bdf8' }}
               />
               <span className="text-sky-200 capitalize font-mono">{itemProfile}</span>
               {meta && <span className="text-slate-400 font-normal text-[10px]">· {meta.title}</span>}
@@ -104,7 +118,7 @@ function Item({
           )}
           {item.text}
           {item.streaming && <span className="sims-streaming-cursor">▍</span>}
-          {!item.streaming && item.text.trim() && (
+          {!item.streaming && Boolean(item.text?.trim()) && (
             <div className="flex items-center justify-end mt-2 pt-1.5 border-t border-white/10">
               <button
                 type="button"
@@ -182,7 +196,60 @@ function Item({
       const targetProfile = item.profile ?? (profile === 'all' ? 'chief' : profile);
       return <Clarify profile={targetProfile} item={item} />;
     }
+    default:
+      return null;
   }
+}
+
+function ToolGroup({ profile, group }: { profile: string; group: ToolGroupItem }) {
+  const [expanded, setExpanded] = useState(false);
+  const targetProfile = group.profile ?? (profile === 'all' ? undefined : profile);
+  const totalDuration = group.items.reduce((sum, it) => sum + (it.durationMs ?? 0), 0);
+
+  return (
+    <div className="sims-tool-group">
+      <button
+        type="button"
+        className="sims-tool-group-header"
+        onClick={() => {
+          simsAudio.playBubbleClick();
+          setExpanded((prev) => !prev);
+        }}
+        title={expanded ? 'Tutup rincian operasi tool' : 'Buka rincian operasi tool'}
+      >
+        <span className={group.isRunning ? 'icon-run' : 'icon-check'}>
+          {group.isRunning ? '⏳' : '✓'}
+        </span>
+        {targetProfile && <span className="text-sky-300 font-bold capitalize mr-1">[{targetProfile}]</span>}
+        <span className="font-medium text-slate-300">
+          {group.items.length} operasi tool {group.isRunning ? 'sedang berjalan…' : 'selesai'}
+        </span>
+        {totalDuration > 0 && !group.isRunning && (
+          <span className="text-slate-400 font-mono text-[10px]">({Math.round(totalDuration)} ms)</span>
+        )}
+        <span className="ml-auto text-sky-400 text-[10px] flex items-center gap-1 font-sans">
+          <span>{expanded ? 'Sembunyikan' : 'Rincian'}</span>
+          <span>{expanded ? '▲' : '▼'}</span>
+        </span>
+      </button>
+
+      {expanded && (
+        <div className="sims-tool-group-body">
+          {group.items.map((it) => (
+            <div key={it.id} className="sims-tool-subpill">
+              <span className={it.status === 'running' ? 'icon-run' : 'icon-check'}>
+                {it.status === 'running' ? '⏳' : '✓'}
+              </span>
+              <span className="font-mono text-[10.5px] text-slate-300 break-all">{it.label}</span>
+              {it.durationMs !== undefined ? (
+                <span className="text-slate-400 ml-auto shrink-0 font-mono text-[10px]">({Math.round(it.durationMs)} ms)</span>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function ChatPanel({ profile }: { profile: string }) {
@@ -285,8 +352,12 @@ export function ChatPanel({ profile }: { profile: string }) {
     }
   };
 
-  const timelineItems = useChat((s) => (isAll ? getChatAllTimeline(s, filterProfile) : []));
+  const timelineItems = useMemo(() => {
+    if (!isAll) return [];
+    return getChatAllTimeline({ chats: allChats } as ChatStoreState, filterProfile);
+  }, [isAll, allChats, filterProfile]);
   const items = isAll ? timelineItems : current?.items ?? [];
+  const renderableItems = useMemo(() => groupToolItems(items), [items]);
   const sessions = current?.sessions ?? [];
   const offline = connection !== 'open';
 
@@ -308,7 +379,7 @@ export function ChatPanel({ profile }: { profile: string }) {
   }, [profile, isAll]);
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ block: 'end' });
+    endRef.current?.scrollIntoView?.({ block: 'end' });
   }, [items]);
 
   function submit() {
@@ -504,9 +575,13 @@ export function ChatPanel({ profile }: { profile: string }) {
             )}
           </div>
         )}
-        {items.map((item) => (
-          <Item key={item.id} profile={profile} item={item} onMakeCard={handleMakeCard} />
-        ))}
+        {renderableItems.map((entry) =>
+          entry.kind === 'single' ? (
+            <Item key={entry.item.id} profile={profile} item={entry.item} onMakeCard={handleMakeCard} />
+          ) : (
+            <ToolGroup key={entry.id} profile={profile} group={entry} />
+          )
+        )}
         <div ref={endRef} />
       </div>
 

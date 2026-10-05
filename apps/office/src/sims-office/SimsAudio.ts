@@ -158,6 +158,16 @@ class SimsAudioManager {
     }
   }
 
+  /** Plumbob alert alias */
+  public playPlumbob(): void {
+    this.playAlert();
+  }
+
+  /** Task complete alias */
+  public playTaskComplete(): void {
+    this.playSuccess();
+  }
+
   /** Approval required alert chime */
   public playAlert(): void {
     const ctx = this.initCtx();

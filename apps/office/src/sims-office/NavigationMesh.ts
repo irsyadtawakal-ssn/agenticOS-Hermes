@@ -102,9 +102,36 @@ export const CHIEF_SEAT: AnchorPoint = {
   approach: { x: -6.5, z: -8.5 },
 };
 
+/** Visitor seats and meeting spots in Chief's Office. */
+export const CHIEF_OFFICE_VISITOR_SEATS: AnchorPoint[] = [
+  // 2 Guest chairs directly facing Chief's mahogany desk
+  { x: -7.1, z: -5.6, rotationY: Math.PI, activity: 'meeting', zone: 'chief_office', seated: true, approach: { x: -7.1, z: -4.8 } },
+  { x: -5.9, z: -5.6, rotationY: Math.PI, activity: 'meeting', zone: 'chief_office', seated: true, approach: { x: -5.9, z: -4.8 } },
+  // Executive lounge leather sofa
+  { x: -9.0, z: -4.5, rotationY: Math.PI / 2, activity: 'couch', zone: 'chief_office', seated: true, approach: { x: -8.4, z: -4.5 } },
+  // Additional visitor standing spots in the office
+  { x: -6.5, z: -4.8, rotationY: Math.PI, activity: 'meeting', zone: 'chief_office', approach: { x: -6.5, z: -4.5 } },
+  { x: -7.8, z: -4.8, rotationY: Math.PI, activity: 'meeting', zone: 'chief_office', approach: { x: -7.8, z: -4.5 } },
+  { x: -5.2, z: -4.8, rotationY: Math.PI, activity: 'meeting', zone: 'chief_office', approach: { x: -5.2, z: -4.5 } },
+  { x: -8.5, z: -3.8, rotationY: Math.PI, activity: 'meeting', zone: 'chief_office', approach: { x: -8.5, z: -3.8 } },
+  { x: -4.5, z: -3.8, rotationY: Math.PI, activity: 'meeting', zone: 'chief_office', approach: { x: -4.5, z: -3.8 } },
+];
+
+/** Owner's executive lounge couch in Chief's office. */
+export const OWNER_SEAT: AnchorPoint = {
+  x: -9.0,
+  z: -4.5,
+  rotationY: Math.PI / 2,
+  activity: 'couch',
+  zone: 'chief_office',
+  seated: true,
+  approach: { x: -8.4, z: -4.5 },
+};
+
 /** Workstation anchors for each agent: chief office, then desks in roster order, overflow in meeting room. */
 export const WORKSTATION_ANCHORS: Record<string, AnchorPoint> = (() => {
   const out: Record<string, AnchorPoint> = {};
+  out['owner'] = OWNER_SEAT;
   const seats = DESK_LAYOUT.map(deskSeat);
   let overflow = 0;
   for (const profile of PROFILES) {

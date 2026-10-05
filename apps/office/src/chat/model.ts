@@ -3,7 +3,7 @@ import type { ChatEvent, ServerRequest } from './rpc.ts';
 export type ApprovalChoice = 'once' | 'session' | 'always' | 'deny';
 
 export type ChatItem =
-  | { kind: 'user'; id: string; text: string; broadcast?: boolean; broadcastId?: string; targetCount?: number; targetProfiles?: string[] }
+  | { kind: 'user'; id: string; text: string; broadcast?: boolean; broadcastId?: string; targetCount?: number; targetProfiles?: string[]; profile?: string }
   | { kind: 'assistant'; id: string; text: string; streaming: boolean; profile?: string }
   | { kind: 'tool'; id: string; name: string; label: string; status: 'running' | 'done'; durationMs?: number; profile?: string }
   | { kind: 'approval'; id: string; requestId: string; command: string; description: string; choices: ApprovalChoice[]; decided?: ApprovalChoice; profile?: string }
@@ -148,3 +148,55 @@ export function resolveRequest(items: ChatItem[], requestId: string, answer: str
     return i;
   });
 }
+
+export type ChatToolItem = Extract<ChatItem, { kind: 'tool' }>;
+
+export interface ToolGroupItem {
+  kind: 'toolGroup';
+  id: string;
+  profile?: string;
+  items: ChatToolItem[];
+  isRunning: boolean;
+}
+
+export type ChatRenderItem =
+  | { kind: 'single'; item: ChatItem }
+  | ToolGroupItem;
+
+export function groupToolItems(items: ChatItem[]): ChatRenderItem[] {
+  const result: ChatRenderItem[] = [];
+  let currentGroup: ChatToolItem[] = [];
+
+  const flush = () => {
+    if (currentGroup.length === 0) return;
+    if (currentGroup.length === 1) {
+      result.push({ kind: 'single', item: currentGroup[0] });
+    } else {
+      const isRunning = currentGroup.some((t) => t.status === 'running');
+      const grpProfile = currentGroup[0].profile;
+      result.push({
+        kind: 'toolGroup',
+        id: `group-${currentGroup[0].id}`,
+        profile: grpProfile,
+        items: [...currentGroup],
+        isRunning,
+      });
+    }
+    currentGroup = [];
+  };
+
+  for (const it of items) {
+    if (it.kind === 'tool') {
+      if (currentGroup.length > 0 && currentGroup[0].profile !== it.profile) {
+        flush();
+      }
+      currentGroup.push(it);
+    } else {
+      flush();
+      result.push({ kind: 'single', item: it });
+    }
+  }
+  flush();
+  return result;
+}
+

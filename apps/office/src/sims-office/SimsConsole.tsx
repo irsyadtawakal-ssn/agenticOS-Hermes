@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { PROFILES } from '../hermes/labels.ts';
-import { useShell } from '../shell/store.ts';
+import { shell, useShell } from '../shell/store.ts';
 import { calculateMotives } from './SimsMotives.ts';
 import { simsAudio } from './SimsAudio.ts';
 import type { WallDisplayMode } from './WallManager.ts';
@@ -59,6 +59,8 @@ export function SimsConsole({
   const daily = useShell((s) => s.daily);
   const health = useShell((s) => s.health);
   const agents = useShell((s) => s.agents);
+  const operatorName = useShell((s) => s.operatorName);
+  const operatorAvatar = useShell((s) => s.operatorAvatar);
 
   const report = useMemo(() => {
     return calculateMotives(selectedProfile, { approvals, tasks, costs, daily, health, agents });
@@ -70,6 +72,7 @@ export function SimsConsole({
 
   // Format human-friendly current status label
   const getActionStatus = () => {
+    if (selectedProfile === 'owner') return 'Memimpin Kantor (Commander)';
     if (pendingApprovalsCount > 0) return 'Menunggu Approval Izin';
     const st = activeAgentState?.state;
     if (st === 'working' || st === 'thinking' || st === 'executing') return 'Sedang Menjalankan Tugas';
@@ -130,7 +133,7 @@ export function SimsConsole({
             }}
           >
             <div className="sims-avatar-content">
-              {report.meta.name.slice(0, 2).toUpperCase()}
+              {selectedProfile === 'owner' ? (operatorAvatar || '👑') : report.meta.name.slice(0, 2).toUpperCase()}
             </div>
             <div
               className="sims-plumbob-mood-gem"
@@ -176,6 +179,16 @@ export function SimsConsole({
               title="Buka Papan Tugas Kanban (Shortcut: B)"
             >
               📋 Tugas (B)
+            </button>
+            <button
+              className="sims-quick-btn"
+              onClick={() => {
+                simsAudio.playSelectSim();
+                shell.openCharacterStudio(selectedProfile);
+              }}
+              title={`Kustomisasi Karakter & Busana ${report.meta.name}`}
+            >
+              🎨 Gaya
             </button>
           </div>
         </section>
@@ -292,6 +305,19 @@ export function SimsConsole({
                 <div className="sims-soul-bio" title={report.meta.soulBio}>
                   {report.meta.soulBio}
                 </div>
+
+                <button
+                  type="button"
+                  className="sims-quick-btn"
+                  style={{ width: '100%', marginTop: '6px', justifyContent: 'center' }}
+                  onClick={() => {
+                    simsAudio.playSelectSim();
+                    shell.openCharacterStudio(selectedProfile);
+                  }}
+                  title="Buka Character Studio untuk kustomisasi wajah, rambut, dan busana 3D"
+                >
+                  🎨 Kustomisasi Karakter (Wajah, Rambut & Busana)
+                </button>
               </div>
             )}
 
@@ -456,6 +482,28 @@ export function SimsConsole({
 
       {/* Household Sim Selector Strip */}
       <nav className="sims-household-strip" aria-label="Pilih Agent / Sim">
+        {/* Owner Sim Pod (First Member) */}
+        <button
+          className={`sims-sim-pod-btn ${selectedProfile === 'owner' ? 'selected' : ''}`}
+          onClick={() => handleSelectSim('owner')}
+          title={`Pilih ${operatorName} (OWNER)`}
+        >
+          <div
+            className="sims-sim-pod-avatar"
+            style={{
+              borderColor: '#f59e0b',
+              background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.35) 0%, rgba(217, 119, 6, 0.45) 100%)',
+              color: '#fef08a',
+            }}
+          >
+            {operatorAvatar || '👑'}
+            <span className="sims-sim-pod-dot" style={{ backgroundColor: '#10b981' }} />
+          </div>
+          <span className="sims-sim-pod-label font-bold text-amber-200">
+            {operatorName ? (operatorName.length > 8 ? `${operatorName.slice(0, 7)}…` : operatorName) : 'Owner'}
+          </span>
+        </button>
+
         {PROFILES.map((p) => {
           const isSel = p === selectedProfile;
           const rawStatus = agents.find((a) => a.profile === p)?.state ?? 'idle';

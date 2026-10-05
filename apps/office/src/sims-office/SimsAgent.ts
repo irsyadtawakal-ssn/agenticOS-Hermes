@@ -14,6 +14,7 @@ import { simsAudio } from './SimsAudio.ts';
 import { CharacterLibrary, CHARACTER_HEIGHT } from './CharacterRig.ts';
 import type { CharacterRig, Outfit } from './CharacterRig.ts';
 import { AnchorRegistry } from './AnchorRegistry.ts';
+import { loadCharacterConfig, configToOutfit, type CustomCharacterConfig } from './CharacterCustomizer.ts';
 
 /** Fallback registry for callers that don't share one (each scene should pass its own). */
 const defaultRegistry = new AnchorRegistry();
@@ -23,6 +24,7 @@ const defaultRegistry = new AnchorRegistry();
  * apart by model + material recolouring (material name -> hex).
  */
 export const CHARACTER_OUTFITS: Record<string, Outfit> = {
+  owner: { model: 'business', colors: { Suit: 0x18181b, Tie: 0xf59e0b, Shirt: 0xffffff, Pants: 0x18181b, Skin: 0xf1c7a5, Hair: 0x18181b } },
   chief: { model: 'business', colors: { Suit: 0x1e3a8a, Tie: 0xeab308, Skin: 0xf1c7a5, Hair: 0x2b1d14 } },
   researcher: { model: 'sleeves', colors: { Shirt: 0x065f46, Pants: 0x334155, Hair: 0x78350f, Skin: 0xf5d5bc } },
   secretary: { model: 'suit', colors: { Shirt: 0x9f1239, Pants: 0x1e293b, Hair: 0xd97706, Skin: 0xfde3cf } },
@@ -35,7 +37,7 @@ export const CHARACTER_OUTFITS: Record<string, Outfit> = {
   maya: { model: 'sleeves', colors: { Shirt: 0xec4899, Pants: 0x0c4a6e, Hair: 0x111111, Skin: 0xe0ac85 } },
 };
 
-const DEFAULT_OUTFIT: Outfit = { model: 'casual' };
+export const DEFAULT_OUTFIT: Outfit = { model: 'casual' };
 
 let sharedLibrary: CharacterLibrary | null = null;
 function characterLibrary(): CharacterLibrary {
@@ -125,20 +127,38 @@ export class SimsAgent {
 
     // Plumbob
     this.plumbob = new Plumbob('ready');
+    if (this.profile === 'owner') {
+      this.plumbob.setColorHex(0xf59e0b);
+    }
     this.group.add(this.plumbob.group);
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('aos-character-customized', this.onCustomized as EventListener);
+    }
 
     scene.add(this.group);
     void this.loadRig();
   }
 
+  private onCustomized = (e: Event) => {
+    const ce = e as CustomEvent<{ profile: string; config: CustomCharacterConfig }>;
+    if (ce.detail?.profile === this.profile && ce.detail?.config) {
+      void this.applyCustomConfig(ce.detail.config);
+    }
+  };
+
   private async loadRig(): Promise<void> {
     try {
-      const rig = await characterLibrary().create(CHARACTER_OUTFITS[this.profile] ?? DEFAULT_OUTFIT);
+      const config = loadCharacterConfig(this.profile);
+      const outfit = configToOutfit(config);
+      const rig = await characterLibrary().create(outfit);
       if (this.destroyed) {
         rig.dispose();
         return;
       }
       this.rig = rig;
+      this.rig.setHeightScale(config.heightScale ?? 1.0);
+      this.rig.setGlasses(config.glasses ?? 'none');
       this.group.remove(this.placeholder);
       this.placeholder.geometry.dispose();
       (this.placeholder.material as THREE.Material).dispose();
@@ -146,6 +166,39 @@ export class SimsAgent {
       this.applyAnimation(0);
     } catch (err) {
       console.warn(`[sims] failed to load character for ${this.profile}`, err);
+    }
+  }
+
+  public async applyCustomConfig(config: CustomCharacterConfig): Promise<void> {
+    if (this.destroyed) return;
+    const outfit = configToOutfit(config);
+
+    if (this.rig && this.rig.model === config.model) {
+      if (outfit.colors) {
+        this.rig.updateColors(outfit.colors);
+      }
+      this.rig.setHeightScale(config.heightScale ?? 1.0);
+      this.rig.setGlasses(config.glasses ?? 'none');
+      return;
+    }
+
+    try {
+      const newRig = await characterLibrary().create(outfit);
+      if (this.destroyed) {
+        newRig.dispose();
+        return;
+      }
+      if (this.rig) {
+        this.group.remove(this.rig.object);
+        this.rig.dispose();
+      }
+      this.rig = newRig;
+      this.rig.setHeightScale(config.heightScale ?? 1.0);
+      this.rig.setGlasses(config.glasses ?? 'none');
+      this.group.add(newRig.object);
+      this.applyAnimation(0);
+    } catch (err) {
+      console.warn(`[sims] failed to reload character for ${this.profile}`, err);
     }
   }
 
@@ -169,6 +222,13 @@ export class SimsAgent {
   }
 
   public updateLiveStatus(status: string, hasApproval: boolean): void {
+    if (this.profile === 'owner') {
+      this.liveStatus = 'idle';
+      this.hasApproval = false;
+      this.plumbob.setColorHex(0xf59e0b);
+      return;
+    }
+
     const changed = status !== this.liveStatus || hasApproval !== this.hasApproval;
     this.liveStatus = status;
     this.hasApproval = hasApproval;
@@ -181,7 +241,7 @@ export class SimsAgent {
 
     this.plumbob.setState(pState);
 
-    if (BUSY.has(status)) {
+    if (BUSY.has(status) && !this.inMeeting) {
       const ws = WORKSTATION_ANCHORS[this.profile];
       const atDesk = this.currentAnchor === ws && this.atAnchor;
       if (ws && !atDesk && !(this.actionState === 'walking' && this.currentAnchor === ws)) {
@@ -360,6 +420,9 @@ export class SimsAgent {
 
   public destroy(): void {
     this.destroyed = true;
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('aos-character-customized', this.onCustomized as EventListener);
+    }
     this.registry.release(this.profile);
     this.plumbob.destroy();
     if (this.activeBubble) {

@@ -129,6 +129,20 @@ export async function applyProfiles(o: ApplyOptions): Promise<string[]> {
     if (!spec.desktopSource) {
       backup(soulPath, o.stamp);
       writeFileSync(soulPath, buildSoul(spec, o.templatesDir), 'utf8');
+    } else if (existsSync(soulPath)) {
+      const commonPath = join(o.templatesDir, '_common.md');
+      if (existsSync(commonPath)) {
+        const common = readFileSync(commonPath, 'utf8').trimEnd();
+        const currentSoul = readFileSync(soulPath, 'utf8');
+        const marker = '## Aturan bersama';
+        const markerIndex = currentSoul.indexOf(marker);
+        const persona = markerIndex !== -1 ? currentSoul.slice(0, markerIndex).trimEnd() : currentSoul.trimEnd();
+        const updatedSoul = `${persona}\n\n${common}\n`;
+        if (updatedSoul !== currentSoul) {
+          backup(soulPath, o.stamp);
+          writeFileSync(soulPath, updatedSoul, 'utf8');
+        }
+      }
     }
     const installed = await installPlugins(o, spec, dir);
     if (installed) log.push(installed);

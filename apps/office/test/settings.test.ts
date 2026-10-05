@@ -117,5 +117,27 @@ describe('Settings Dashboard & Preferences', () => {
       expect(mockLocalStorage.getItem('aos.settings.chatSendKey')).toBe('ctrl');
       expect(mockLocalStorage.getItem('aos.settings.speechLang')).toBe('id-ID');
     });
+
+    it('manages Owner avatar and profile customization reactively via shell', () => {
+      expect(shell.getState().operatorAvatar).toBeDefined();
+      expect(shell.getState().operatorName).toBeDefined();
+      expect(shell.getState().operatorTitle).toBeDefined();
+
+      shell.setOperatorProfile({
+        avatar: '🦁',
+        name: 'Sultan Office',
+        title: 'Supreme Commander',
+      });
+
+      expect(shell.getState().operatorAvatar).toBe('🦁');
+      expect(shell.getState().operatorName).toBe('Sultan Office');
+      expect(shell.getState().operatorTitle).toBe('Supreme Commander');
+      expect(mockLocalStorage.getItem('aos.settings.operatorAvatar')).toBe('🦁');
+      expect(mockLocalStorage.getItem('aos.settings.operatorName')).toBe('Sultan Office');
+      expect(mockLocalStorage.getItem('aos.settings.operatorTitle')).toBe('Supreme Commander');
+
+      shell.openSettings('workspace');
+      expect(shell.getState().settingsOpen).toBe(true);
+    });
   });
 });

@@ -5,7 +5,8 @@ import type { WallDisplayMode } from './WallManager.ts';
 import { RoomBuilder } from './RoomBuilder.ts';
 import { SimsAgent } from './SimsAgent.ts';
 import { PROFILES } from '../hermes/labels.ts';
-import { IDLE_ANCHORS, isWalkable, meetingSeat, WORKSTATION_ANCHORS, type AnchorPoint } from './NavigationMesh.ts';
+import { CHIEF_OFFICE_VISITOR_SEATS, CHIEF_SEAT, IDLE_ANCHORS, isWalkable, meetingSeat, WORKSTATION_ANCHORS, type AnchorPoint } from './NavigationMesh.ts';
+import { type SpatialIntentResult } from './spatialIntent.ts';
 import { simsAudio } from './SimsAudio.ts';
 import { Environment } from './Environment.ts';
 import type { TimeMode } from './Environment.ts';
@@ -100,8 +101,9 @@ export class SimsScene {
 
     this.exterior = new Exterior(this.scene, this.environment);
 
-    // 6. Spawn Agents
-    for (const profile of PROFILES) {
+    // 6. Spawn Owner + AI Agents
+    const allOfficeProfiles = ['owner', ...PROFILES];
+    for (const profile of allOfficeProfiles) {
       const agent = new SimsAgent(profile, this.scene, this.anchors);
       this.agents.set(profile, agent);
     }
@@ -189,7 +191,7 @@ export class SimsScene {
     simsAudio.playClick();
   }
 
-  public selectAgent(profile: string, smoothFocus: boolean = true): void {
+  public selectAgent(profile: string, smoothFocus: boolean = true, notifyParent: boolean = true): void {
     this.selectedProfile = profile;
     if (profile === 'all') {
       for (const agent of this.agents.values()) {
@@ -198,7 +200,9 @@ export class SimsScene {
       if (smoothFocus) {
         this.cameraCtrl.focusOn(0, 0);
       }
-      this.callbacks.onSelectAgent(profile);
+      if (notifyParent) {
+        this.callbacks.onSelectAgent(profile);
+      }
       return;
     }
     for (const [p, agent] of this.agents.entries()) {
@@ -211,7 +215,9 @@ export class SimsScene {
         this.cameraCtrl.focusOn(targetAgent.currentPos.x, targetAgent.currentPos.z);
       }
     }
-    this.callbacks.onSelectAgent(profile);
+    if (notifyParent) {
+      this.callbacks.onSelectAgent(profile);
+    }
   }
 
   public broadcastThought(icon: ThoughtIcon = 'chat', targets?: string[]): void {
@@ -239,7 +245,7 @@ export class SimsScene {
     return this.isMeetingActive;
   }
 
-  public startMeeting(): void {
+  public startMeeting(profiles?: string[]): void {
     this.isMeetingActive = true;
     simsAudio.playBroadcast();
 
@@ -256,34 +262,123 @@ export class SimsScene {
       { x: 8.0, z: 8.2, rotationY: Math.PI, activity: 'meeting', zone: 'meeting_room' },
     ];
 
+    const targets = profiles && profiles.length > 0 ? profiles : Array.from(this.agents.keys());
     let i = 0;
-    for (const agent of this.agents.values()) {
+    for (const p of targets) {
+      const agent = this.agents.get(p);
+      if (!agent) continue;
       agent.inMeeting = true;
       const s = spots[i % spots.length];
       i++;
       agent.goToAnchor(s);
-      const delay = 1000 + i * 350;
+      const delay = 800 + i * 300;
       setTimeout(() => {
         agent.showThought('idea');
       }, delay);
     }
 
     this.cameraCtrl.focusOn(8.0, 5.0);
-    this.callbacks.onToast?.('👥 Rapat Tim Dimulai! Seluruh agen berkumpul di Ruang Rapat.');
+    this.callbacks.onToast?.(
+      targets.length >= this.agents.size
+        ? '👥 Rapat Tim Dimulai! Seluruh agen berkumpul di Ruang Rapat.'
+        : `👥 Rapat Dimulai! Agen (${targets.join(', ')}) berkumpul di Ruang Rapat.`
+    );
   }
 
-  public endMeeting(): void {
-    this.isMeetingActive = false;
+  public gatherInChiefOffice(profiles?: string[]): void {
+    this.isMeetingActive = true;
+    simsAudio.playBroadcast();
+
+    const targets = profiles && profiles.length > 0 ? profiles : Array.from(this.agents.keys());
+    let visitorIndex = 0;
+
+    for (const p of targets) {
+      const agent = this.agents.get(p);
+      if (!agent) continue;
+      agent.inMeeting = true;
+
+      if (p === 'chief') {
+        agent.goToAnchor(CHIEF_SEAT);
+      } else {
+        const seat = CHIEF_OFFICE_VISITOR_SEATS[visitorIndex % CHIEF_OFFICE_VISITOR_SEATS.length];
+        visitorIndex++;
+        agent.goToAnchor(seat);
+      }
+
+      const delay = 800 + visitorIndex * 300;
+      setTimeout(() => {
+        agent.showThought('chat');
+      }, delay);
+    }
+
+    // Smoothly focus camera on Chief's desk & visitor seating
+    this.cameraCtrl.focusOn(-6.5, -6.0);
+    this.callbacks.onToast?.(`👥 Menuju Ruangan Bos (${targets.join(', ')})`);
+  }
+
+  public returnToWorkstations(profiles?: string[]): void {
+    const targets = profiles && profiles.length > 0 ? profiles : Array.from(this.agents.keys());
     simsAudio.playBubbleClick();
-    for (const [profile, agent] of this.agents.entries()) {
+
+    for (const p of targets) {
+      const agent = this.agents.get(p);
+      if (!agent) continue;
       agent.inMeeting = false;
-      const ws = WORKSTATION_ANCHORS[profile];
+      const ws = WORKSTATION_ANCHORS[p];
       if (ws) {
         agent.goToAnchor(ws);
       }
     }
+
+    if (targets.length >= this.agents.size) {
+      this.isMeetingActive = false;
+    }
     this.cameraCtrl.focusOn(0, 0);
-    this.callbacks.onToast?.('Rapat Selesai. Agen kembali ke meja masing-masing.');
+    this.callbacks.onToast?.('Agen kembali ke meja kerja masing-masing.');
+  }
+
+  public sendToPantry(profiles?: string[]): void {
+    const targets = profiles && profiles.length > 0 ? profiles : Array.from(this.agents.keys());
+    const pantrySpots = IDLE_ANCHORS.filter((a) => a.zone === 'pantry');
+    if (pantrySpots.length === 0) return;
+
+    let i = 0;
+    for (const p of targets) {
+      const agent = this.agents.get(p);
+      if (!agent) continue;
+      agent.inMeeting = false;
+      const spot = pantrySpots[i % pantrySpots.length];
+      i++;
+      agent.goToAnchor(spot);
+      const delay = 800 + i * 300;
+      setTimeout(() => {
+        agent.showThought('coffee');
+      }, delay);
+    }
+
+    this.cameraCtrl.focusOn(7.5, -5.0);
+    this.callbacks.onToast?.(`☕ Menuju ke Pantry (${targets.join(', ')})`);
+  }
+
+  public executeSpatialIntent(intent: SpatialIntentResult): void {
+    switch (intent.action) {
+      case 'gather_chief_office':
+        this.gatherInChiefOffice(intent.targets);
+        break;
+      case 'gather_meeting_room':
+        this.startMeeting(intent.targets);
+        break;
+      case 'return_workstation':
+        this.returnToWorkstations(intent.targets);
+        break;
+      case 'go_pantry':
+        this.sendToPantry(intent.targets);
+        break;
+    }
+  }
+
+  public endMeeting(): void {
+    this.returnToWorkstations();
   }
 
   public updateLiveStates(
@@ -305,6 +400,10 @@ export class SimsScene {
 
   public getDecorManager(): DecorManager {
     return this.decorManager;
+  }
+
+  public getAgent(profile: string): SimsAgent | undefined {
+    return this.agents.get(profile);
   }
 
   public isBuildMode(): boolean {
@@ -387,7 +486,7 @@ export class SimsScene {
         if (hitProfile) {
           simsAudio.playSelectSim();
           this.selectAgent(hitProfile, true);
-          this.callbacks.onToast(`Sims: ${hitProfile} dipilih`);
+          this.callbacks.onToast(hitProfile === 'owner' ? '👑 Owner (Anda) dipilih' : `Sims: ${hitProfile} dipilih`);
           return;
         }
       }

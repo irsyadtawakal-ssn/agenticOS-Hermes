@@ -1,5 +1,5 @@
 # Hermes Agent yang di-pin untuk Agentic OS. Upgrade hanya lewat PR + contract test.
 # Catatan: source dipakai bersama dengan instalasi Hermes Desktop owner; update Desktop menggeser commit ini (doctor akan FAIL).
-commit=e67255e7e4baec0d01c08a1e81e31223528522d4
+commit=27c02f6326e82b2ba184f5a849f0c5b3a38efb9c
 installed_at=2026-10-03
 source=%LOCALAPPDATA%\hermes\hermes-agent (dibaca dari `hermes --version`)

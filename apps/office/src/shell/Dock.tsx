@@ -1,10 +1,12 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { ChatPanel } from '../chat/ChatPanel.tsx';
 import { PROFILES } from '../hermes/labels.ts';
 import { formatUsd, type Profile, TIERS } from './model.ts';
 import { type DockTab, shell, useShell } from './store.ts';
-import { calculateMotives, getProfileMeta } from '../sims-office/SimsMotives.ts';
+import { calculateMotives, getProfileMeta, type SimProfileMeta } from '../sims-office/SimsMotives.ts';
 import { simsAudio } from '../sims-office/SimsAudio.ts';
+import { ErrorBoundary } from './ErrorBoundary.tsx';
+import { SoulViewerModal } from './SoulViewerModal.tsx';
 import './sims-shell.css';
 
 const TABS: Array<[DockTab, string]> = [
@@ -24,6 +26,9 @@ export function Dock({ profile }: { profile: string }) {
   const daily = useShell((s) => s.daily);
   const health = useShell((s) => s.health);
   const approvals = useShell((s) => s.approvals);
+  const operatorAvatar = useShell((s) => s.operatorAvatar);
+  const operatorName = useShell((s) => s.operatorName);
+  const [soulModalOpen, setSoulModalOpen] = useState(false);
 
   const isAll = profile === 'all';
   const agent = agents.find((a) => a.profile === profile);
@@ -35,8 +40,20 @@ export function Dock({ profile }: { profile: string }) {
     ? Object.values(activity).flat().sort((a, b) => b.ts - a.ts)
     : activity[profile] ?? [];
 
-  const meta = isAll
-    ? { title: 'Broadcast Serentak', aspiration: 'Harmoni & Kolaborasi Tim', traits: ['Terkoordinasi', 'Multi-Agen'] }
+  const meta: SimProfileMeta = isAll
+    ? {
+        name: 'all',
+        title: 'Broadcast Serentak',
+        tier: 'os-brain',
+        aspiration: 'Popularity',
+        aspirationIcon: '📢',
+        aspirationLabel: 'Harmoni & Kolaborasi Tim',
+        zodiac: 'Aquarius',
+        zodiacIcon: '♒',
+        traits: ['Terkoordinasi', 'Multi-Agen'],
+        soulBio: 'Saluran siaran pesan ke seluruh armada agent Hermes.',
+        skills: { logic: 10, creativity: 10, charisma: 10, mechanical: 10, cleaning: 10 },
+      }
     : getProfileMeta(profile);
   const report = useMemo(() => {
     return calculateMotives(isAll ? 'chief' : profile, { approvals, tasks, costs, daily, health, agents });
@@ -73,14 +90,14 @@ export function Dock({ profile }: { profile: string }) {
           <div
             className="sims-dock-avatar"
             style={{
-              borderColor: isAll ? '#38bdf8' : report.plumbobColor,
-              boxShadow: `0 0 10px ${isAll ? '#38bdf8' : report.plumbobColor}66`,
+              borderColor: isAll ? '#38bdf8' : profile === 'owner' ? '#f59e0b' : report.plumbobColor,
+              boxShadow: `0 0 10px ${isAll ? '#38bdf8' : profile === 'owner' ? '#f59e0b' : report.plumbobColor}66`,
             }}
           >
-            {isAll ? '📢' : profile.slice(0, 2).toUpperCase()}
+            {isAll ? '📢' : profile === 'owner' ? (operatorAvatar || '👑') : profile.slice(0, 2).toUpperCase()}
             <span
               className="sims-dock-avatar-dot"
-              style={{ backgroundColor: isAll ? '#38bdf8' : report.plumbobColor }}
+              style={{ backgroundColor: isAll ? '#38bdf8' : profile === 'owner' ? '#10b981' : report.plumbobColor }}
             />
           </div>
           <div>
@@ -90,6 +107,7 @@ export function Dock({ profile }: { profile: string }) {
               onChange={(e) => handleSelectProfile(e.target.value)}
               className="sims-dock-select"
             >
+              <option value="owner">👑 {operatorName.toUpperCase()} (OWNER)</option>
               <option value="all">📢 CHAT ALL (SEMUA AGENT)</option>
               {PROFILES.map((p) => (
                 <option key={p} value={p}>
@@ -100,7 +118,7 @@ export function Dock({ profile }: { profile: string }) {
             <div className="sims-dock-status-pill">
               <span>{meta.title}</span>
               <span>·</span>
-              <span className="capitalize">{isAll ? `${PROFILES.length} agen terhubung` : agent?.state ?? 'offline'}</span>
+              <span className="capitalize">{profile === 'owner' ? 'Komandan Eksekutif' : isAll ? `${PROFILES.length} agen terhubung` : agent?.state ?? 'offline'}</span>
             </div>
           </div>
         </div>
@@ -133,7 +151,9 @@ export function Dock({ profile }: { profile: string }) {
       {/* Tab Panels */}
       {tab === 'chat' ? (
         <div className="flex-1 min-h-0 flex flex-col" role="tabpanel">
-          <ChatPanel key={profile} profile={profile} />
+          <ErrorBoundary fallbackTitle="Gagal Memuat Panel Chat">
+            <ChatPanel key={profile} profile={profile} />
+          </ErrorBoundary>
         </div>
       ) : (
         <div className="flex-1 overflow-y-auto p-16 flex flex-col gap-14" role="tabpanel">
@@ -241,6 +261,20 @@ export function Dock({ profile }: { profile: string }) {
 
               <div className="grid grid-cols-2 gap-8 bg-slate-900/60 p-12 rounded-xl border border-white/5">
                 <div>
+                  <div className="text-slate-400 text-[10px] uppercase font-bold">LLM Engine</div>
+                  <div className="text-xs font-bold text-sky-300 mt-2 flex items-center gap-1.5 truncate">
+                    <span>🧠</span>
+                    <span className="truncate">{meta.llmModel || 'Claude 3.5 Sonnet'}</span>
+                  </div>
+                </div>
+                <div>
+                  <div className="text-slate-400 text-[10px] uppercase font-bold">Provider / Router</div>
+                  <div className="text-xs font-bold text-emerald-400 mt-2 flex items-center gap-1.5 truncate">
+                    <span>⚡</span>
+                    <span className="truncate">{meta.llmProvider || '9Router'}</span>
+                  </div>
+                </div>
+                <div>
                   <div className="text-slate-400 text-[10px] uppercase font-bold">Zodiak</div>
                   <div className="text-sm font-bold text-slate-200 mt-2">
                     {meta.zodiacIcon} {meta.zodiac}
@@ -266,10 +300,55 @@ export function Dock({ profile }: { profile: string }) {
                 </div>
               </div>
 
+              {/* Soul.md Dossier Box */}
+              <div className="p-10 bg-slate-900/60 rounded-xl border border-white/5 flex flex-col gap-6">
+                <div className="flex items-center justify-between">
+                  <div className="text-slate-400 text-[10px] uppercase font-bold flex items-center gap-1.5">
+                    <span>📜</span>
+                    <span>Protokol & Kepribadian (Soul.md)</span>
+                  </div>
+                  <span className="text-[10px] font-mono text-sky-300 bg-sky-950/60 px-2 py-0.5 rounded border border-sky-500/25">
+                    {meta.soulFile || `infra/profiles/soul/${profile}.md`}
+                  </span>
+                </div>
+                <p className="text-slate-300 leading-relaxed text-xs m-0">
+                  {meta.soulBio}
+                </p>
+                {!isAll && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      simsAudio.playBubbleClick();
+                      setSoulModalOpen(true);
+                    }}
+                    className="w-full py-2 px-3 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 text-purple-200 border border-purple-400/40 text-xs font-bold flex items-center justify-center gap-2 cursor-pointer transition shadow-sm"
+                  >
+                    <span>📜</span>
+                    <span>Buka & Baca Berkas Soul.md Lengkap</span>
+                  </button>
+                )}
+              </div>
+
+              {/* Tugas Pokok & Tanggung Jawab */}
+              <div>
+                <div className="text-slate-400 text-[10px] uppercase font-bold mb-4 flex items-center gap-1.5">
+                  <span>🎯</span>
+                  <span>Tugas Pokok & Tanggung Jawab ({meta.duties?.length || 1})</span>
+                </div>
+                <ul className="flex flex-col gap-2.5 bg-slate-900/60 p-8 rounded-xl border border-white/5 list-none m-0">
+                  {(meta.duties || [meta.soulBio]).map((duty, idx) => (
+                    <li key={idx} className="flex items-start gap-2 text-xs text-slate-200 leading-snug">
+                      <span className="text-emerald-400 font-bold text-xs mt-0.5 flex-shrink-0">✓</span>
+                      <span>{duty}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
               <div>
                 <div className="text-slate-400 text-[10px] uppercase font-bold mb-4">Sifat / Traits</div>
                 <div className="flex flex-wrap gap-4">
-                  {meta.traits.map((trait) => (
+                  {meta.traits.map((trait: string) => (
                     <span
                       key={trait}
                       className="px-8 py-2 bg-sky-500/20 text-sky-200 border border-sky-400/30 rounded-full font-semibold text-[11px]"
@@ -285,34 +364,36 @@ export function Dock({ profile }: { profile: string }) {
                   Keahlian Sim (1-10)
                 </div>
                 <div className="flex flex-col gap-4 bg-slate-900/60 p-8 rounded-xl border border-white/5">
-                  {Object.entries(meta.skills).map(([skill, val]) => (
-                    <div key={skill} className="flex items-center justify-between">
-                      <span className="capitalize text-slate-300">{skill}</span>
-                      <div className="flex gap-2">
-                        {[...Array(10)].map((_, i) => (
-                          <span
-                            key={i}
-                            className={`w-2.5 h-2.5 rounded-full border border-white/10 ${
-                              i < val ? 'bg-sky-400 shadow-[0_0_4px_#38bdf8]' : 'bg-slate-800'
-                            }`}
-                          />
-                        ))}
+                  {Object.entries(meta.skills).map(([skill, val]) => {
+                    const score = typeof val === 'number' ? val : 0;
+                    return (
+                      <div key={skill} className="flex items-center justify-between">
+                        <span className="capitalize text-slate-300">{skill}</span>
+                        <div className="flex gap-2">
+                          {[...Array(10)].map((_, i) => (
+                            <span
+                              key={i}
+                              className={`w-2.5 h-2.5 rounded-full border border-white/10 ${
+                                i < score ? 'bg-sky-400 shadow-[0_0_4px_#38bdf8]' : 'bg-slate-800'
+                              }`}
+                            />
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
-              </div>
-
-              <div>
-                <div className="text-slate-400 text-[10px] uppercase font-bold mb-4">Soul & Tugas</div>
-                <p className="p-8 bg-slate-900/60 rounded-xl border border-white/5 text-slate-300 leading-relaxed text-xs">
-                  {meta.soulBio}
-                </p>
               </div>
             </div>
           )}
         </div>
       )}
+
+      <SoulViewerModal
+        isOpen={soulModalOpen}
+        onClose={() => setSoulModalOpen(false)}
+        profile={profile}
+      />
     </aside>
   );
 }

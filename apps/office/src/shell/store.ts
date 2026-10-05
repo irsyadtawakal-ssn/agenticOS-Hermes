@@ -12,6 +12,8 @@ export interface ShellState {
   approvalsOpen: boolean;
   costsOpen: boolean;
   settingsOpen: boolean;
+  characterStudioOpen: boolean;
+  characterStudioProfile: string | null;
   viewMode: 'sims' | 'claude';
   approvals: api.Approval[];
   tasks: api.KanbanTask[];
@@ -21,7 +23,26 @@ export interface ShellState {
   activity: ActivityLog;
   agents: api.AgentState[];
   toast: string | null;
+  operatorName: string;
+  operatorAvatar: string;
+  operatorTitle: string;
 }
+
+function getInitialOperator() {
+  if (typeof localStorage === 'undefined') {
+    return { name: 'Operator', avatar: '👑', title: 'Commander / CEO' };
+  }
+  return {
+    name: localStorage.getItem('aos.settings.operatorName') || 'Operator',
+    avatar: localStorage.getItem('aos.settings.operatorAvatar') || '👑',
+    title:
+      localStorage.getItem('aos.settings.operatorTitle') ||
+      localStorage.getItem('aos.settings.operatorRole') ||
+      'Commander / CEO',
+  };
+}
+
+const initialOperator = getInitialOperator();
 
 let state: ShellState = {
   selected: null,
@@ -30,6 +51,8 @@ let state: ShellState = {
   approvalsOpen: false,
   costsOpen: false,
   settingsOpen: false,
+  characterStudioOpen: false,
+  characterStudioProfile: null,
   viewMode:
     typeof localStorage !== 'undefined' && localStorage.getItem('aos.office.viewMode') === 'claude'
       ? 'claude'
@@ -42,6 +65,9 @@ let state: ShellState = {
   activity: {},
   agents: [],
   toast: null,
+  operatorName: initialOperator.name,
+  operatorAvatar: initialOperator.avatar,
+  operatorTitle: initialOperator.title,
 };
 const listeners = new Set<() => void>();
 
@@ -127,13 +153,47 @@ export const shell = {
   toggleApprovals: () => set({ approvalsOpen: !state.approvalsOpen, costsOpen: false, settingsOpen: false }),
   toggleCosts: () => set({ costsOpen: !state.costsOpen, approvalsOpen: false, settingsOpen: false }),
   toggleSettings: () => set({ settingsOpen: !state.settingsOpen, approvalsOpen: false, costsOpen: false }),
+  openSettings: (tab?: string) => {
+    set({ settingsOpen: true, approvalsOpen: false, costsOpen: false });
+    if (tab && typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('aos-open-settings-tab', { detail: { tab } }));
+    }
+  },
+  setOperatorProfile: (profile: { name?: string; avatar?: string; title?: string }) => {
+    const nextName = profile.name ?? state.operatorName;
+    const nextAvatar = profile.avatar ?? state.operatorAvatar;
+    const nextTitle = profile.title ?? state.operatorTitle;
+    try {
+      if (profile.name !== undefined) localStorage.setItem('aos.settings.operatorName', nextName);
+      if (profile.avatar !== undefined) localStorage.setItem('aos.settings.operatorAvatar', nextAvatar);
+      if (profile.title !== undefined) {
+        localStorage.setItem('aos.settings.operatorTitle', nextTitle);
+        localStorage.setItem('aos.settings.operatorRole', nextTitle);
+      }
+    } catch {}
+    set({
+      operatorName: nextName,
+      operatorAvatar: nextAvatar,
+      operatorTitle: nextTitle,
+    });
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('aos-settings-updated'));
+      window.dispatchEvent(new Event('storage'));
+    }
+  },
+  openCharacterStudio: (profile?: string) =>
+    set({
+      characterStudioOpen: true,
+      characterStudioProfile: profile ?? state.selected ?? 'chief',
+    }),
+  closeCharacterStudio: () => set({ characterStudioOpen: false }),
   setViewMode: (viewMode: 'sims' | 'claude') => {
     try {
       localStorage.setItem('aos.office.viewMode', viewMode);
     } catch {}
     set({ viewMode });
   },
-  closeAll: () => set({ selected: null, drawerOpen: false, approvalsOpen: false, costsOpen: false, settingsOpen: false }),
+  closeAll: () => set({ selected: null, drawerOpen: false, approvalsOpen: false, costsOpen: false, settingsOpen: false, characterStudioOpen: false }),
   showToast: (toast: string | null) => set({ toast }),
   refreshKanban,
   refreshApprovals,
@@ -153,6 +213,25 @@ export const shell = {
     if (topic === 'agents' && Array.isArray(data)) set({ agents: data as api.AgentState[] });
   },
 };
+
+if (typeof window !== 'undefined') {
+  const syncStorage = () => {
+    const op = getInitialOperator();
+    if (
+      op.name !== state.operatorName ||
+      op.avatar !== state.operatorAvatar ||
+      op.title !== state.operatorTitle
+    ) {
+      set({
+        operatorName: op.name,
+        operatorAvatar: op.avatar,
+        operatorTitle: op.title,
+      });
+    }
+  };
+  window.addEventListener('storage', syncStorage);
+  window.addEventListener('aos-settings-updated', syncStorage);
+}
 
 /** Select one stable slice of the shell state (return a state property, not a new object). */
 export function useShell<T>(selector: (s: ShellState) => T): T {

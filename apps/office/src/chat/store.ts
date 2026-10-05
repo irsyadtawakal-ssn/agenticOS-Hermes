@@ -32,6 +32,8 @@ let state: ChatStoreState = { connection: 'idle', closeCode: null, chats: {}, br
 const listeners = new Set<() => void>();
 type BroadcastListener = (targets: string[], text: string) => void;
 const broadcastListeners = new Set<BroadcastListener>();
+export type ChatSendListener = (sender: string, text: string, targets: string[]) => void;
+const sendListeners = new Set<ChatSendListener>();
 let rpc: ChatRpc | null = null;
 let retry = 0;
 
@@ -163,6 +165,13 @@ export const chat = {
     guarded(profile, async () => {
       const trimmed = text.trim();
       if (!trimmed) return;
+      for (const fn of sendListeners) {
+        try {
+          fn('user', trimmed, [profile]);
+        } catch {
+          // non-fatal
+        }
+      }
       if (!chatOf(profile).runtimeId) await newSession(profile);
       const c = chatOf(profile);
       patchChat(profile, { items: [...c.items, { kind: 'user', id: newItemId(), text: trimmed }], busy: true });
@@ -195,6 +204,13 @@ export const chat = {
     for (const fn of broadcastListeners) {
       try {
         fn(targetProfiles, trimmed);
+      } catch {
+        // non-fatal
+      }
+    }
+    for (const fn of sendListeners) {
+      try {
+        fn('user', trimmed, targetProfiles);
       } catch {
         // non-fatal
       }
@@ -245,9 +261,16 @@ export const chat = {
       broadcastListeners.delete(fn);
     };
   },
+  onSend(fn: ChatSendListener): () => void {
+    sendListeners.add(fn);
+    return () => {
+      sendListeners.delete(fn);
+    };
+  },
 };
 
-export function getChatAllTimeline(s: ChatStoreState, filterProfile?: string | null): ChatItem[] {
+export function getChatAllTimeline(s: ChatStoreState | { chats?: Record<string, ProfileChat> }, filterProfile?: string | null): ChatItem[] {
+  if (!s || !s.chats) return [];
   if (filterProfile && filterProfile !== 'all') {
     return s.chats[filterProfile]?.items ?? [];
   }
@@ -255,6 +278,7 @@ export function getChatAllTimeline(s: ChatStoreState, filterProfile?: string | n
   const seenBroadcastIds = new Set<string>();
 
   for (const [prof, c] of Object.entries(s.chats)) {
+    if (!c || !c.items) continue;
     for (const item of c.items) {
       if (item.kind === 'user' && item.broadcast && item.broadcastId) {
         if (!seenBroadcastIds.has(item.broadcastId)) {

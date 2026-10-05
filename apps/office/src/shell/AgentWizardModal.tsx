@@ -1,4 +1,4 @@
-import React, { useState, useId } from 'react';
+import React, { useState } from 'react';
 import { PROFILES, addProfileToRegistry } from '../hermes/labels.ts';
 import { createProfile, type CreateProfileInput } from './api.ts';
 import { saveCustomProfileMeta, type SimProfileMeta } from '../sims-office/SimsMotives.ts';
@@ -149,6 +149,11 @@ export const AgentWizardModal: React.FC<AgentWizardModalProps> = ({ isOpen, onCl
         zodiacIcon: zodObj.icon,
         traits: parsedTraits.length > 0 ? parsedTraits : ['Fokus', 'Mandiri'],
         soulBio: description,
+        llmModel: tier === 'os-brain' ? 'Claude 3.5 Sonnet' : tier === 'os-worker' ? 'Nemotron 3 Super 120B' : 'Gemini 3.8 Flash',
+        llmProvider: `9Router (${tier})`,
+        llmFallback: tier === 'os-private' ? 'Ollama Local' : 'Gemini 3.1 Pro',
+        soulFile: `infra/profiles/soul/${cleanName}.md`,
+        duties: [description || 'Menjalankan tugas spesialisasi operasional'],
         skills: {
           logic: tier === 'os-brain' ? 9 : 7,
           creativity: aspiration === 'Creativity' ? 9 : 7,

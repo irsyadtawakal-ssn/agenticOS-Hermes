@@ -7,6 +7,7 @@ import { triggerBackup } from './api.ts';
 import { requestNotificationPermission, sendDesktopNotification } from './notifications.ts';
 import { shell, useShell } from './store.ts';
 import { AgentWizardModal } from './AgentWizardModal.tsx';
+import { SoulViewerModal } from './SoulViewerModal.tsx';
 import './sims-shell.css';
 
 export type HermesMenuKey =
@@ -65,11 +66,12 @@ export function SettingsDashboard() {
   const viewMode = useShell((s) => s.viewMode);
   const [alwaysShowLabels, setAlwaysShowLabels] = useState(() => localStorage.getItem('aos.sims.alwaysShowLabels') === 'true');
   const [shadowsEnabled, setShadowsEnabled] = useState(() => localStorage.getItem('aos.sims.shadows') !== 'false');
-  const [highFpsMode, setHighFpsMode] = useState(() => localStorage.getItem('aos.sims.highFps') !== 'false');
 
   // Workspace settings
   const [workspaceName, setWorkspaceName] = useState(() => localStorage.getItem('aos.settings.officeName') || 'Hermes Office');
   const [operatorName, setOperatorName] = useState(() => localStorage.getItem('aos.settings.operatorName') || 'Operator');
+  const [operatorAvatar, setOperatorAvatar] = useState(() => localStorage.getItem('aos.settings.operatorAvatar') || '👑');
+  const [operatorTitle, setOperatorTitle] = useState(() => localStorage.getItem('aos.settings.operatorTitle') || localStorage.getItem('aos.settings.operatorRole') || 'Commander / CEO');
 
   // Safety settings
   const [confirmShellCommands, setConfirmShellCommands] = useState(() => localStorage.getItem('aos.settings.confirmShell') !== 'false');
@@ -87,12 +89,13 @@ export function SettingsDashboard() {
   const [notifyOnDone, setNotifyOnDone] = useState(() => localStorage.getItem('aos.settings.notifyDone') !== 'false');
   const [notifyOnApproval, setNotifyOnApproval] = useState(() => localStorage.getItem('aos.settings.notifyApproval') !== 'false');
 
-  // Billing / Costs
+  // Billing / Costs & Tasks
   const costs = useShell((s) => s.costs);
   const daily = useShell((s) => s.daily);
+  const tasks = useShell((s) => s.tasks);
+  const [activeSoulModalProfile, setActiveSoulModalProfile] = useState<string | null>(null);
 
   // System & Health
-  const health = useShell((s) => s.health);
   const [backupLoading, setBackupLoading] = useState(false);
   const [backupResult, setBackupResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
@@ -112,11 +115,23 @@ export function SettingsDashboard() {
     return () => window.removeEventListener('focus', checkPerm);
   }, []);
 
+  useEffect(() => {
+    const handleOpenTab = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.tab) {
+        setSelectedKey(detail.tab as HermesMenuKey);
+      }
+    };
+    window.addEventListener('aos-open-settings-tab', handleOpenTab);
+    return () => window.removeEventListener('aos-open-settings-tab', handleOpenTab);
+  }, []);
+
   const handleSaveItem = (key: string, val: string) => {
     localStorage.setItem(key, val);
     showToast('Pengaturan tersimpan!');
     simsAudio.playBubbleClick();
     window.dispatchEvent(new Event('aos-settings-updated'));
+    window.dispatchEvent(new Event('storage'));
   };
 
   const handleExportJson = () => {
@@ -560,25 +575,28 @@ export function SettingsDashboard() {
               type="button"
               onClick={handleExportJson}
               className="hermes-footer-btn"
-              title="Export Settings (Download JSON)"
+              title="Ekspor Pengaturan (Download JSON)"
             >
-              📥
+              <span>📥</span>
+              <span>Ekspor</span>
             </button>
             <button
               type="button"
               onClick={handleImportJson}
               className="hermes-footer-btn"
-              title="Import Settings (Upload JSON)"
+              title="Impor Pengaturan (Upload JSON)"
             >
-              📤
+              <span>📤</span>
+              <span>Impor</span>
             </button>
             <button
               type="button"
               onClick={handleSyncReload}
               className="hermes-footer-btn"
-              title="Sync & Reload Settings from Hermes Core"
+              title="Sinkronisasi dari Hermes Core"
             >
-              🔄
+              <span>🔄</span>
+              <span>Sinkron</span>
             </button>
           </div>
         </aside>
@@ -588,7 +606,7 @@ export function SettingsDashboard() {
           {/* Header */}
           <header className="hermes-settings-header">
             <div>
-              <h2 className="text-sm font-bold text-white capitalize flex items-center gap-2">
+              <h2 className="text-sm font-bold text-white capitalize flex items-center gap-2 m-0">
                 <span>
                   {selectedKey === 'model_main'
                     ? '📦 Model · Main Model'
@@ -603,7 +621,7 @@ export function SettingsDashboard() {
                             : selectedKey}
                 </span>
               </h2>
-              <p className="text-[11px] text-slate-400 mt-0.5">
+              <p className="text-[11px] text-sky-200/70 mt-1 m-0">
                 {selectedKey === 'agents'
                   ? 'Kelola armada AI, perizinan tier, kepribadian Sims, dan penempatan meja kantor'
                   : 'Konfigurasi parameter dan perilaku Hermes Agentic OS'}
@@ -611,11 +629,12 @@ export function SettingsDashboard() {
             </div>
             <button
               type="button"
-              className="text-slate-400 hover:text-white px-2.5 py-1 rounded bg-white/5 hover:bg-white/10 text-xs font-semibold cursor-pointer transition"
+              className="hermes-settings-close-btn"
               onClick={() => shell.toggleSettings()}
               title="Tutup (Esc)"
             >
-              ✕ Tutup (Esc)
+              <span>✕</span>
+              <span>Tutup (Esc)</span>
             </button>
           </header>
 
@@ -970,52 +989,160 @@ export function SettingsDashboard() {
 
             {/* 7. WORKSPACE */}
             {selectedKey === 'workspace' && (
-              <div className="sims-settings-section-card">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-sky-300">
-                  Workspace & Directory Configuration
-                </h3>
-                <div className="space-y-3 pt-1">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1">
-                      Workspace Name
-                    </label>
-                    <input
-                      type="text"
-                      value={workspaceName}
-                      onChange={(e) => setWorkspaceName(e.target.value)}
-                      onBlur={() => handleSaveItem('aos.settings.officeName', workspaceName)}
-                      className="sims-chat-textarea w-full h-8 px-3 py-1 text-xs"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1">
-                      Operator / Owner Name
-                    </label>
-                    <input
-                      type="text"
-                      value={operatorName}
-                      onChange={(e) => setOperatorName(e.target.value)}
-                      onBlur={() => handleSaveItem('aos.settings.operatorName', operatorName)}
-                      className="sims-chat-textarea w-full h-8 px-3 py-1 text-xs"
-                    />
+              <div className="space-y-4">
+                {/* Owner Identity & Avatar Card */}
+                <div className="sims-settings-section-card border-amber-500/30 bg-gradient-to-br from-slate-900/90 via-amber-950/15 to-slate-900/90">
+                  <div className="flex items-center justify-between border-b border-amber-500/20 pb-2 mb-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">👑</span>
+                      <h3 className="text-xs font-bold uppercase tracking-wider text-amber-300 m-0">
+                        Profil & Avatar Owner (Komandan)
+                      </h3>
+                    </div>
+                    <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-400/40 text-amber-200 uppercase tracking-wider">
+                      Executive Commander
+                    </span>
                   </div>
 
-                  <div className="pt-3 border-t border-white/5 flex items-center justify-between">
-                    <div>
-                      <strong className="text-xs text-white block">Armada Agent Terdaftar</strong>
-                      <span className="text-[11px] text-slate-400">Total {activeProfiles.length} agent aktif di workspace ini.</span>
+                  {/* Live Avatar Preview */}
+                  <div className="flex items-center gap-4 p-3 rounded-xl bg-slate-950/60 border border-white/5 mb-3">
+                    <div className="relative shrink-0">
+                      <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-amber-600/30 to-amber-400/20 border-2 border-amber-400/60 flex items-center justify-center text-3xl shadow-[0_0_15px_rgba(245,158,11,0.25)]">
+                        {operatorAvatar}
+                      </div>
+                      <span className="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full bg-emerald-400 border-2 border-slate-900 shadow-[0_0_6px_#34d399]" />
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        simsAudio.playClick();
-                        setWizardOpen(true);
-                      }}
-                      className="px-3 py-1.5 rounded-lg bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/40 text-xs font-semibold flex items-center gap-1.5 transition-colors"
-                    >
-                      <span>✨</span>
-                      <span>Tambah Agent Baru</span>
-                    </button>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-bold text-white font-mono">{operatorName || 'Operator'}</span>
+                        <span className="text-[9px] font-black px-1.5 py-0.2 rounded bg-amber-400/20 text-amber-300 border border-amber-400/30">
+                          OWNER
+                        </span>
+                      </div>
+                      <p className="text-xs text-amber-200/80 font-medium m-0 mt-0.5">
+                        {operatorTitle || 'Commander / CEO'}
+                      </p>
+                      <p className="text-[11px] text-slate-400 m-0 mt-1">
+                        Avatar ini tampil di topbar HUD, balon pesan obrolan, dan identitas komando kantor.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Preset Avatar Emoji Picker */}
+                  <div className="mb-3">
+                    <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                      Pilih Cepat Avatar Emoji
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      {['👑', '🧑‍💼', '🦁', '⚡', '🎩', '🦅', '🚀', '💻', '🧠', '💎', '🎯', '🔥', '🧙‍♂️', '🐺', '⭐', '🛡️'].map((emoji) => (
+                        <button
+                          key={emoji}
+                          type="button"
+                          onClick={() => {
+                            setOperatorAvatar(emoji);
+                            shell.setOperatorProfile({ avatar: emoji });
+                            showToast(`Avatar diubah ke ${emoji}`);
+                          }}
+                          className={`w-9 h-9 rounded-xl border text-lg flex items-center justify-center cursor-pointer transition ${
+                            operatorAvatar === emoji
+                              ? 'bg-amber-500/30 border-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.5)] scale-105'
+                              : 'bg-slate-950/70 border-white/10 hover:border-amber-400/50 hover:bg-amber-500/10'
+                          }`}
+                          title={`Gunakan avatar ${emoji}`}
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">
+                        Avatar Kustom (Emoji/Teks)
+                      </label>
+                      <input
+                        type="text"
+                        value={operatorAvatar}
+                        maxLength={4}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setOperatorAvatar(val);
+                          shell.setOperatorProfile({ avatar: val });
+                        }}
+                        className="sims-chat-textarea w-full h-8 px-3 py-1 text-xs text-center font-bold text-amber-200"
+                        placeholder="👑"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">
+                        Nama Owner / Komandan
+                      </label>
+                      <input
+                        type="text"
+                        value={operatorName}
+                        onChange={(e) => {
+                          setOperatorName(e.target.value);
+                          shell.setOperatorProfile({ name: e.target.value });
+                        }}
+                        className="sims-chat-textarea w-full h-8 px-3 py-1 text-xs font-semibold"
+                        placeholder="Contoh: Irsyad"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">
+                        Jabatan / Gelar Owner
+                      </label>
+                      <input
+                        type="text"
+                        value={operatorTitle}
+                        onChange={(e) => {
+                          setOperatorTitle(e.target.value);
+                          shell.setOperatorProfile({ title: e.target.value });
+                        }}
+                        className="sims-chat-textarea w-full h-8 px-3 py-1 text-xs font-semibold"
+                        placeholder="Contoh: Commander / CEO"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Workspace Name & Directory */}
+                <div className="sims-settings-section-card">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-sky-300">
+                    Workspace & Directory Configuration
+                  </h3>
+                  <div className="space-y-3 pt-1">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">
+                        Workspace Name
+                      </label>
+                      <input
+                        type="text"
+                        value={workspaceName}
+                        onChange={(e) => setWorkspaceName(e.target.value)}
+                        onBlur={() => handleSaveItem('aos.settings.officeName', workspaceName)}
+                        className="sims-chat-textarea w-full h-8 px-3 py-1 text-xs"
+                      />
+                    </div>
+
+                    <div className="pt-3 border-t border-white/5 flex items-center justify-between">
+                      <div>
+                        <strong className="text-xs text-white block">Armada Agent Terdaftar</strong>
+                        <span className="text-[11px] text-slate-400">Total {activeProfiles.length} agent aktif di workspace ini.</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          simsAudio.playClick();
+                          setWizardOpen(true);
+                        }}
+                        className="px-3 py-1.5 rounded-lg bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/40 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                      >
+                        <span>✨</span>
+                        <span>Tambah Agent Baru</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1023,17 +1150,17 @@ export function SettingsDashboard() {
 
             {/* 7b. AGENTS & FLEET */}
             {selectedKey === 'agents' && (
-              <div className="space-y-4">
-                {/* Modern Toolbar */}
-                <div className="flex items-center justify-between p-4 rounded-xl bg-slate-900/60 border border-white/8 backdrop-blur-sm">
+              <div>
+                {/* Modern Sims Toolbar */}
+                <div className="sims-fleet-toolbar">
                   <div>
-                    <div className="flex items-center gap-2.5">
-                      <span className="font-bold text-sm text-white">Armada Agent Hermes</span>
-                      <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full bg-sky-500/15 text-sky-300 border border-sky-500/30">
+                    <div className="sims-fleet-title-row">
+                      <span className="sims-fleet-title">Armada Agent Hermes</span>
+                      <span className="sims-fleet-count-badge">
                         {activeProfiles.length} Personel
                       </span>
                     </div>
-                    <p className="text-xs text-slate-400 mt-0.5">
+                    <p className="sims-fleet-subtitle">
                       Daftar seluruh agen AI yang terdaftar di konfigurasi sistem & kantor 3D Sims.
                     </p>
                   </div>
@@ -1043,94 +1170,166 @@ export function SettingsDashboard() {
                       simsAudio.playClick();
                       setWizardOpen(true);
                     }}
-                    className="px-3.5 py-1.5 rounded-lg bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs shadow-md shadow-sky-500/20 transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
+                    className="sims-fleet-add-btn"
                   >
-                    <span className="text-base leading-none font-bold">+</span>
+                    <span style={{ fontSize: '16px', lineHeight: 1, fontWeight: 'bold' }}>+</span>
                     <span>Tambah Agent Baru</span>
                   </button>
                 </div>
 
                 {/* Cards Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                <div className="sims-fleet-grid">
                   {activeProfiles.map((p) => {
                     const meta = getProfileMeta(p);
                     const plumbob = meta.customPlumbobColor || (meta.tier === 'os-brain' ? '#22c55e' : meta.tier === 'os-worker' ? '#eab308' : '#a855f7');
                     const tierBadge =
                       meta.tier === 'os-brain'
-                        ? { label: 'BRAIN', bg: 'bg-sky-500/10 text-sky-400 border-sky-500/30' }
+                        ? { label: 'BRAIN', color: '#38bdf8', bg: 'rgba(56, 189, 248, 0.12)', border: 'rgba(56, 189, 248, 0.35)' }
                         : meta.tier === 'os-worker'
-                          ? { label: 'WORKER', bg: 'bg-amber-500/10 text-amber-400 border-amber-500/30' }
-                          : { label: 'PRIVATE', bg: 'bg-purple-500/10 text-purple-400 border-purple-500/30' };
+                          ? { label: 'WORKER', color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.12)', border: 'rgba(245, 158, 11, 0.35)' }
+                          : { label: 'PRIVATE', color: '#c084fc', bg: 'rgba(192, 132, 252, 0.12)', border: 'rgba(192, 132, 252, 0.35)' };
+
+                    const assignedTasks = tasks.filter((t) => t.assignee === p);
+                    const activeTasks = assignedTasks.filter((t) => t.status === 'in_progress' || t.status === 'todo');
 
                     return (
-                      <div
-                        key={p}
-                        className="group p-4 rounded-xl bg-slate-900/60 hover:bg-slate-900/90 border border-white/8 hover:border-sky-500/30 transition-all duration-200 flex flex-col justify-between space-y-3 relative overflow-hidden"
-                      >
+                      <div key={p} className="sims-fleet-card">
                         {/* Top: Avatar + Name + Title + Tier */}
-                        <div className="flex items-start gap-3">
+                        <div className="sims-fleet-card-top">
                           <div
-                            className="w-11 h-11 rounded-xl flex items-center justify-center text-xl shrink-0 relative border border-white/10 shadow-inner"
-                            style={{ background: `radial-gradient(circle at 35% 35%, ${plumbob}25, #080f1d 80%)` }}
+                            className="sims-fleet-avatar"
+                            style={{ background: `radial-gradient(circle at 35% 35%, ${plumbob}33, #07101d 85%)` }}
                           >
-                            <span>{meta.aspirationIcon || '👤'}</span>
+                            <span className="sims-fleet-avatar-icon">{meta.aspirationIcon || '👤'}</span>
                             <span
-                              className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full border-2 border-slate-900 shadow-sm"
-                              style={{ backgroundColor: plumbob }}
+                              className="sims-fleet-plumbob-dot"
+                              style={{ backgroundColor: plumbob, color: plumbob }}
                               title={`Plumbob: ${plumbob}`}
                             />
                           </div>
 
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center justify-between gap-1.5">
-                              <span className="font-bold text-white text-sm tracking-wide capitalize truncate group-hover:text-sky-300 transition-colors">
+                          <div className="sims-fleet-identity">
+                            <div className="sims-fleet-name-row">
+                              <span className="sims-fleet-name">
                                 {p}
                               </span>
-                              <span className={`text-[9px] uppercase tracking-wider font-mono font-bold px-2 py-0.5 rounded-full border ${tierBadge.bg}`}>
+                              <span
+                                className="sims-fleet-tier-badge"
+                                style={{ color: tierBadge.color, background: tierBadge.bg, borderColor: tierBadge.border }}
+                              >
                                 {tierBadge.label}
                               </span>
                             </div>
-                            <div className="text-xs text-slate-300 font-medium truncate mt-0.5">
+                            <div className="sims-fleet-role-title">
                               {meta.title}
                             </div>
-                            <div className="text-[11px] text-slate-400 flex items-center gap-1.5 mt-0.5 font-sans">
+                            <div className="sims-fleet-personality-row">
                               <span>{meta.zodiacIcon} {meta.zodiac}</span>
-                              <span className="text-slate-600">•</span>
+                              <span style={{ color: '#475569' }}>•</span>
                               <span>{meta.aspirationLabel}</span>
                             </div>
                           </div>
                         </div>
 
-                        {/* Middle: Bio */}
-                        <p className="text-xs text-slate-300/80 leading-relaxed line-clamp-2">
-                          {meta.soulBio}
-                        </p>
+                        {/* LLM Engine & Soul.md Spec Capsule */}
+                        <div className="sims-fleet-spec-row">
+                          <span
+                            className="sims-fleet-llm-badge"
+                            title={`LLM Engine: ${meta.llmModel || 'Claude 3.5 Sonnet'} | Provider: ${meta.llmProvider || '9Router'} | Fallback: ${meta.llmFallback || 'Gemini 3.1 Pro'}`}
+                          >
+                            <span>🧠</span>
+                            <span className="truncate">{meta.llmModel || 'Claude 3.5 Sonnet'}</span>
+                          </span>
+                          <span
+                            className="sims-fleet-soul-badge"
+                            title={`Berkas Soul: ${meta.soulFile || `infra/profiles/soul/${p}.md`}`}
+                          >
+                            <span>📁</span>
+                            <span className="truncate">soul.md</span>
+                          </span>
+                        </div>
 
-                        {/* Bottom: Traits + Chat Button */}
-                        <div className="pt-2.5 border-t border-white/6 flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-1 overflow-hidden">
+                        {/* Middle: Duties & Responsibilities (Tugas) */}
+                        <div className="sims-fleet-duties-preview">
+                          <div className="sims-fleet-duties-title">
+                            <span>🎯</span>
+                            <span>Tugas & Tanggung Jawab:</span>
+                          </div>
+                          <ul className="sims-fleet-duties-list">
+                            {(meta.duties && meta.duties.length > 0 ? meta.duties.slice(0, 2) : [meta.soulBio]).map((d, idx) => (
+                              <li key={idx} className="sims-fleet-duties-item" title={d}>
+                                <span className="sims-fleet-duties-bullet">›</span>
+                                <span className="truncate">{d}</span>
+                              </li>
+                            ))}
+                          </ul>
+
+                          {activeTasks.length > 0 ? (
+                            <div className="sims-fleet-active-task-pill" title={activeTasks[0].title}>
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                              <span className="truncate">
+                                <strong>{activeTasks.length} Tugas Aktif:</strong> {activeTasks[0].title}
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="text-[10.5px] text-slate-400/80 italic flex items-center gap-1.5 mt-0.5">
+                              <span>💤</span>
+                              <span>Standby di kantor (0 tugas aktif)</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Bottom: Traits + Action Buttons */}
+                        <div className="sims-fleet-card-bottom">
+                          <div className="sims-fleet-traits">
                             {meta.traits.slice(0, 2).map((t) => (
-                              <span
-                                key={t}
-                                className="text-[10px] px-2 py-0.5 rounded-md bg-white/5 text-slate-400 border border-white/5 truncate max-w-[105px]"
-                              >
+                              <span key={t} className="sims-fleet-trait-tag">
                                 #{t}
                               </span>
                             ))}
                           </div>
 
-                          <button
-                            type="button"
-                            onClick={() => {
-                              simsAudio.playClick();
-                              shell.select(p);
-                              shell.toggleSettings();
-                            }}
-                            className="px-2.5 py-1 rounded-lg bg-sky-500/10 hover:bg-sky-500/25 text-sky-300 hover:text-white border border-sky-500/25 text-[11px] font-semibold flex items-center gap-1 transition-all shrink-0 cursor-pointer"
-                          >
-                            <span>💬</span>
-                            <span>Uji Chat</span>
-                          </button>
+                          <div className="sims-fleet-actions">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                simsAudio.playBubbleClick();
+                                setActiveSoulModalProfile(p);
+                              }}
+                              className="sims-fleet-btn sims-fleet-btn-soul"
+                              title="Buka dokumen kepribadian dan protokol soul.md lengkap"
+                            >
+                              <span>📜</span>
+                              <span>Soul.md</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                simsAudio.playSelectSim();
+                                shell.openCharacterStudio(p);
+                              }}
+                              className="sims-fleet-btn sims-fleet-btn-secondary"
+                              title="Kustomisasi tampilan wajah, rambut, busana, dan model 3D"
+                            >
+                              <span>🎨</span>
+                              <span>3D</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                simsAudio.playClick();
+                                shell.select(p);
+                                shell.toggleSettings();
+                              }}
+                              className="sims-fleet-btn sims-fleet-btn-ghost"
+                              title="Buka obrolan langsung dengan agen ini"
+                            >
+                              <span>💬</span>
+                              <span>Chat</span>
+                            </button>
+                          </div>
                         </div>
                       </div>
                     );
@@ -1643,6 +1842,12 @@ export function SettingsDashboard() {
         onAgentCreated={(_newProfile) => {
           setActiveProfiles([...PROFILES]);
         }}
+      />
+
+      <SoulViewerModal
+        isOpen={Boolean(activeSoulModalProfile)}
+        onClose={() => setActiveSoulModalProfile(null)}
+        profile={activeSoulModalProfile}
       />
     </div>
   );

@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import { PROFILES } from '../hermes/labels.ts';
 import { shell, useShell } from '../shell/store.ts';
 import { SimsScene } from './SimsScene.ts';
 import type { WallDisplayMode } from './WallManager.ts';
@@ -8,6 +7,7 @@ import { DECOR_CATALOG } from './DecorLayout.ts';
 import type { DecorCatalogEntry } from './DecorLayout.ts';
 import { SimsConsole } from './SimsConsole.tsx';
 import { chat } from '../chat/store.ts';
+import { parseOfficeSpatialIntent } from './spatialIntent.ts';
 import './sims.css';
 
 interface SimsOfficeViewProps {
@@ -81,6 +81,21 @@ export function SimsOfficeView({ onSwitchClassic }: SimsOfficeViewProps) {
     });
   }, []);
 
+  // Listen to Chat messages for 3D spatial office commands
+  useEffect(() => {
+    return chat.onSend((_sender, text, targets) => {
+      const intent = parseOfficeSpatialIntent(text, targets);
+      if (intent && sceneRef.current) {
+        sceneRef.current.executeSpatialIntent(intent);
+        if (intent.action === 'gather_meeting_room' || intent.action === 'gather_chief_office') {
+          setIsMeetingActive(true);
+        } else if (intent.action === 'return_workstation') {
+          setIsMeetingActive(false);
+        }
+      }
+    });
+  }, []);
+
   // Sync Live Agent States
   useEffect(() => {
     if (sceneRef.current) {
@@ -91,7 +106,7 @@ export function SimsOfficeView({ onSwitchClassic }: SimsOfficeViewProps) {
   // Sync Selected Agent Focus
   useEffect(() => {
     if (sceneRef.current && selected) {
-      sceneRef.current.selectAgent(selected, false);
+      sceneRef.current.selectAgent(selected, false, false);
     }
   }, [selected]);
 
@@ -178,27 +193,10 @@ export function SimsOfficeView({ onSwitchClassic }: SimsOfficeViewProps) {
     );
   };
 
-  const onlineCount = PROFILES.filter((p) => {
-    const raw = agents.find((a) => a.profile === p)?.state;
-    return raw && raw !== 'offline';
-  }).length;
-
   return (
     <div className="sims-container">
       {/* 3D WebGL Canvas Viewport */}
       <div ref={containerRef} className="sims-viewport" tabIndex={0} />
-
-      {/* Header Info Banner */}
-      <header className="sims-header">
-        <div className="sims-logo">
-          <span className="sims-plumbob-icon">💎</span>
-          <span>THE SIMS 2 OFFICE</span>
-        </div>
-        <div className="sims-status-badge">
-          <span className="sims-status-dot" />
-          <span>{onlineCount} / {PROFILES.length} ONLINE</span>
-        </div>
-      </header>
 
       {/* Floating Camera Navigation Toolbar */}
       <div className="sims-toolbar" aria-label="Kontrol Kamera 3D">
@@ -241,33 +239,6 @@ export function SimsOfficeView({ onSwitchClassic }: SimsOfficeViewProps) {
           aria-label="Center Camera"
         >
           ⌖ Center
-        </button>
-        <button
-          className="sims-btn sims-btn-highlight"
-          onClick={() => {
-            simsAudio.playBubbleClick();
-            shell.toggleDrawer();
-          }}
-          title="Buka / Tutup Papan Kanban (Shortcut: B)"
-          aria-label="Toggle Kanban Board"
-        >
-          📋 Kanban (B)
-        </button>
-        <button
-          className="sims-btn sims-btn-highlight"
-          onClick={() => {
-            simsAudio.playBubbleClick();
-            if (!selected) shell.select('chief');
-            shell.setTab('chat');
-            setTimeout(() => {
-              const el = document.querySelector('.sims-chat-textarea') as HTMLElement | null;
-              el?.focus();
-            }, 60);
-          }}
-          title="Buka Chatbox Agen (Shortcut: C)"
-          aria-label="Open Chatbox"
-        >
-          💬 Chat (C)
         </button>
       </div>
 

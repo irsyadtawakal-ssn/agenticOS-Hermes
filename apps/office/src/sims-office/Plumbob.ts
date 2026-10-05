@@ -71,6 +71,12 @@ export class Plumbob {
     this.innerGlow.color.setHex(color);
   }
 
+  public setColorHex(color: number): void {
+    this.material.color.setHex(color);
+    this.material.emissive.setHex(color);
+    this.innerGlow.color.setHex(color);
+  }
+
   public update(time: number, dt: number): void {
     // Continuous smooth rotation around Y axis
     this.group.rotation.y += dt * 2.2;

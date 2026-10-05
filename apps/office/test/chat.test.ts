@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { applyChatEvent, type ChatItem, fromTranscript, requestItem, resolveRequest, startedAtMs } from '../src/chat/model.ts';
+import { applyChatEvent, type ChatItem, fromTranscript, groupToolItems, requestItem, resolveRequest, startedAtMs } from '../src/chat/model.ts';
 import { ChatRpc, type ChatSocket, type ChatState } from '../src/chat/rpc.ts';
 import { chat, getChatAllTimeline, type ChatStoreState } from '../src/chat/store.ts';
 
@@ -216,18 +216,47 @@ describe('chat model', () => {
     expect(devOnly.map((i) => i.id)).toEqual(['c2', 'c4']);
   });
 
+  it('safely handles empty or partial states in getChatAllTimeline', () => {
+    expect(getChatAllTimeline({} as any)).toEqual([]);
+    expect(getChatAllTimeline({ chats: {} } as any)).toEqual([]);
+    expect(getChatAllTimeline({ chats: { chief: { items: [] } } } as any)).toEqual([]);
+  });
+
   it('triggers onBroadcast listener when broadcast events occur', () => {
     const received: Array<{ targets: string[]; text: string }> = [];
     const unsub = chat.onBroadcast((targets, text) => {
       received.push({ targets, text });
     });
 
-    // Manually trigger broadcast listener test
-    const testTargets = ['chief', 'dev'];
-    for (const l of [chat]) {
-      // verified listener registration
-      expect(typeof unsub).toBe('function');
-    }
+    expect(typeof unsub).toBe('function');
     unsub();
   });
+
+  it('groups consecutive tool calls into collapsible tool groups', () => {
+    const rawItems: ChatItem[] = [
+      { kind: 'user', id: 'c1', text: 'keruangan saya yaa, kita bahas yang scraping tanggal 1' },
+      { kind: 'tool', id: 't1', name: 'terminal', label: 'terminal · ls -la', status: 'done', durationMs: 1193, profile: 'crib' },
+      { kind: 'tool', id: 't2', name: 'terminal', label: 'terminal · find . -name "*scrap*"', status: 'done', durationMs: 226, profile: 'crib' },
+      { kind: 'tool', id: 't3', name: 'session_search', label: 'session_search · recall: "scraping tanggal 1"', status: 'done', durationMs: 16, profile: 'crib' },
+      { kind: 'assistant', id: 'c2', text: 'Siap Mas, saya merapat ke ruangan!', streaming: false, profile: 'crib' },
+    ];
+
+    const grouped = groupToolItems(rawItems);
+    expect(grouped).toHaveLength(3);
+    expect(grouped[0]).toEqual({ kind: 'single', item: rawItems[0] });
+    expect(grouped[1]).toMatchObject({
+      kind: 'toolGroup',
+      id: 'group-t1',
+      profile: 'crib',
+      isRunning: false,
+      items: [rawItems[1], rawItems[2], rawItems[3]],
+    });
+    expect(grouped[2]).toEqual({ kind: 'single', item: rawItems[4] });
+
+    // Single tool item is not grouped into accordion
+    const singleTool = groupToolItems([rawItems[0], rawItems[1], rawItems[4]]);
+    expect(singleTool).toHaveLength(3);
+    expect(singleTool[1]).toEqual({ kind: 'single', item: rawItems[1] });
+  });
 });
+

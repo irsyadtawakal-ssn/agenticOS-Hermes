@@ -24,31 +24,31 @@ profiles:
     docker_network: true
     egress_proxy: true
   - name: hermes-default
-    description: Hermes Desktop hermes-default
+    description: Agent serbaguna workstation Hermes Desktop untuk utilitas dan operasi lokal.
     tier: os-brain
     docker_network: true
     egress_proxy: true
     desktop_source: default
   - name: adelia
-    description: Hermes Desktop adelia
+    description: QC Master & Forensic Verifier - bedah forensik selisih omzet 21 cabang, prinsip empat mata, dan verifikasi kepatuhan kasir.
     tier: os-brain
     docker_network: true
     egress_proxy: true
     desktop_source: adelia
   - name: clara
-    description: Hermes Desktop clara
+    description: Dispatch Master & WAHA Officer - siaran WhatsApp gateway, distribusi laporan omzet ke grup WA dan Area Manager (AM).
     tier: os-brain
     docker_network: true
     egress_proxy: true
     desktop_source: clara
   - name: crib
-    description: Hermes Desktop crib
+    description: The Auditor Man - rekonsiliasi omzet harian 4 platform delivery (GoFood, GrabFood, ShopeeFood, TikTok Go) vs POS 21 cabang.
     tier: os-brain
     docker_network: true
     egress_proxy: true
     desktop_source: crib
   - name: maya
-    description: Hermes Desktop maya
+    description: E-Commerce Master (SS Online) - penarikan data transaksi TikTok Shop & Shopee Seller, pemetaan SKU, rekap Excel 4-sheet, Discord & Supabase sync.
     tier: os-brain
     docker_network: true
     egress_proxy: true

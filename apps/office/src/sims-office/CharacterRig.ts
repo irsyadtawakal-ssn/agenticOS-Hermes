@@ -260,6 +260,69 @@ export class CharacterRig {
     this.typing = on;
   }
 
+  public updateColors(colors: Record<string, number>): void {
+    this.inner.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      for (const m of mats) {
+        const std = m as THREE.MeshStandardMaterial;
+        const override = colors[std.name];
+        if (override !== undefined && std.color) {
+          std.color.setHex(override);
+        }
+      }
+    });
+  }
+
+  public setHeightScale(mult: number): void {
+    const s = Math.max(0.85, Math.min(mult, 1.2));
+    this.object.scale.set(s, s, s);
+  }
+
+  private glassesMesh: THREE.Group | null = null;
+  private glassesType: 'none' | 'reading' | 'sunglasses' | 'cyber' = 'none';
+
+  public setGlasses(type: 'none' | 'reading' | 'sunglasses' | 'cyber'): void {
+    if (this.glassesMesh) {
+      this.object.remove(this.glassesMesh);
+      this.glassesMesh.traverse((o) => {
+        const m = o as THREE.Mesh;
+        if (m.isMesh) {
+          m.geometry.dispose();
+          const mats = Array.isArray(m.material) ? m.material : [m.material];
+          for (const mat of mats) mat.dispose();
+        }
+      });
+      this.glassesMesh = null;
+    }
+    this.glassesType = type;
+    if (type === 'none') return;
+
+    this.glassesMesh = buildGlassesGroup(type);
+    this.object.add(this.glassesMesh);
+    this.syncGlassesTransform();
+  }
+
+  public getGlassesType(): 'none' | 'reading' | 'sunglasses' | 'cyber' {
+    return this.glassesType;
+  }
+
+  private syncGlassesTransform(): void {
+    if (!this.glassesMesh || !this.bones?.head) return;
+    this.bones.head.getWorldPosition(_v);
+    this.bones.head.getWorldQuaternion(_q);
+    this.object.worldToLocal(_v);
+
+    const isModular = this.model === 'business' || this.model === 'casual';
+    const offsetY = isModular ? 0.08 : 0.06;
+    const offsetZ = isModular ? 0.105 : 0.125;
+
+    const forward = new THREE.Vector3(0, offsetY, offsetZ).applyQuaternion(_q);
+    this.glassesMesh.position.copy(_v).add(forward);
+    this.glassesMesh.quaternion.copy(_q);
+  }
+
   /** Advance animation. Call once per frame. */
   public update(dt: number): void {
     this.time += dt;
@@ -270,6 +333,9 @@ export class CharacterRig {
       this.object.updateMatrixWorld(true);
       if (this.proceduralSit) this.applySitLegs();
       if (this.typing) this.applyTypingArms(this.time);
+    }
+    if (this.glassesMesh) {
+      this.syncGlassesTransform();
     }
   }
 
@@ -284,6 +350,18 @@ export class CharacterRig {
 
   public dispose(): void {
     this.mixer.stopAllAction();
+    if (this.glassesMesh) {
+      this.object.remove(this.glassesMesh);
+      this.glassesMesh.traverse((o) => {
+        const m = o as THREE.Mesh;
+        if (m.isMesh) {
+          m.geometry.dispose();
+          const mats = Array.isArray(m.material) ? m.material : [m.material];
+          for (const mat of mats) mat.dispose();
+        }
+      });
+      this.glassesMesh = null;
+    }
     this.inner.traverse((o) => {
       const mesh = o as THREE.Mesh;
       if (!mesh.isMesh) return;
@@ -291,6 +369,73 @@ export class CharacterRig {
       for (const m of mats) m.dispose();
     });
   }
+}
+
+function buildGlassesGroup(type: 'reading' | 'sunglasses' | 'cyber'): THREE.Group {
+  const group = new THREE.Group();
+  group.name = `glasses:${type}`;
+
+  if (type === 'cyber') {
+    const visorGeo = new THREE.BoxGeometry(0.125, 0.024, 0.03);
+    const visorMat = new THREE.MeshStandardMaterial({
+      color: 0x06b6d4,
+      emissive: 0x06b6d4,
+      emissiveIntensity: 1.4,
+      roughness: 0.1,
+      metalness: 0.8,
+      transparent: true,
+      opacity: 0.88,
+    });
+    const visor = new THREE.Mesh(visorGeo, visorMat);
+    group.add(visor);
+
+    const edgeGeo = new THREE.BoxGeometry(0.13, 0.028, 0.008);
+    const edgeMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.9, roughness: 0.2 });
+    const edge = new THREE.Mesh(edgeGeo, edgeMat);
+    edge.position.z = -0.012;
+    group.add(edge);
+    return group;
+  }
+
+  const isSunglasses = type === 'sunglasses';
+  const frameColor = isSunglasses ? 0x090d16 : 0x1e293b;
+  const glassColor = isSunglasses ? 0x0f172a : 0xbae6fd;
+  const glassOpacity = isSunglasses ? 0.88 : 0.35;
+
+  const frameMat = new THREE.MeshStandardMaterial({ color: frameColor, roughness: 0.3, metalness: 0.7 });
+  const glassMat = new THREE.MeshStandardMaterial({
+    color: glassColor,
+    transparent: true,
+    opacity: glassOpacity,
+    roughness: 0.1,
+    metalness: 0.6,
+  });
+
+  const rimGeo = new THREE.BoxGeometry(0.044, 0.032, 0.006);
+  const lensGeo = new THREE.BoxGeometry(0.038, 0.026, 0.004);
+
+  const leftRim = new THREE.Mesh(rimGeo, frameMat);
+  leftRim.position.x = -0.029;
+  const leftLens = new THREE.Mesh(lensGeo, glassMat);
+  leftLens.position.x = -0.029;
+
+  const rightRim = new THREE.Mesh(rimGeo, frameMat);
+  rightRim.position.x = 0.029;
+  const rightLens = new THREE.Mesh(lensGeo, glassMat);
+  rightLens.position.x = 0.029;
+
+  const bridgeGeo = new THREE.BoxGeometry(0.018, 0.005, 0.005);
+  const bridge = new THREE.Mesh(bridgeGeo, frameMat);
+  bridge.position.y = 0.003;
+
+  const templeGeo = new THREE.BoxGeometry(0.004, 0.005, 0.08);
+  const leftTemple = new THREE.Mesh(templeGeo, frameMat);
+  leftTemple.position.set(-0.051, 0.005, -0.04);
+  const rightTemple = new THREE.Mesh(templeGeo, frameMat);
+  rightTemple.position.set(0.051, 0.005, -0.04);
+
+  group.add(leftRim, leftLens, rightRim, rightLens, bridge, leftTemple, rightTemple);
+  return group;
 }
 
 /** Loads each GLB once and hands out independent rig instances. */

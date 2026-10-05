@@ -6,6 +6,7 @@ export type Profile = (typeof PROFILES)[number];
 export const TIERS = PROFILE_TIERS;
 
 export const KANBAN_COLUMNS = ['triage', 'todo', 'ready', 'running', 'blocked', 'review', 'done'] as const;
+export type KanbanColumn = (typeof KANBAN_COLUMNS)[number];
 
 // Mirrors apps/core/src/kanbanActions.ts planMove.
 export function canMove(from: string, to: string): boolean {
