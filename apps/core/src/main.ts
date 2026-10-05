@@ -239,6 +239,7 @@ const app = await buildServer({
   chat,
   runBackup: backupNow,
   readBriefingExecutions,
+  repoRoot,
 });
 await app.listen({ host: config.host, port: config.port });
 console.log(`[aos-core] listening on http://${config.host}:${config.port} (db ${config.dbPath})`);

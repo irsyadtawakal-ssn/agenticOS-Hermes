@@ -6,6 +6,7 @@ import { formatUsd, sparkline, todayCost } from './model.ts';
 import { triggerBackup } from './api.ts';
 import { requestNotificationPermission, sendDesktopNotification } from './notifications.ts';
 import { shell, useShell } from './store.ts';
+import { AgentWizardModal } from './AgentWizardModal.tsx';
 import './sims-shell.css';
 
 export type HermesMenuKey =
@@ -16,6 +17,7 @@ export type HermesMenuKey =
   | 'chat'
   | 'appearance'
   | 'workspace'
+  | 'agents'
   | 'safety'
   | 'browser'
   | 'passwords'
@@ -34,6 +36,8 @@ export type HermesMenuKey =
 export function SettingsDashboard() {
   const [selectedKey, setSelectedKey] = useState<HermesMenuKey>('model_main');
   const [modelGroupOpen, setModelGroupOpen] = useState(true);
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [activeProfiles, setActiveProfiles] = useState<string[]>([...PROFILES]);
 
   // Model settings
   const [mainModel, setMainModel] = useState(() => localStorage.getItem('aos.settings.mainModel') || 'claude-3-5-sonnet-20241022');
@@ -316,6 +320,23 @@ export function SettingsDashboard() {
                 <span>Workspace</span>
               </div>
               <span className="text-[11px] text-slate-500">›</span>
+            </button>
+
+            <button
+              type="button"
+              className={`hermes-nav-item ${selectedKey === 'agents' ? 'active' : ''}`}
+              onClick={() => {
+                simsAudio.playClick();
+                setSelectedKey('agents');
+              }}
+            >
+              <div className="flex items-center gap-2.5">
+                <span className="text-sm">👥</span>
+                <span>Agents & Fleet</span>
+              </div>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-300 font-mono">
+                {activeProfiles.length}
+              </span>
             </button>
 
             <button
@@ -974,6 +995,125 @@ export function SettingsDashboard() {
                       className="sims-chat-textarea w-full h-8 px-3 py-1 text-xs"
                     />
                   </div>
+
+                  <div className="pt-3 border-t border-white/5 flex items-center justify-between">
+                    <div>
+                      <strong className="text-xs text-white block">Armada Agent Terdaftar</strong>
+                      <span className="text-[11px] text-slate-400">Total {activeProfiles.length} agent aktif di workspace ini.</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        simsAudio.playClick();
+                        setWizardOpen(true);
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/40 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                    >
+                      <span>✨</span>
+                      <span>Tambah Agent Baru</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 7b. AGENTS & FLEET */}
+            {selectedKey === 'agents' && (
+              <div className="space-y-4">
+                <div className="sims-settings-section-card">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-xs font-bold uppercase tracking-wider text-sky-300">
+                        Armada Agent & Manajemen Roster
+                      </h3>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        Kelola seluruh agent AI yang aktif di Agentic OS, atur tier hak akses, dan kepribadian Sims 3D.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        simsAudio.playClick();
+                        setWizardOpen(true);
+                      }}
+                      className="px-4 py-2 rounded-xl bg-gradient-to-r from-sky-500 to-indigo-500 hover:from-sky-400 hover:to-indigo-400 text-slate-950 font-bold text-xs shadow-lg shadow-sky-500/25 transition-all flex items-center gap-2"
+                    >
+                      <span>✨</span>
+                      <span>Tambah Agent Baru</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {activeProfiles.map((p) => {
+                    const meta = getProfileMeta(p);
+                    const tierBadgeClass =
+                      meta.tier === 'os-brain'
+                        ? 'bg-sky-500/20 text-sky-300 border-sky-500/30'
+                        : meta.tier === 'os-worker'
+                        ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                        : 'bg-purple-500/20 text-purple-300 border-purple-500/30';
+
+                    return (
+                      <div
+                        key={p}
+                        className="p-4 rounded-xl bg-slate-900/80 border border-white/10 hover:border-sky-500/30 transition-all flex flex-col justify-between space-y-3"
+                      >
+                        <div className="flex items-start gap-3">
+                          <div
+                            className="w-10 h-10 rounded-xl flex items-center justify-center text-lg border border-white/15 relative shrink-0 shadow-md"
+                            style={{ backgroundColor: `${meta.customPlumbobColor || '#22c55e'}22` }}
+                          >
+                            <span>{meta.aspirationIcon || '👤'}</span>
+                            <span
+                              className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full border border-slate-900 shadow-sm"
+                              style={{ backgroundColor: meta.customPlumbobColor || '#22c55e' }}
+                            />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-white text-xs capitalize truncate">{p}</span>
+                              <span className={`text-[10px] px-1.5 py-0.2 rounded border font-mono ${tierBadgeClass}`}>
+                                {meta.tier}
+                              </span>
+                            </div>
+                            <div className="text-[11px] text-sky-300 truncate">{meta.title}</div>
+                            <div className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1.5">
+                              <span>{meta.zodiacIcon} {meta.zodiac}</span>
+                              <span>•</span>
+                              <span>{meta.aspirationLabel}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <p className="text-[11px] text-slate-300 leading-relaxed line-clamp-2 italic">
+                          "{meta.soulBio}"
+                        </p>
+
+                        <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[11px]">
+                          <div className="flex gap-1 overflow-hidden">
+                            {meta.traits.slice(0, 2).map((t) => (
+                              <span key={t} className="text-[9px] px-1.5 py-0.5 rounded bg-white/5 text-slate-300 border border-white/5">
+                                #{t}
+                              </span>
+                            ))}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              simsAudio.playClick();
+                              shell.select(p);
+                              shell.toggleSettings();
+                            }}
+                            className="text-sky-400 hover:text-sky-300 hover:underline flex items-center gap-1 font-medium"
+                          >
+                            <span>Uji Chat</span>
+                            <span>→</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -1475,6 +1615,14 @@ export function SettingsDashboard() {
           </div>
         </main>
       </div>
+
+      <AgentWizardModal
+        isOpen={wizardOpen}
+        onClose={() => setWizardOpen(false)}
+        onAgentCreated={(_newProfile) => {
+          setActiveProfiles([...PROFILES]);
+        }}
+      />
     </div>
   );
 }

@@ -18,6 +18,7 @@ export interface SimProfileMeta {
     mechanical: number;
     cleaning: number;
   };
+  customPlumbobColor?: string;
 }
 
 export const PROFILE_METAS: Record<string, SimProfileMeta> = {
@@ -180,8 +181,32 @@ export interface MotiveInputState {
   agents: AgentState[];
 }
 
+const CUSTOM_METAS_KEY = 'aos_custom_profile_metas';
+
+function loadCustomMetas(): Record<string, SimProfileMeta> {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const raw = localStorage.getItem(CUSTOM_METAS_KEY);
+      if (raw) return JSON.parse(raw);
+    }
+  } catch {}
+  return {};
+}
+
+const customMetasCache: Record<string, SimProfileMeta> = loadCustomMetas();
+
+export function saveCustomProfileMeta(meta: SimProfileMeta): void {
+  customMetasCache[meta.name] = meta;
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(CUSTOM_METAS_KEY, JSON.stringify(customMetasCache));
+    }
+  } catch {}
+}
+
 export function getProfileMeta(profile: string): SimProfileMeta {
   return (
+    customMetasCache[profile] ??
     PROFILE_METAS[profile] ?? {
       name: profile,
       title: 'Agent Specialist',
@@ -323,7 +348,7 @@ export function calculateMotives(profile: string, state: MotiveInputState): SimM
   // Plumbob mood derived from lowest motive
   const minVal = Math.min(...motives.map((m) => m.value));
   let overallMood: 'happy' | 'neutral' | 'stressed' = 'happy';
-  let plumbobColor = '#22c55e'; // Green
+  let plumbobColor = meta.customPlumbobColor || '#22c55e'; // Green or custom
 
   if (minVal <= 30) {
     overallMood = 'stressed';

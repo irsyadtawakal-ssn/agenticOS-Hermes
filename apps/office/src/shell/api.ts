@@ -84,3 +84,26 @@ export const getEvents = (profile: string, limit = 50) =>
 export const getAgents = () => call<AgentState[]>('/v1/agents');
 export const triggerBackup = () =>
   call<{ path?: string; bytes?: number; timestamp?: number; files?: string[] }>('/v1/backup', post({}));
+
+export interface ProfileSpec {
+  name: string;
+  description: string;
+  tier: 'os-brain' | 'os-worker' | 'os-private';
+  docker_network?: boolean;
+  egress_proxy?: boolean;
+  gateway?: boolean;
+}
+
+export interface CreateProfileInput {
+  name: string;
+  description: string;
+  tier: 'os-brain' | 'os-worker' | 'os-private';
+  docker_network?: boolean;
+  egress_proxy?: boolean;
+  soul?: string;
+}
+
+export const getProfiles = () => call<ProfileSpec[]>('/v1/profiles');
+export const createProfile = (input: CreateProfileInput) =>
+  call<{ ok: true; profile: ProfileSpec }>('/v1/profiles', post(input));
+

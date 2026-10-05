@@ -349,3 +349,78 @@ describe('/v1/briefing', () => {
     expect((await app.inject({ method: 'GET', url: '/v1/briefing?token=at' })).statusCode).toBe(200);
   });
 });
+
+describe('/v1/profiles', () => {
+  it('lists profiles and creates new agent profile', async () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'aos-profiles-test-'));
+    const hub = createHub();
+    const server = await buildServer({
+      db: openCoreDb(':memory:'),
+      bridgeToken: 'bt',
+      uiToken: 'ut',
+      approverToken: 'at',
+      hub,
+      kanban: () => ({ tasks: [], runs: [] }),
+      now: () => 1790000000000,
+      repoRoot: tmp,
+    });
+
+    expect((await server.inject({ method: 'GET', url: '/v1/profiles' })).statusCode).toBe(401);
+
+    const listRes = await server.inject({ method: 'GET', url: '/v1/profiles?token=ut' });
+    expect(listRes.statusCode).toBe(200);
+    expect(listRes.json()).toEqual([]);
+
+    const badName = await server.inject({
+      method: 'POST',
+      url: '/v1/profiles?token=ut',
+      payload: { name: '123_bad', description: 'desc', tier: 'os-worker' },
+    });
+    expect(badName.statusCode).toBe(400);
+
+    const badTier = await server.inject({
+      method: 'POST',
+      url: '/v1/profiles?token=ut',
+      payload: { name: 'qa', description: 'desc', tier: 'super-admin' },
+    });
+    expect(badTier.statusCode).toBe(400);
+
+    const okRes = await server.inject({
+      method: 'POST',
+      url: '/v1/profiles?token=ut',
+      payload: {
+        name: 'qa',
+        description: 'Quality assurance engineer',
+        tier: 'os-brain',
+        docker_network: true,
+        egress_proxy: true,
+        soul: '# QA Specialist\nAudit and verify code quality.',
+      },
+    });
+    expect(okRes.statusCode).toBe(200);
+    expect(okRes.json()).toMatchObject({
+      ok: true,
+      profile: {
+        name: 'qa',
+        description: 'Quality assurance engineer',
+        tier: 'os-brain',
+        docker_network: true,
+        egress_proxy: true,
+      },
+    });
+
+    const dupRes = await server.inject({
+      method: 'POST',
+      url: '/v1/profiles?token=ut',
+      payload: { name: 'qa', description: 'Duplicate qa', tier: 'os-brain' },
+    });
+    expect(dupRes.statusCode).toBe(409);
+
+    const updated = await server.inject({ method: 'GET', url: '/v1/profiles?token=ut' });
+    expect(updated.json()).toHaveLength(1);
+    expect(updated.json()[0].name).toBe('qa');
+
+    await server.close();
+  });
+});
+

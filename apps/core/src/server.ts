@@ -1,5 +1,7 @@
 import { timingSafeEqual } from 'node:crypto';
-import { mkdirSync, readFileSync, rmdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmdirSync, writeFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import YAML from 'yaml';
 import websocket from '@fastify/websocket';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import {
@@ -69,6 +71,7 @@ export interface ServerDeps {
   chat?: { connect(): UpstreamSocket; context: RelayContext };
   runBackup?: () => Promise<BackupResult>;
   readBriefingExecutions?: () => ExecutionRow[];
+  repoRoot?: string;
 }
 
 function safeEqual(a: string, b: string): boolean {
@@ -307,6 +310,90 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     if (problem) return reply.code(400).send({ error: problem });
     putOfficeState(deps.db, key as OfficeKey, req.body, now());
     return { ok: true };
+  });
+
+  app.get('/v1/profiles', { preHandler: requireUi }, async () => {
+    const root = deps.repoRoot ?? resolve(process.cwd(), '../..');
+    const rosterPath = join(root, 'infra/profiles/roster.yaml');
+    if (existsSync(rosterPath)) {
+      try {
+        const doc = YAML.parse(readFileSync(rosterPath, 'utf8')) as { profiles?: Array<Record<string, unknown>> };
+        if (Array.isArray(doc?.profiles)) return doc.profiles;
+      } catch {
+        // fall back below
+      }
+    }
+    const officePath = join(root, 'infra/profiles/office-roster.json');
+    if (existsSync(officePath)) {
+      try {
+        return JSON.parse(readFileSync(officePath, 'utf8'));
+      } catch {
+        // fall back
+      }
+    }
+    return [];
+  });
+
+  app.post('/v1/profiles', { preHandler: requireUi }, async (req, reply) => {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const name = String(body.name ?? '').trim().toLowerCase();
+    const description = String(body.description ?? '').trim();
+    const tier = String(body.tier ?? 'os-worker');
+    const dockerNetwork = body.docker_network === true;
+    const egressProxy = body.egress_proxy === true;
+    const soul = typeof body.soul === 'string' ? body.soul.trim() : null;
+
+    if (!/^[a-z][a-z0-9_-]{1,31}$/.test(name)) {
+      return reply.code(400).send({ error: 'Nama agent harus 2-32 karakter, diawali huruf kecil, dan hanya alfanumerik / tanda hubung.' });
+    }
+    if (!['os-brain', 'os-worker', 'os-private'].includes(tier)) {
+      return reply.code(400).send({ error: 'Tier tidak valid (pilih os-brain, os-worker, atau os-private).' });
+    }
+    if (!description) {
+      return reply.code(400).send({ error: 'Deskripsi agent tidak boleh kosong.' });
+    }
+
+    const root = deps.repoRoot ?? resolve(process.cwd(), '../..');
+    const rosterPath = join(root, 'infra/profiles/roster.yaml');
+    const officePath = join(root, 'infra/profiles/office-roster.json');
+    const soulDir = join(root, 'infra/profiles/soul');
+
+    let rosterDoc = { profiles: [] as Array<Record<string, unknown>> };
+    if (existsSync(rosterPath)) {
+      try {
+        const parsed = YAML.parse(readFileSync(rosterPath, 'utf8')) as { profiles?: Array<Record<string, unknown>> };
+        if (Array.isArray(parsed?.profiles)) rosterDoc = { profiles: parsed.profiles };
+      } catch {
+        rosterDoc = { profiles: [] };
+      }
+    }
+
+    if (rosterDoc.profiles.some((p) => p.name === name)) {
+      return reply.code(409).send({ error: `Agent dengan nama '${name}' sudah terdaftar.` });
+    }
+
+    const newProfile: Record<string, unknown> = {
+      name,
+      description,
+      tier,
+      docker_network: dockerNetwork,
+    };
+    if (egressProxy) newProfile.egress_proxy = true;
+
+    rosterDoc.profiles.push(newProfile);
+    mkdirSync(join(root, 'infra/profiles'), { recursive: true });
+    writeFileSync(rosterPath, YAML.stringify(rosterDoc), 'utf8');
+
+    const officeRoster = rosterDoc.profiles.map((p) => ({ name: p.name, tier: p.tier }));
+    writeFileSync(officePath, JSON.stringify(officeRoster, null, 2) + '\n', 'utf8');
+
+    if (!existsSync(soulDir)) mkdirSync(soulDir, { recursive: true });
+    const soulPath = join(soulDir, `${name}.md`);
+    const defaultSoul = `# ${name.toUpperCase()}\n\n${description}\n`;
+    writeFileSync(soulPath, soul ? `${soul}\n` : defaultSoul, 'utf8');
+
+    deps.hub.publish('profiles', officeRoster);
+    return { ok: true, profile: newProfile };
   });
 
   app.get('/office/login', async (req, reply) => {

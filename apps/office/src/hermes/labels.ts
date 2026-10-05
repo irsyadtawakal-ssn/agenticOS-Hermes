@@ -1,7 +1,42 @@
 import officeRoster from '../../../../infra/profiles/office-roster.json';
 
-export const PROFILES = officeRoster.map((p) => p.name);
-export const PROFILE_TIERS = Object.fromEntries(officeRoster.map((p) => [p.name, p.tier]));
+function loadStoredProfiles(): Array<{ name: string; tier: string }> {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const raw = localStorage.getItem('aos_custom_profiles');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    }
+  } catch {}
+  return [];
+}
+
+const initialCustom = loadStoredProfiles();
+export const PROFILES: string[] = [
+  ...officeRoster.map((p) => p.name),
+  ...initialCustom.map((p) => p.name).filter((name) => !officeRoster.some((o) => o.name === name)),
+];
+
+export const PROFILE_TIERS: Record<string, string> = {
+  ...Object.fromEntries(officeRoster.map((p) => [p.name, p.tier])),
+  ...Object.fromEntries(initialCustom.map((p) => [p.name, p.tier])),
+};
+
+export function addProfileToRegistry(profile: { name: string; tier: string }): void {
+  if (!PROFILES.includes(profile.name)) {
+    PROFILES.push(profile.name);
+  }
+  PROFILE_TIERS[profile.name] = profile.tier;
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const current = loadStoredProfiles().filter((p) => p.name !== profile.name);
+      current.push(profile);
+      localStorage.setItem('aos_custom_profiles', JSON.stringify(current));
+    }
+  } catch {}
+}
 
 export function agentIdFor(profile: string): number | null {
   const index = (PROFILES as readonly string[]).indexOf(profile);
