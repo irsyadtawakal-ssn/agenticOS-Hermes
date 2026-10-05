@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ChatPanel } from '../chat/ChatPanel.tsx';
 import { PROFILES } from '../hermes/labels.ts';
 import { formatUsd, type Profile, TIERS } from './model.ts';
@@ -7,6 +7,8 @@ import { calculateMotives, getProfileMeta, type SimProfileMeta } from '../sims-o
 import { simsAudio } from '../sims-office/SimsAudio.ts';
 import { ErrorBoundary } from './ErrorBoundary.tsx';
 import { SoulViewerModal } from './SoulViewerModal.tsx';
+import { getAllRooms, getRoomById, isRoomId, subscribeRooms, type ChatRoom } from '../chat/rooms.ts';
+import { CreateRoomModal } from '../chat/CreateRoomModal.tsx';
 import './sims-shell.css';
 
 const TABS: Array<[DockTab, string]> = [
@@ -29,18 +31,48 @@ export function Dock({ profile }: { profile: string }) {
   const operatorAvatar = useShell((s) => s.operatorAvatar);
   const operatorName = useShell((s) => s.operatorName);
   const [soulModalOpen, setSoulModalOpen] = useState(false);
+  const [createRoomOpen, setCreateRoomOpen] = useState(false);
+  const [rooms, setRooms] = useState<ChatRoom[]>(() => getAllRooms());
+
+  useEffect(() => {
+    return subscribeRooms(() => setRooms(getAllRooms()));
+  }, []);
 
   const isAll = profile === 'all';
+  const isRoom = isRoomId(profile);
+  const room = isRoom ? getRoomById(profile) : undefined;
   const agent = agents.find((a) => a.profile === profile);
-  const mine = tasks.filter((t) => (isAll ? true : t.assignee === profile));
+
+  const mine = tasks.filter((t) =>
+    isAll ? true : isRoom && room ? room.members.includes(t.assignee ?? '') : t.assignee === profile
+  );
   const active = mine.filter((t) => ACTIVE.has(t.status));
   const history = mine.filter((t) => !ACTIVE.has(t.status)).slice(0, 10);
-  const cost = costs?.byProfile.find((p) => p.profile === profile);
+  const cost = isRoom && room
+    ? costs?.byProfile.filter((p) => room.members.includes(p.profile)).reduce((sum, c) => sum + c.cost_usd, 0)
+    : costs?.byProfile.find((p) => p.profile === profile)?.cost_usd;
   const log = isAll
     ? Object.values(activity).flat().sort((a, b) => b.ts - a.ts)
-    : activity[profile] ?? [];
+    : isRoom && room
+      ? room.members.flatMap((m) => activity[m] ?? []).sort((a, b) => b.ts - a.ts)
+      : activity[profile] ?? [];
 
-  const meta: SimProfileMeta = isAll
+  const meta: SimProfileMeta = isRoom && room
+    ? {
+        name: room.name,
+        title: room.description,
+        department: `Saluran Room (${room.members.length} Agen)`,
+        tier: 'os-brain',
+        aspiration: 'Popularity',
+        aspirationIcon: room.icon,
+        aspirationLabel: `Kolaborasi Tim ${room.name}`,
+        zodiac: 'Gemini',
+        zodiacIcon: '👥',
+        traits: ['Kolaboratif', 'Multi-Agen', 'Fokus Divisi'],
+        soulBio: `${room.description}. Anggota room: ${room.members.map((m) => (m === 'chief' ? 'Arthur' : m)).join(', ')}.`,
+        skills: { logic: 10, creativity: 10, charisma: 10, mechanical: 10, cleaning: 10 },
+      }
+    : isAll
     ? {
         name: 'all',
         title: 'Broadcast Serentak',
@@ -55,9 +87,13 @@ export function Dock({ profile }: { profile: string }) {
         skills: { logic: 10, creativity: 10, charisma: 10, mechanical: 10, cleaning: 10 },
       }
     : getProfileMeta(profile);
+
   const report = useMemo(() => {
-    return calculateMotives(isAll ? 'chief' : profile, { approvals, tasks, costs, daily, health, agents });
-  }, [profile, isAll, approvals, tasks, costs, daily, health, agents]);
+    return calculateMotives(
+      isAll ? 'chief' : isRoom && room ? room.members[0] ?? 'chief' : profile,
+      { approvals, tasks, costs, daily, health, agents }
+    );
+  }, [profile, isAll, isRoom, room, approvals, tasks, costs, daily, health, agents]);
 
   const handleTabClick = (nextTab: DockTab) => {
     simsAudio.playTabSwitch();
@@ -65,6 +101,11 @@ export function Dock({ profile }: { profile: string }) {
   };
 
   const handleSelectProfile = (nextProfile: string) => {
+    if (nextProfile === '__create_room__') {
+      simsAudio.playBubbleClick();
+      setCreateRoomOpen(true);
+      return;
+    }
     simsAudio.playSelectSim();
     shell.select(nextProfile);
   };
@@ -74,7 +115,14 @@ export function Dock({ profile }: { profile: string }) {
     shell.select(null);
   };
 
-  const currentTabs: Array<[DockTab, string]> = isAll
+  const currentTabs: Array<[DockTab, string]> = isRoom && room
+    ? [
+        ['chat', `💬 Chat ${room.icon}`],
+        ['cards', `📋 Kartu (${mine.length})`],
+        ['activity', '⚡ Aktivitas Tim'],
+        ['agent', '👤 Info Saluran'],
+      ]
+    : isAll
     ? [
         ['chat', '📢 Chat All'],
         ['cards', '📋 Semua Kartu'],
@@ -90,35 +138,62 @@ export function Dock({ profile }: { profile: string }) {
           <div
             className="sims-dock-avatar"
             style={{
-              borderColor: isAll ? '#38bdf8' : profile === 'owner' ? '#f59e0b' : report.plumbobColor,
-              boxShadow: `0 0 10px ${isAll ? '#38bdf8' : profile === 'owner' ? '#f59e0b' : report.plumbobColor}66`,
+              borderColor: isRoom ? '#06b6d4' : isAll ? '#38bdf8' : profile === 'owner' ? '#f59e0b' : report.plumbobColor,
+              boxShadow: `0 0 10px ${isRoom ? '#06b6d4' : isAll ? '#38bdf8' : profile === 'owner' ? '#f59e0b' : report.plumbobColor}66`,
             }}
           >
-            {isAll ? '📢' : profile === 'owner' ? (operatorAvatar || '👑') : profile.slice(0, 2).toUpperCase()}
+            {isRoom && room
+              ? room.icon
+              : isAll
+                ? '📢'
+                : profile === 'owner'
+                  ? operatorAvatar || '👑'
+                  : profile === 'chief'
+                    ? 'AR'
+                    : profile.slice(0, 2).toUpperCase()}
             <span
               className="sims-dock-avatar-dot"
-              style={{ backgroundColor: isAll ? '#38bdf8' : profile === 'owner' ? '#10b981' : report.plumbobColor }}
+              style={{
+                backgroundColor: isRoom
+                  ? '#06b6d4'
+                  : isAll
+                    ? '#38bdf8'
+                    : profile === 'owner'
+                      ? '#10b981'
+                      : report.plumbobColor,
+              }}
             />
           </div>
           <div>
             <select
-              aria-label="Pilih agent"
+              aria-label="Pilih saluran atau agen"
               value={profile}
               onChange={(e) => handleSelectProfile(e.target.value)}
               className="sims-dock-select"
             >
-              <option value="owner">👑 {operatorName.toUpperCase()} (OWNER)</option>
-              <option value="all">📢 CHAT ALL (SEMUA AGENT)</option>
-              {PROFILES.map((p) => {
-                const pMeta = getProfileMeta(p);
-                const tag = pMeta.department?.includes('SukaShawarma') ? '🌯 ' : '';
-                const display = p === 'chief' ? 'ARTHUR (CHIEF)' : p.toUpperCase();
-                return (
-                  <option key={p} value={p}>
-                    {tag}{display}
+              <optgroup label="👑 KOMANDO">
+                <option value="owner">👑 {operatorName.toUpperCase()} (OWNER)</option>
+              </optgroup>
+              <optgroup label="👥 ROOM CHAT / SALURAN">
+                {rooms.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.icon} {r.name.toUpperCase()} ({r.members.length} AGEN)
                   </option>
-                );
-              })}
+                ))}
+                <option value="__create_room__">✨ + BUAT ROOM CHAT BARU...</option>
+              </optgroup>
+              <optgroup label="💬 DIRECT CHAT (1-ON-1)">
+                {PROFILES.map((p) => {
+                  const pMeta = getProfileMeta(p);
+                  const tag = pMeta.department?.includes('SukaShawarma') ? '🌯 ' : '';
+                  const display = p === 'chief' ? 'ARTHUR (CHIEF)' : p.toUpperCase();
+                  return (
+                    <option key={p} value={p}>
+                      {tag}{display}
+                    </option>
+                  );
+                })}
+              </optgroup>
             </select>
             <div className="sims-dock-status-pill">
               <span>{meta.title}</span>
@@ -129,7 +204,15 @@ export function Dock({ profile }: { profile: string }) {
                 </>
               )}
               <span>·</span>
-              <span className="capitalize">{profile === 'owner' ? 'Komandan Eksekutif' : isAll ? `${PROFILES.length} agen terhubung` : agent?.state ?? 'offline'}</span>
+              <span className="capitalize">
+                {profile === 'owner'
+                  ? 'Komandan Eksekutif'
+                  : isRoom && room
+                    ? `${room.members.length} agen aktif`
+                    : isAll
+                      ? `${PROFILES.length} agen terhubung`
+                      : agent?.state ?? 'offline'}
+              </span>
             </div>
           </div>
         </div>
@@ -314,7 +397,7 @@ export function Dock({ profile }: { profile: string }) {
                 <div>
                   <div className="text-slate-400 text-[10px] uppercase font-bold">Biaya Hari Ini</div>
                   <div className="text-sm font-bold text-amber-300 mt-2">
-                    {cost ? formatUsd(cost.cost_usd) : '$0.00 (shared)'}
+                    {cost !== undefined ? formatUsd(cost) : '$0.00 (shared)'}
                   </div>
                 </div>
               </div>
@@ -407,6 +490,11 @@ export function Dock({ profile }: { profile: string }) {
           )}
         </div>
       )}
+
+      <CreateRoomModal
+        isOpen={createRoomOpen}
+        onClose={() => setCreateRoomOpen(false)}
+      />
 
       <SoulViewerModal
         isOpen={soulModalOpen}

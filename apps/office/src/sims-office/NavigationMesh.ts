@@ -139,24 +139,48 @@ export const TARA_SEAT: AnchorPoint = {
   approach: { x: -5.9, z: -4.8 },
 };
 
-/** Workstation anchors for each agent: chief office, then desks in roster order, overflow in meeting room. */
+/** Workstation anchors for each agent: chief office, then desks by division clusters. */
 export const WORKSTATION_ANCHORS: Record<string, AnchorPoint> = (() => {
   const out: Record<string, AnchorPoint> = {};
   out['owner'] = OWNER_SEAT;
-  const seats = DESK_LAYOUT.map(deskSeat);
+  out['chief'] = CHIEF_SEAT;
+  out['tara'] = TARA_SEAT;
+
+  // Row A (z: 3.0, Core Division): dev (near server rack), researcher, secretary, content
+  // Row B (z: 7.2, Divisi SukaShawarma Operations Wing): adelia, clara, maya, hermes-default
+  const deskMapping: Record<string, number> = {
+    dev: 0,            // rowA x: -7.8 (next to server rack at -10.2)
+    researcher: 1,     // rowA x: -5.6
+    secretary: 2,      // rowA x: -3.4
+    content: 3,        // rowA x: -1.2
+    adelia: 4,         // rowB x: -7.8 (Divisi SukaShawarma)
+    clara: 5,          // rowB x: -5.6 (Divisi SukaShawarma)
+    maya: 6,           // rowB x: -3.4 (Divisi SukaShawarma)
+    'hermes-default': 7, // rowB x: -1.2 (Workstation Generalist)
+  };
+
+  const usedDesks = new Set<number>();
+  for (const [prof, deskIdx] of Object.entries(deskMapping)) {
+    if (DESK_LAYOUT[deskIdx]) {
+      out[prof] = deskSeat(DESK_LAYOUT[deskIdx]);
+      usedDesks.add(deskIdx);
+    }
+  }
+
+  // Fallback / overflow for any additional custom profiles
   let overflow = 0;
   for (const profile of PROFILES) {
-    if (profile === 'chief') {
-      out[profile] = CHIEF_SEAT;
-      continue;
+    if (!out[profile]) {
+      const freeDesk = DESK_LAYOUT.findIndex((_, idx) => !usedDesks.has(idx));
+      if (freeDesk >= 0) {
+        out[profile] = deskSeat(DESK_LAYOUT[freeDesk]);
+        usedDesks.add(freeDesk);
+      } else {
+        out[profile] = meetingSeat(overflow++ % MEETING_CHAIRS.length, 'work');
+      }
     }
-    if (profile === 'tara') {
-      out[profile] = TARA_SEAT;
-      continue;
-    }
-    const seat = seats.shift();
-    out[profile] = seat ?? meetingSeat(overflow++ % MEETING_CHAIRS.length, 'work');
   }
+
   return out;
 })();
 

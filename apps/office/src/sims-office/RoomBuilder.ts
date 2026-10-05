@@ -293,6 +293,14 @@ export class RoomBuilder {
     const tv = createTV(1.3);
     tv.position.set(8.2, 1.45, nIn + 0.02);
     this.mount('north', tv);
+
+    // Divisi SukaShawarma illuminated sign on the south wall behind Row B
+    const ssSign = createLogoSign('SUKASHAWARMA');
+    ssSign.position.set(-4.5, 1.85, 10 - WALL_T / 2 - 0.02);
+    ssSign.rotation.y = Math.PI;
+    this.mount('south', ssSign);
+    const ssFace = ssSign.children.find((c): c is THREE.Mesh => (c as THREE.Mesh).isMesh && c.position.z > 0.02);
+    if (ssFace) this.env?.registerNightEmissive(ssFace.material as THREE.MeshStandardMaterial, 0.6, 0.3);
   }
 
   // -------------------------------------------------------------------------
@@ -517,6 +525,30 @@ export class RoomBuilder {
       case 'content':
         this.add(createCamera(), x - 0.6, near, 0.4, top, group);
         this.add(createPlant('snake', 40), x + 0.7, z - side * 0.05, 0, top - 0.02, group).scale.setScalar(0.35);
+        break;
+      case 'adelia':
+        // Adelia: QC Master & Forensic Verifier (paper tray, forensic file stack, lamp)
+        this.add(createPaperTray(), x - 0.6, near, side === 1 ? Math.PI : 0, top, group);
+        this.add(createBookStack(41, 4), x + 0.62, near, 0.1, top, group);
+        lampSpot(0.75);
+        break;
+      case 'clara':
+        // Clara: Dispatch Master & WAHA Officer (phone, teal mug, dispatch tray)
+        this.add(createPhone(), x - 0.6, near, side === 1 ? Math.PI : 0, top, group);
+        this.add(createMug(0x06b6d4), x + 0.35, near + side * 0.05, 0, top, group);
+        this.add(createPaperTray(), x + 0.62, near, 0, top, group);
+        break;
+      case 'maya':
+        // Maya: E-Commerce Master (marketplace laptop, gold mug)
+        this.add(
+          createKenney('laptop', { width: 0.36 }, () => createLaptop()),
+          x - 0.62, near, side === 1 ? Math.PI : 0, top, group
+        );
+        this.add(createMug(0xf59e0b), x + 0.62, near, 0, top, group);
+        break;
+      case 'hermes-default':
+        this.add(createCan(0x8b5cf6), x + 0.62, near, 0, top, group);
+        lampSpot(-0.7);
         break;
       default:
         this.add(createMug([0xffffff, 0xf59e0b, 0x22c55e, 0x8b5cf6][Math.abs(Math.round(x)) % 4]), x - 0.55, near, 0, top, group);

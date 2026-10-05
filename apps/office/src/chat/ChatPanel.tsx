@@ -1,6 +1,8 @@
 import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { type ApprovalChoice, type ChatItem, type ToolGroupItem, groupToolItems, startedAtMs } from './model.ts';
-import { chat, getChatAllTimeline, useChat, type ChatStoreState } from './store.ts';
+import { chat, getChatAllTimeline, getRoomTimeline, useChat, type ChatStoreState } from './store.ts';
+import { getRoomById, isRoomId, deleteRoom } from './rooms.ts';
+import { CreateRoomModal } from './CreateRoomModal.tsx';
 import { PROFILES } from '../hermes/labels.ts';
 import { getProfileMeta } from '../sims-office/SimsMotives.ts';
 import { simsAudio } from '../sims-office/SimsAudio.ts';
@@ -254,13 +256,20 @@ function ToolGroup({ profile, group }: { profile: string; group: ToolGroupItem }
 
 export function ChatPanel({ profile }: { profile: string }) {
   const isAll = profile === 'all';
+  const isRoom = isRoomId(profile);
+  const room = isRoom ? getRoomById(profile) : undefined;
+  const isMulti = isAll || Boolean(isRoom && room);
+
   const connection = useChat((s) => s.connection);
   const closeCode = useChat((s) => s.closeCode);
-  const current = useChat((s) => (isAll ? undefined : s.chats[profile]));
+  const current = useChat((s) => (isMulti ? undefined : s.chats[profile]));
   const allChats = useChat((s) => s.chats);
   const [filterProfile, setFilterProfile] = useState<string>('all');
-  const [selectedTargets, setSelectedTargets] = useState<string[]>(() => [...PROFILES]);
+  const [selectedTargets, setSelectedTargets] = useState<string[]>(() =>
+    room ? [...room.members] : [...PROFILES]
+  );
   const [draft, setDraft] = useState('');
+  const [createRoomOpen, setCreateRoomOpen] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
 
   // Card modal state
@@ -352,31 +361,53 @@ export function ChatPanel({ profile }: { profile: string }) {
     }
   };
 
-  const timelineItems = useMemo(() => {
-    if (!isAll) return [];
-    return getChatAllTimeline({ chats: allChats } as ChatStoreState, filterProfile);
-  }, [isAll, allChats, filterProfile]);
-  const items = isAll ? timelineItems : current?.items ?? [];
+  // Sync targets when switching room or profile
+  useEffect(() => {
+    if (isRoom && room) {
+      setSelectedTargets([...room.members]);
+      setFilterProfile('all');
+    } else if (isAll) {
+      setSelectedTargets([...PROFILES]);
+      setFilterProfile('all');
+    }
+  }, [profile, isRoom, room?.id, isAll]);
+
+  const items: ChatItem[] = useMemo(() => {
+    if (isRoom && room) {
+      return getRoomTimeline({ chats: allChats } as ChatStoreState, room.members, filterProfile);
+    }
+    if (isAll) {
+      return getChatAllTimeline({ chats: allChats } as ChatStoreState, filterProfile);
+    }
+    return current?.items ?? [];
+  }, [isRoom, room, isAll, allChats, filterProfile, current?.items]);
+
   const renderableItems = useMemo(() => groupToolItems(items), [items]);
   const sessions = current?.sessions ?? [];
   const offline = connection !== 'open';
 
-  const busyAgents = isAll
-    ? PROFILES.filter((p) => allChats[p]?.busy)
-    : current?.busy
-      ? [profile]
-      : [];
+  const busyAgents = isRoom && room
+    ? room.members.filter((p) => allChats[p]?.busy)
+    : isAll
+      ? PROFILES.filter((p) => allChats[p]?.busy)
+      : current?.busy
+        ? [profile]
+        : [];
 
   useEffect(() => {
     chat.connect();
-    if (!isAll) {
-      void chat.loadSessions(profile);
-    } else {
+    if (isRoom && room) {
+      for (const p of room.members) {
+        void chat.loadSessions(p);
+      }
+    } else if (isAll) {
       for (const p of PROFILES) {
         void chat.loadSessions(p);
       }
+    } else {
+      void chat.loadSessions(profile);
     }
-  }, [profile, isAll]);
+  }, [profile, isAll, isRoom, room?.id]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView?.({ block: 'end' });
@@ -387,7 +418,10 @@ export function ChatPanel({ profile }: { profile: string }) {
     if (!text.trim()) return;
     simsAudio.playBubbleClick();
     setDraft('');
-    if (isAll) {
+    if (isRoom && room) {
+      simsAudio.playBroadcast();
+      void chat.sendRoom(room.id, selectedTargets.length > 0 ? selectedTargets : room.members, text);
+    } else if (isAll) {
       simsAudio.playBroadcast();
       void chat.sendAll(text, selectedTargets);
     } else {
@@ -421,10 +455,11 @@ export function ChatPanel({ profile }: { profile: string }) {
 
   const toggleAllTargets = () => {
     simsAudio.playBubbleClick();
-    if (selectedTargets.length === PROFILES.length) {
-      setSelectedTargets(['chief']);
+    const allMembers = room ? room.members : PROFILES;
+    if (selectedTargets.length === allMembers.length) {
+      setSelectedTargets([allMembers[0]]);
     } else {
-      setSelectedTargets([...PROFILES]);
+      setSelectedTargets([...allMembers]);
     }
   };
 
@@ -440,70 +475,156 @@ export function ChatPanel({ profile }: { profile: string }) {
     <div className="sims-chat-panel">
       {/* Session selector & control bar */}
       <div className="sims-chat-session-bar">
-        {isAll ? (
-          <div className="flex items-center gap-2 min-w-0 flex-1">
-            <span className="text-cyan-300 font-bold text-xs shrink-0 flex items-center gap-1">
-              <span>📢</span>
-              <span>Filter:</span>
-            </span>
-            <select
-              aria-label="Filter respon agent"
-              className="sims-chat-session-select text-xs flex-1 min-w-0"
-              value={filterProfile}
-              onChange={(e) => {
+        {isRoom && room ? (
+          <div className="flex items-center justify-between gap-2 min-w-0 flex-1">
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              <span className="text-cyan-300 font-bold text-xs shrink-0 flex items-center gap-1.5 bg-cyan-950/60 px-2 py-0.5 rounded-lg border border-cyan-500/30">
+                <span>{room.icon}</span>
+                <span className="truncate max-w-[130px]">{room.name}</span>
+                <span className="text-[10px] text-cyan-400 font-mono">({room.members.length})</span>
+              </span>
+              <select
+                aria-label="Filter respon agen room"
+                className="sims-chat-session-select text-xs flex-1 min-w-0"
+                value={filterProfile}
+                onChange={(e) => {
+                  simsAudio.playBubbleClick();
+                  setFilterProfile(e.target.value);
+                }}
+              >
+                <option value="all">Semua Anggota Room ({room.members.length} Agen)</option>
+                {room.members.map((p) => (
+                  <option key={p} value={p}>
+                    Respon: {p === 'chief' ? 'Arthur (Chief)' : p.toUpperCase()}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              {!room.isDefault && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    simsAudio.playBubbleClick();
+                    if (confirm(`Hapus room chat "${room.name}"?`)) {
+                      deleteRoom(room.id);
+                      shell.select('room:sukashawarma');
+                    }
+                  }}
+                  className="px-2 py-1 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 text-xs font-bold border border-rose-400/30 cursor-pointer transition"
+                  title="Hapus Room Chat Kustom Ini"
+                >
+                  🗑️
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  simsAudio.playBubbleClick();
+                  setCreateRoomOpen(true);
+                }}
+                className="px-2.5 py-1 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-200 text-xs font-bold border border-cyan-400/40 cursor-pointer transition flex items-center gap-1"
+                title="Buat Room Chat Baru"
+              >
+                <span>✨</span>
+                <span>+ Room</span>
+              </button>
+            </div>
+          </div>
+        ) : isAll ? (
+          <div className="flex items-center justify-between gap-2 min-w-0 flex-1">
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              <span className="text-cyan-300 font-bold text-xs shrink-0 flex items-center gap-1">
+                <span>📢</span>
+                <span>Filter:</span>
+              </span>
+              <select
+                aria-label="Filter respon agent"
+                className="sims-chat-session-select text-xs flex-1 min-w-0"
+                value={filterProfile}
+                onChange={(e) => {
+                  simsAudio.playBubbleClick();
+                  setFilterProfile(e.target.value);
+                }}
+              >
+                <option value="all">Semua Respons ({PROFILES.length} Agen)</option>
+                {PROFILES.map((p) => (
+                  <option key={p} value={p}>
+                    Respon: {p.toUpperCase()}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
                 simsAudio.playBubbleClick();
-                setFilterProfile(e.target.value);
+                setCreateRoomOpen(true);
+              }}
+              className="px-2.5 py-1 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-200 text-xs font-bold border border-cyan-400/40 cursor-pointer transition flex items-center gap-1 shrink-0"
+              title="Buat Room Chat Baru"
+            >
+              <span>✨</span>
+              <span>+ Room</span>
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center justify-between gap-2 min-w-0 flex-1">
+            <select
+              aria-label="Riwayat sesi"
+              className="sims-chat-session-select flex-1 min-w-0"
+              value={selected}
+              onChange={(e) => {
+                if (e.target.value) {
+                  simsAudio.playBubbleClick();
+                  void chat.resume(profile, e.target.value);
+                }
               }}
             >
-              <option value="all">Semua Respons ({PROFILES.length} Agen)</option>
-              {PROFILES.map((p) => (
-                <option key={p} value={p}>
-                  Respon: {p.toUpperCase()}
+              <option value="">{current?.storedId ? 'Sesi saat ini' : 'Buka sesi lama…'}</option>
+              {sessions.map((row) => (
+                <option key={row.id} value={row.id}>
+                  {new Date(startedAtMs(row.started_at)).toLocaleString('id-ID')} · {row.title || row.preview || row.id}
                 </option>
               ))}
             </select>
-          </div>
-        ) : (
-          <select
-            aria-label="Riwayat sesi"
-            className="sims-chat-session-select"
-            value={selected}
-            onChange={(e) => {
-              if (e.target.value) {
+            <button
+              type="button"
+              onClick={() => {
                 simsAudio.playBubbleClick();
-                void chat.resume(profile, e.target.value);
-              }
-            }}
-          >
-            <option value="">{current?.storedId ? 'Sesi saat ini' : 'Buka sesi lama…'}</option>
-            {sessions.map((row) => (
-              <option key={row.id} value={row.id}>
-                {new Date(startedAtMs(row.started_at)).toLocaleString('id-ID')} · {row.title || row.preview || row.id}
-              </option>
-            ))}
-          </select>
+                setCreateRoomOpen(true);
+              }}
+              className="px-2.5 py-1 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-200 text-xs font-bold border border-cyan-400/40 cursor-pointer transition flex items-center gap-1 shrink-0"
+              title="Buat Room Chat Baru"
+            >
+              <span>✨</span>
+              <span>+ Room</span>
+            </button>
+          </div>
         )}
         <button
           className="sims-chat-session-btn"
           disabled={offline}
           onClick={() => {
             simsAudio.playBubbleClick();
-            if (isAll) {
+            if (isRoom && room) {
+              void chat.newSessionAll(selectedTargets);
+            } else if (isAll) {
               void chat.newSessionAll(selectedTargets);
             } else {
               void chat.newSession(profile);
             }
           }}
-          title={isAll ? 'Mulai sesi baru untuk semua agent target' : 'Mulai percakapan baru'}
+          title={isMulti ? 'Mulai sesi baru untuk semua agent target' : 'Mulai percakapan baru'}
         >
-          + Sesi baru{isAll ? ' semua' : ''}
+          + Sesi baru{isMulti ? ' semua' : ''}
         </button>
         {busyAgents.length > 0 && (
           <button
             className="sims-chat-session-btn danger"
             onClick={() => {
               simsAudio.playBubbleClick();
-              if (isAll) {
+              if (isMulti) {
                 void chat.interruptAll(selectedTargets);
               } else {
                 void chat.interrupt(profile);
@@ -511,13 +632,46 @@ export function ChatPanel({ profile }: { profile: string }) {
             }}
             title="Hentikan respons agen"
           >
-            ⏹ Hentikan{isAll ? ` (${busyAgents.length})` : ''}
+            ⏹ Hentikan{isMulti ? ` (${busyAgents.length})` : ''}
           </button>
         )}
       </div>
 
-      {/* Target Selector Bar for Chat All */}
-      {isAll && (
+      {/* Target Selector Bar for Room or Chat All */}
+      {isRoom && room ? (
+        <div className="sims-chat-target-bar" role="toolbar" aria-label="Pilih target room">
+          <span className="text-[10px] text-cyan-300 font-bold uppercase tracking-wider shrink-0 mr-1 flex items-center gap-1">
+            <span>🎯</span>
+            <span>Target ({selectedTargets.length}/{room.members.length}):</span>
+          </span>
+          <button
+            type="button"
+            className="sims-target-chip text-[10px]"
+            onClick={toggleAllTargets}
+            title="Pilih semua atau sisakan 1"
+          >
+            {selectedTargets.length === room.members.length ? 'Pilih 1' : 'Pilih Semua'}
+          </button>
+          {room.members.map((p) => {
+            const active = selectedTargets.includes(p);
+            const isBusy = allChats[p]?.busy;
+            const label = p === 'chief' ? 'Arthur' : p;
+            return (
+              <button
+                key={p}
+                type="button"
+                className={`sims-target-chip ${active ? 'active' : ''}`}
+                onClick={() => toggleTarget(p)}
+                title={`Kirim pesan ke @${label}`}
+                aria-pressed={active}
+              >
+                {isBusy && <span className="text-[9px]">⏳</span>}
+                <span className="capitalize">@{label}</span>
+              </button>
+            );
+          })}
+        </div>
+      ) : isAll ? (
         <div className="sims-chat-target-bar" role="toolbar" aria-label="Pilih target broadcast">
           <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider shrink-0 mr-1">Kirim ke:</span>
           <button
@@ -546,7 +700,7 @@ export function ChatPanel({ profile }: { profile: string }) {
             );
           })}
         </div>
-      )}
+      ) : null}
 
       {/* Messages Scroll Area */}
       <div className="sims-chat-messages" aria-live="polite">
@@ -556,9 +710,24 @@ export function ChatPanel({ profile }: { profile: string }) {
           </p>
         )}
         {!offline && items.length === 0 && (
-          <div className="p-12 text-center text-slate-400 text-xs italic bg-slate-900/50 border border-white/5 rounded-xl my-auto">
-            <span className="text-3xl block mb-4">{isAll ? '📢' : '💬'}</span>
-            {isAll ? (
+          <div className="p-10 text-center text-slate-400 text-xs italic bg-slate-900/50 border border-white/5 rounded-xl my-auto">
+            <span className="text-3xl block mb-3">{isRoom && room ? room.icon : isAll ? '📢' : '💬'}</span>
+            {isRoom && room ? (
+              <>
+                <strong className="text-cyan-300 font-bold block text-sm mb-1">{room.name}</strong>
+                <p className="text-slate-300 text-xs mb-3">{room.description}</p>
+                <div className="flex flex-wrap items-center justify-center gap-1.5 mb-3 max-w-sm mx-auto">
+                  {room.members.map((m) => (
+                    <span key={m} className="px-2 py-0.5 rounded-full bg-slate-800 text-cyan-200 border border-cyan-400/20 text-[10px] font-semibold">
+                      @{m === 'chief' ? 'arthur' : m}
+                    </span>
+                  ))}
+                </div>
+                <p className="text-slate-400 text-[11px]">
+                  Pesan Anda akan diterima oleh agen di room ini ({selectedTargets.length} agen aktif). Gunakan tombol target di atas untuk memilih agen tertentu.
+                </p>
+              </>
+            ) : isAll ? (
               <>
                 <strong className="text-cyan-300 font-bold block text-sm mb-2">Kirim Pesan ke Semua Agent (Chat All)</strong>
                 Pesan broadcast akan diterima serentak oleh <strong className="text-white font-mono">{selectedTargets.length} agent</strong>.<br />
@@ -568,7 +737,7 @@ export function ChatPanel({ profile }: { profile: string }) {
               </>
             ) : (
               <>
-                Mulai obrolan dengan <strong className="text-sky-300 capitalize">{profile}</strong>.<br />
+                Mulai obrolan dengan <strong className="text-sky-300 capitalize">{profile === 'chief' ? 'Arthur' : profile}</strong>.<br />
                 Tekan <kbd className="px-4 py-1 bg-slate-800 rounded border border-white/10 text-[10px]">Enter</kbd> untuk kirim,{' '}
                 <kbd className="px-4 py-1 bg-slate-800 rounded border border-white/10 text-[10px]">Shift+Enter</kbd> untuk baris baru.
               </>
@@ -597,28 +766,35 @@ export function ChatPanel({ profile }: { profile: string }) {
           {isListening ? '🔴' : '🎤'}
         </button>
         <textarea
-          aria-label={isAll ? `Pesan broadcast untuk ${selectedTargets.length} agent` : `Pesan untuk ${profile}`}
+          aria-label={isRoom && room ? `Pesan untuk ${room.name}` : isAll ? `Pesan broadcast untuk ${selectedTargets.length} agent` : `Pesan untuk ${profile}`}
           autoFocus
           rows={2}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={onKey}
           placeholder={
-            isAll
-              ? `Tulis pesan broadcast untuk ${selectedTargets.length} agent…`
-              : `Tulis pesan untuk ${profile}…`
+            isRoom && room
+              ? `Tulis pesan untuk ${room.name} (${selectedTargets.length} agen target)…`
+              : isAll
+                ? `Tulis pesan broadcast untuk ${selectedTargets.length} agent…`
+                : `Tulis pesan untuk ${profile === 'chief' ? 'Arthur' : profile}…`
           }
           className="sims-chat-textarea"
         />
         <button
           className="sims-chat-send-btn"
-          disabled={offline || !draft.trim() || (isAll && selectedTargets.length === 0)}
+          disabled={offline || !draft.trim() || ((isAll || isRoom) && selectedTargets.length === 0)}
           onClick={submit}
-          title={isAll ? `Kirim broadcast ke ${selectedTargets.length} agent (Enter)` : 'Kirim pesan (Enter)'}
+          title={isRoom && room ? `Kirim ke ${room.name} (Enter)` : isAll ? `Kirim broadcast ke ${selectedTargets.length} agent (Enter)` : 'Kirim pesan (Enter)'}
         >
-          {isAll ? `📢 Kirim (${selectedTargets.length}) ↵` : 'Kirim ↵'}
+          {isRoom && room ? `${room.icon} Kirim (${selectedTargets.length}) ↵` : isAll ? `📢 Kirim (${selectedTargets.length}) ↵` : 'Kirim ↵'}
         </button>
       </div>
+
+      <CreateRoomModal
+        isOpen={createRoomOpen}
+        onClose={() => setCreateRoomOpen(false)}
+      />
 
       {/* Card Modal from Chat */}
       {cardModal && cardModal.isOpen && (

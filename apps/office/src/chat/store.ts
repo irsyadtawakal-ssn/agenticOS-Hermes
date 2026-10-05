@@ -241,6 +241,54 @@ export const chat = {
       )
     );
   },
+  sendRoom: async (_roomId: string, members: string[], text: string): Promise<void> => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    const targets = members.length > 0 ? members : PROFILES;
+    const broadcastId = newItemId();
+    const bMsg: BroadcastMessage = {
+      id: broadcastId,
+      text: trimmed,
+      timestamp: Date.now(),
+      targets: [...targets],
+    };
+    set({ broadcasts: [...state.broadcasts, bMsg] });
+    for (const fn of broadcastListeners) {
+      try {
+        fn(targets, trimmed);
+      } catch {}
+    }
+    for (const fn of sendListeners) {
+      try {
+        fn('user', trimmed, targets);
+      } catch {}
+    }
+
+    await Promise.allSettled(
+      targets.map((p) =>
+        guarded(p, async () => {
+          if (!chatOf(p).runtimeId) await newSession(p);
+          const c = chatOf(p);
+          patchChat(p, {
+            items: [
+              ...c.items,
+              {
+                kind: 'user',
+                id: newItemId(),
+                text: trimmed,
+                broadcast: true,
+                broadcastId,
+                targetCount: targets.length,
+                targetProfiles: targets,
+              },
+            ],
+            busy: true,
+          });
+          await (await ready()).request('prompt.submit', { session_id: c.runtimeId, text: trimmed });
+        })
+      )
+    );
+  },
   interruptAll: async (targets?: string[]): Promise<void> => {
     const targetProfiles = targets && targets.length > 0 ? targets : PROFILES;
     await Promise.allSettled(
@@ -284,6 +332,45 @@ export function getChatAllTimeline(s: ChatStoreState | { chats?: Record<string, 
         if (!seenBroadcastIds.has(item.broadcastId)) {
           seenBroadcastIds.add(item.broadcastId);
           allItems.push(item);
+        }
+      } else {
+        allItems.push(item.profile ? item : { ...item, profile: prof });
+      }
+    }
+  }
+
+  return allItems.sort((a, b) => {
+    const na = Number(a.id.replace(/\D/g, '')) || 0;
+    const nb = Number(b.id.replace(/\D/g, '')) || 0;
+    return na - nb;
+  });
+}
+
+export function getRoomTimeline(
+  s: ChatStoreState | { chats?: Record<string, ProfileChat> },
+  roomMembers: string[],
+  filterMember?: string | null
+): ChatItem[] {
+  if (!s || !s.chats || !roomMembers || roomMembers.length === 0) return [];
+  if (filterMember && filterMember !== 'all') {
+    return s.chats[filterMember]?.items ?? [];
+  }
+  const allItems: ChatItem[] = [];
+  const seenBroadcastIds = new Set<string>();
+  const memberSet = new Set(roomMembers);
+
+  for (const prof of roomMembers) {
+    const c = s.chats[prof];
+    if (!c || !c.items) continue;
+    for (const item of c.items) {
+      if (item.kind === 'user' && item.broadcast && item.broadcastId) {
+        if (!seenBroadcastIds.has(item.broadcastId)) {
+          const targets = item.targetProfiles ?? [];
+          const targetsThisRoom = targets.some((t) => memberSet.has(t));
+          if (targetsThisRoom || targets.length === 0) {
+            seenBroadcastIds.add(item.broadcastId);
+            allItems.push(item);
+          }
         }
       } else {
         allItems.push(item.profile ? item : { ...item, profile: prof });
