@@ -13,7 +13,7 @@ const CHIEF_OFFICE_REGEX =
   /(?:(?:ke|di|masuk\s+ke|menghadap|merapat\s+ke)?\s*ruang(?:an)?\s*(?:saya|bos|chief|pimpinan)|keruang(?:an)?\s*(?:saya|bos|chief|pimpinan)|(?:kumpul|meeting|rapat)\s+(?:ke|di)\s+ruang(?:an)?\s*(?:saya|bos|chief)|(?:ke\s+)?meja\s+saya|menghadap\s+(?:ke\s+)?saya|(?:ke\s*sini|kesini)\s*(?:sekarang|dulu|dong)?|come\s+(?:here|to\s+my\s+(?:office|room|desk)))/i;
 
 const MEETING_ROOM_REGEX =
-  /(?:(?:ke|di|masuk\s+ke)?\s*ruang(?:an)?\s*(?:rapat|meeting|konferensi|diskusi)|keruang(?:an)?\s*(?:rapat|meeting|konferensi|diskusi)|(?:kumpul|meeting|rapat)\s+(?:ke|di)\s+ruang(?:an)?\s*(?:rapat|meeting)|rapat\s+tim|meeting\s+tim|mulai\s+(?:rapat|meeting)|ke\s+war\s*room|go\s+to\s+(?:the\s+)?meeting\s+room)/i;
+  /(?:(?:ke|di|masuk\s+ke)?\s*ruang(?:an)?\s*(?:rapat|meeting|konferensi|diskusi)|keruang(?:an)?\s*(?:rapat|meeting|konferensi|diskusi)|(?:kumpul|meeting|rapat)\s+(?:ke|di)\s+ruang(?:an)?\s*(?:rapat|meeting)|rapat\s+tim|meeting\s+tim|mulai\s+(?:rapat|meeting)|ke\s+war\s*room|go\s+to\s+(?:the\s+)?meeting\s+room|(?:ke|di|masuk\s+ke)?\s*ruang(?:an)?\s*(?:khusus\s+)?(?:suka\s*shawarma|shawarma))/i;
 
 const RETURN_WORKSTATION_REGEX =
   /(?:kembali\s+(?:ke\s+)?(?:meja|kerja|workstation)|balik\s+(?:ke\s+)?(?:meja|kerja|workstation)|selesai\s+(?:rapat|meeting)|bubar|back\s+to\s+(?:work|desk))/i;

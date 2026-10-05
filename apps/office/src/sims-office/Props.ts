@@ -757,3 +757,470 @@ export function createBench(): THREE.Group {
   for (const s of [-0.7, 0.7]) put(g, rbox(0.05, 0.45, 0.45, iron, 0.01), s, 0.225, 0);
   return g;
 }
+
+// ---------------------------------------------------------------------------
+// SukaShawarma Dedicated Room: Custom Furniture & Equipment
+// ---------------------------------------------------------------------------
+
+export function createSukaRoundTable(radius = 1.3): THREE.Group {
+  const g = new THREE.Group();
+  const wood = mat(0x382012, 0.3, 0.1);
+  const gold = mat(0xd4af37, 0.25, 0.8);
+  const leather = mat(0x22130c, 0.65, 0.05);
+  const baseMetal = mat(0x27272a, 0.35, 0.6);
+
+  // Tabletop disc
+  put(g, new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, 0.06, 48), wood), 0, 0.74, 0).castShadow = true;
+  // Brass outer bevel ring
+  put(g, new THREE.Mesh(new THREE.CylinderGeometry(radius + 0.02, radius + 0.02, 0.02, 48), gold), 0, 0.73, 0);
+  // Central leather inlay
+  put(g, new THREE.Mesh(new THREE.CylinderGeometry(radius * 0.55, radius * 0.55, 0.005, 36), leather), 0, 0.772, 0);
+
+  // Central fluted conical pedestal base
+  put(g, new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.44, 0.7, 32), baseMetal), 0, 0.36, 0);
+  // Bottom brass floor ring
+  put(g, new THREE.Mesh(new THREE.CylinderGeometry(0.65, 0.68, 0.03, 32), gold), 0, 0.015, 0);
+  // Contact shadow
+  put(g, blobShadow(radius * 2.5, radius * 2.5, 0.4), 0, 0, 0);
+
+  // Center 360 conference speakerphone
+  const micPod = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.22, 0.04, 24), mat(0x18181b, 0.3, 0.4));
+  put(g, micPod, 0, 0.79, 0);
+  const micLed = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.006, 24), new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
+  put(g, micLed, 0, 0.812, 0);
+
+  // Shawarma Dossier folder
+  const folder = rbox(0.28, 0.015, 0.36, mat(0x78350f, 0.5), 0.005);
+  folder.rotation.y = 0.4;
+  put(g, folder, -0.45, 0.78, 0.3);
+
+  // Laptop on table
+  const laptop = createLaptop();
+  laptop.scale.setScalar(0.9);
+  laptop.rotation.y = -Math.PI / 4;
+  put(g, laptop, 0.55, 0.77, -0.2);
+
+  // Shawarma coffee/tea mugs
+  const mugColors = [0xd97706, 0xb45309, 0x0d9488, 0xe11d48];
+  for (let i = 0; i < 4; i++) {
+    const angle = (i * Math.PI) / 2 + 0.4;
+    const mx = Math.cos(angle) * (radius * 0.72);
+    const mz = Math.sin(angle) * (radius * 0.72);
+    put(g, createMug(mugColors[i]), mx, 0.77, mz);
+
+    // Mini notepad next to mug
+    const pad = rbox(0.18, 0.008, 0.24, mat(0xfef08a, 0.9), 0.002);
+    pad.rotation.y = angle;
+    put(g, pad, Math.cos(angle + 0.3) * (radius * 0.75), 0.775, Math.sin(angle + 0.3) * (radius * 0.75));
+  }
+
+  return g;
+}
+
+export function createSukaCabinet(w = 2.4, h = 2.0, d = 0.55): THREE.Group {
+  const g = new THREE.Group();
+  const wood = mat(0x382012, 0.4, 0.1);
+  const trimGold = mat(0xd4af37, 0.2, 0.8);
+  const credenzaH = 0.82;
+
+  // Base plinth
+  put(g, rbox(w - 0.04, 0.06, d - 0.04, mat(0x18181b, 0.4), 0.01), 0, 0.03, 0);
+
+  // Lower credenza body
+  put(g, rbox(w, credenzaH - 0.06, d, wood, 0.02), 0, 0.06 + (credenzaH - 0.06) / 2, 0);
+  // Countertop slab with gold rim
+  put(g, rbox(w + 0.04, 0.04, d + 0.04, mat(0x1f1309, 0.3), 0.01), 0, credenzaH + 0.02, 0);
+  put(g, rbox(w + 0.05, 0.01, d + 0.05, trimGold, 0.005), 0, credenzaH + 0.01, 0);
+
+  // 4 Lower cabinet doors with handles
+  const doorW = (w - 0.1) / 4;
+  for (let i = 0; i < 4; i++) {
+    const dx = -w / 2 + 0.05 + doorW * (i + 0.5);
+    const door = rbox(doorW - 0.02, credenzaH - 0.14, 0.02, wood, 0.008);
+    put(g, door, dx, credenzaH / 2, d / 2 + 0.01);
+    // Brass handle
+    const handle = rbox(0.015, 0.12, 0.02, trimGold, 0.003);
+    put(g, handle, dx + (i % 2 === 0 ? doorW * 0.35 : -doorW * 0.35), credenzaH / 2 + 0.1, d / 2 + 0.025);
+  }
+
+  // Upper bookcase shelves (open storage for binders and awards)
+  const upperH = h - credenzaH - 0.04;
+  const upperD = d * 0.8;
+  const upperZ = -d / 2 + upperD / 2;
+  // Backboard
+  put(g, rbox(w, upperH, 0.025, wood, 0.01), 0, credenzaH + 0.04 + upperH / 2, -d / 2 + 0.015);
+  // Side panels
+  for (const s of [-1, 1]) {
+    put(g, rbox(0.04, upperH, upperD, wood, 0.01), s * (w / 2 - 0.02), credenzaH + 0.04 + upperH / 2, upperZ);
+  }
+  // Top cornice
+  put(g, rbox(w + 0.04, 0.04, upperD + 0.04, wood, 0.01), 0, h - 0.02, upperZ);
+  put(g, rbox(w + 0.05, 0.01, upperD + 0.05, trimGold, 0.005), 0, h - 0.03, upperZ);
+
+  // Shelves
+  const shelfCount = 3;
+  for (let s = 1; s < shelfCount; s++) {
+    const sy = credenzaH + 0.04 + (upperH * s) / shelfCount;
+    put(g, rbox(w - 0.08, 0.03, upperD, wood, 0.008), 0, sy, upperZ);
+  }
+
+  // Add binders & archives onto shelves
+  const binderColors = [0x166534, 0x1e40af, 0xb45309, 0x991b1b, 0x0f766e, 0x4338ca];
+  for (let s = 0; s < shelfCount; s++) {
+    const sy = credenzaH + 0.07 + (upperH * s) / shelfCount;
+    const shelfH = upperH / shelfCount - 0.06;
+    for (let b = 0; b < 7; b++) {
+      const bx = -w / 2 + 0.15 + b * 0.075;
+      const bH = Math.min(0.28, shelfH * 0.9);
+      const binder = rbox(0.065, bH, upperD * 0.75, mat(binderColors[(s * 7 + b) % binderColors.length], 0.4), 0.005);
+      put(g, binder, bx, sy + bH / 2, upperZ);
+    }
+    // Storage document box on right side
+    const sbox = rbox(0.28, 0.22, upperD * 0.8, mat(0xe2e8f0, 0.6), 0.01);
+    put(g, sbox, w / 2 - 0.25 - s * 0.05, sy + 0.11, upperZ);
+  }
+
+  // Countertop trophies and plants
+  const trophy = new THREE.Group();
+  put(trophy, rbox(0.12, 0.08, 0.12, mat(0x18181b, 0.3), 0.01), 0, 0.04, 0);
+  put(trophy, new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.03, 0.12, 16), trimGold), 0, 0.14, 0);
+  put(trophy, new THREE.Mesh(new THREE.SphereGeometry(0.07, 16, 16), trimGold), 0, 0.26, 0);
+  put(g, trophy, -0.4, credenzaH + 0.04, d / 2 - 0.2);
+
+  // Succulent plant
+  const plant = createPlant('snake', 21);
+  plant.scale.setScalar(0.4);
+  put(g, plant, 0.5, credenzaH + 0.04, d / 2 - 0.2);
+
+  // Contact shadow
+  put(g, blobShadow(w + 0.4, d + 0.3, 0.35), 0, 0, 0);
+  return g;
+}
+
+function createWhiteboardTexture(): THREE.CanvasTexture {
+  if (typeof document === 'undefined') return new THREE.CanvasTexture({} as any);
+  const canvas = document.createElement('canvas');
+  canvas.width = 1024;
+  canvas.height = 512;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return new THREE.CanvasTexture(canvas);
+
+  // Whiteboard background with subtle sheen
+  ctx.fillStyle = '#f8fafc';
+  ctx.fillRect(0, 0, 1024, 512);
+
+  // Header Banner
+  ctx.fillStyle = '#0f172a';
+  ctx.fillRect(20, 20, 984, 56);
+  ctx.fillStyle = '#f59e0b';
+  ctx.font = 'bold 24px sans-serif';
+  ctx.fillText('🌯 DIVISI SUKASHAWARMA — STRATEGY & ROADMAP 21 CABANG', 40, 56);
+
+  // Column Lines
+  ctx.strokeStyle = '#cbd5e1';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(350, 90);
+  ctx.lineTo(350, 480);
+  ctx.moveTo(680, 90);
+  ctx.lineTo(680, 480);
+  ctx.stroke();
+
+  // Column 1: 21 Cabang Resto
+  ctx.fillStyle = '#1e293b';
+  ctx.font = 'bold 18px sans-serif';
+  ctx.fillText('📍 OPERASIONAL 21 CABANG', 40, 120);
+  ctx.font = '14px sans-serif';
+  ctx.fillStyle = '#475569';
+  ctx.fillText('• Jakarta: 8 Cabang (All Active)', 45, 155);
+  ctx.fillText('• Bandung: 4 Cabang (SOP Verified)', 45, 185);
+  ctx.fillText('• Surabaya: 5 Cabang (Promo Boost)', 45, 215);
+  ctx.fillText('• Bali: 4 Cabang (Turis Peak Season)', 45, 245);
+  ctx.fillStyle = '#16a34a';
+  ctx.font = 'bold 15px sans-serif';
+  ctx.fillText('Target Harian: 4.500 Porsi / Hari', 45, 285);
+
+  // Column 2: Audit Forensik
+  ctx.fillStyle = '#1e293b';
+  ctx.font = 'bold 18px sans-serif';
+  ctx.fillText('🔍 AUDIT FORENSIK (Adelia)', 370, 120);
+  ctx.font = '14px sans-serif';
+  ctx.fillStyle = '#047857';
+  ctx.fillText('[✓] Rekonsiliasi Kas POS 21 Cabang', 375, 155);
+  ctx.fillText('[✓] Standarisasi Suplai Bumbu Shawarma', 375, 185);
+  ctx.fillText('[✓] Verifikasi Timbangan Daging (100g/wrap)', 375, 215);
+  ctx.fillStyle = '#b45309';
+  ctx.fillText('[⚡] Audit Efisiensi Waste Margin < 1.5%', 375, 255);
+  ctx.fillStyle = '#2563eb';
+  ctx.fillText('Status: KEUANGAN 100% BALANCE', 375, 290);
+
+  // Column 3: Dispatch & E-Commerce
+  ctx.fillStyle = '#1e293b';
+  ctx.font = 'bold 18px sans-serif';
+  ctx.fillText('📲 DISPATCH & PROMO', 700, 120);
+  ctx.font = '14px sans-serif';
+  ctx.fillStyle = '#0284c7';
+  ctx.fillText('• Clara (WAHA Dispatch):', 705, 155);
+  ctx.fillText('  Avg Response Time: 42 Detik', 720, 180);
+  ctx.fillStyle = '#d97706';
+  ctx.fillText('• Maya (E-Commerce):', 705, 215);
+  ctx.fillText('  Rating Shopee/GoFood: 4.93 ★', 720, 240);
+  ctx.fillText('  Flash Sale Paket Double Shawarma', 720, 265);
+
+  // Mock Post-It Sticky Notes at the bottom
+  const postIts = [
+    { x: 50, y: 340, w: 110, h: 90, color: '#fef08a', text: 'Beli panggangan\notomatis' },
+    { x: 180, y: 350, w: 110, h: 90, color: '#bbf7d0', text: 'Stok daging\n200kg aman' },
+    { x: 380, y: 330, w: 120, h: 90, color: '#fbcfe8', text: 'Audit cabang\nBandung lolos!' },
+    { x: 520, y: 350, w: 120, h: 90, color: '#fed7aa', text: 'Cek diskon\npackaging kraft' },
+    { x: 710, y: 330, w: 120, h: 90, color: '#bae6fd', text: 'Broadcast WA\n10.000 member' },
+    { x: 850, y: 345, w: 120, h: 90, color: '#e9d5ff', text: 'Banner baru\nShopee Food' },
+  ];
+
+  for (const p of postIts) {
+    ctx.fillStyle = p.color;
+    ctx.shadowColor = 'rgba(0,0,0,0.15)';
+    ctx.shadowBlur = 6;
+    ctx.shadowOffsetX = 2;
+    ctx.shadowOffsetY = 3;
+    ctx.fillRect(p.x, p.y, p.w, p.h);
+    ctx.shadowColor = 'transparent';
+    ctx.fillStyle = '#1e293b';
+    ctx.font = '12px sans-serif';
+    const lines = p.text.split('\n');
+    lines.forEach((line, idx) => {
+      ctx.fillText(line, p.x + 8, p.y + 24 + idx * 18);
+    });
+  }
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+export function createSukaWhiteboard(w = 3.4, h = 1.6): THREE.Group {
+  const g = new THREE.Group();
+  const frameMat = mat(0xd4d4d8, 0.25, 0.7);
+
+  // Outer frame
+  put(g, rbox(w, h, 0.06, frameMat, 0.02), 0, h / 2, 0);
+  // Board surface
+  const tex = createWhiteboardTexture();
+  const boardMat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.15, metalness: 0.05 });
+  const board = new THREE.Mesh(new THREE.PlaneGeometry(w - 0.08, h - 0.08), boardMat);
+  put(g, board, 0, h / 2, 0.032);
+
+  // Marker tray along bottom
+  put(g, rbox(w * 0.85, 0.03, 0.1, frameMat, 0.005), 0, 0.015, 0.06);
+
+  // Eraser and dry-erase markers in tray
+  put(g, rbox(0.14, 0.035, 0.06, mat(0x1e293b, 0.6), 0.005), -0.4, 0.045, 0.06);
+  const markerColors = [0xef4444, 0x3b82f6, 0x10b981, 0x18181b];
+  for (let m = 0; m < 4; m++) {
+    const marker = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.12, 10), mat(markerColors[m], 0.3));
+    marker.rotation.z = Math.PI / 2;
+    put(g, marker, -0.15 + m * 0.035, 0.04, 0.06);
+  }
+
+  return g;
+}
+
+function createProjectorScreenTexture(): THREE.CanvasTexture {
+  if (typeof document === 'undefined') return new THREE.CanvasTexture({} as any);
+  const canvas = document.createElement('canvas');
+  canvas.width = 1024;
+  canvas.height = 576;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return new THREE.CanvasTexture(canvas);
+
+  // High-tech dark corporate dashboard
+  ctx.fillStyle = '#0b0f19';
+  ctx.fillRect(0, 0, 1024, 576);
+
+  // Header Bar
+  ctx.fillStyle = '#111827';
+  ctx.fillRect(0, 0, 1024, 64);
+  ctx.fillStyle = '#f59e0b';
+  ctx.font = 'bold 22px sans-serif';
+  ctx.fillText('🌯 SUKASHAWARMA HQ — REAL-TIME MONITORING 21 CABANG', 30, 40);
+
+  // Live status badge
+  ctx.fillStyle = '#065f46';
+  ctx.beginPath();
+  ctx.roundRect(830, 18, 160, 30, 15);
+  ctx.fill();
+  ctx.fillStyle = '#34d399';
+  ctx.font = 'bold 13px sans-serif';
+  ctx.fillText('● SYSTEM ONLINE', 852, 38);
+
+  // 4 KPI Summary Cards
+  const cards = [
+    { title: 'JARINGAN CABANG', val: '21 / 21 Cabang', sub: '100% Aktif & Sinkron', color: '#10b981' },
+    { title: 'OMZET HARI INI', val: 'Rp 184.520.000', sub: '+18.6% vs Kemarin', color: '#f59e0b' },
+    { title: 'KEPUASAN PELANGGAN', val: '4.94 / 5.0 ★', sub: '12.450 Ulasan Bulan Ini', color: '#38bdf8' },
+    { title: 'AUDIT FORENSIK', val: 'ADELIA APPROVED', sub: 'Waste: 1.1% (Super Efisien)', color: '#ec4899' },
+  ];
+
+  cards.forEach((c, i) => {
+    const cx = 30 + i * 242;
+    const cy = 84;
+    ctx.fillStyle = '#1e293b';
+    ctx.beginPath();
+    ctx.roundRect(cx, cy, 230, 96, 8);
+    ctx.fill();
+
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '11px sans-serif';
+    ctx.fillText(c.title, cx + 16, cy + 24);
+
+    ctx.fillStyle = c.color;
+    ctx.font = 'bold 20px sans-serif';
+    ctx.fillText(c.val, cx + 16, cy + 54);
+
+    ctx.fillStyle = '#cbd5e1';
+    ctx.font = '11px sans-serif';
+    ctx.fillText(c.sub, cx + 16, cy + 80);
+  });
+
+  // Chart Container
+  ctx.fillStyle = '#1e293b';
+  ctx.beginPath();
+  ctx.roundRect(30, 198, 960, 350, 8);
+  ctx.fill();
+
+  ctx.fillStyle = '#f8fafc';
+  ctx.font = 'bold 16px sans-serif';
+  ctx.fillText('📈 GRAFIK PENJUALAN HARIAN 21 CABANG (WAKTU NYATA)', 50, 232);
+
+  // Mock grid lines
+  ctx.strokeStyle = '#334155';
+  ctx.lineWidth = 1;
+  for (let y = 260; y <= 500; y += 60) {
+    ctx.beginPath();
+    ctx.moveTo(70, y);
+    ctx.lineTo(960, y);
+    ctx.stroke();
+  }
+
+  // Draw smooth trend spline curve
+  const points = [
+    { x: 80, y: 460 },
+    { x: 180, y: 440 },
+    { x: 280, y: 410 },
+    { x: 380, y: 425 },
+    { x: 480, y: 360 },
+    { x: 580, y: 380 },
+    { x: 680, y: 320 },
+    { x: 780, y: 330 },
+    { x: 880, y: 280 },
+    { x: 950, y: 270 },
+  ];
+
+  // Fill gradient under curve
+  const grad = ctx.createLinearGradient(0, 270, 0, 500);
+  grad.addColorStop(0, 'rgba(245, 158, 11, 0.45)');
+  grad.addColorStop(1, 'rgba(245, 158, 11, 0.0)');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.moveTo(points[0].x, 500);
+  points.forEach((p) => ctx.lineTo(p.x, p.y));
+  ctx.lineTo(points[points.length - 1].x, 500);
+  ctx.closePath();
+  ctx.fill();
+
+  // Line
+  ctx.strokeStyle = '#f59e0b';
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(points[0].x, points[0].y);
+  points.forEach((p) => ctx.lineTo(p.x, p.y));
+  ctx.stroke();
+
+  // Dots
+  points.forEach((p) => {
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#f59e0b';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  });
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+export function createSukaProjectorSystem(): {
+  projector: THREE.Group;
+  screen: THREE.Group;
+  screenMesh: THREE.Mesh;
+} {
+  // 1. CEILING PROJECTOR
+  const projector = new THREE.Group();
+  const projMat = mat(0x18181b, 0.35, 0.4);
+  const silverMat = mat(0xd4d4d8, 0.25, 0.8);
+
+  // Ceiling mounting pole and bracket
+  put(projector, new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.45, 12), silverMat), 0, 0.22, 0);
+  put(projector, rbox(0.14, 0.02, 0.14, projMat, 0.01), 0, 0.44, 0); // ceiling plate
+
+  // Main projector chassis
+  put(projector, rbox(0.38, 0.12, 0.32, projMat, 0.02), 0, 0, 0);
+  // Lens barrel pointing towards -Z (toward north wall screen)
+  const lens = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, 0.06, 20), silverMat);
+  lens.rotation.x = Math.PI / 2;
+  put(projector, lens, 0.08, 0, -0.17);
+  // Glass lens element with glowing reflection
+  const glass = new THREE.Mesh(
+    new THREE.CircleGeometry(0.042, 20),
+    new THREE.MeshBasicMaterial({ color: 0x93c5fd })
+  );
+  glass.rotation.y = Math.PI;
+  put(projector, glass, 0.08, 0, -0.201);
+
+  // Glowing status LED (green power)
+  put(projector, new THREE.Mesh(new THREE.SphereGeometry(0.008, 8, 8), new THREE.MeshBasicMaterial({ color: 0x22c55e })), -0.12, 0.06, -0.15);
+
+  // Volumetric Projection Light Cone from projector lens toward screen (distance ~3.2m along -Z)
+  const beamGeo = new THREE.CylinderGeometry(0.08, 1.45, 3.2, 24, 1, true);
+  const beamMat = new THREE.MeshBasicMaterial({
+    color: 0x93c5fd,
+    transparent: true,
+    opacity: 0.1,
+    side: THREE.DoubleSide,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+  const beam = new THREE.Mesh(beamGeo, beamMat);
+  beam.rotation.x = Math.PI / 2;
+  beam.position.set(0.08, 0, -1.6);
+  projector.add(beam);
+
+  // 2. MOTORIZED WIDESCREEN PROJECTION SCREEN (mounted on north wall)
+  const screen = new THREE.Group();
+  const screenW = 2.6;
+  const screenH = 1.46;
+
+  // Top roller housing casing
+  put(screen, rbox(screenW + 0.15, 0.09, 0.1, silverMat, 0.015), 0, screenH / 2 + 0.05, 0);
+  // Bottom counterweight bar
+  put(screen, rbox(screenW + 0.04, 0.03, 0.03, mat(0x18181b, 0.4), 0.005), 0, -screenH / 2 - 0.015, 0.01);
+  // Black velvet outer border
+  put(screen, rbox(screenW, screenH, 0.01, mat(0x0a0a0a, 0.8), 0.005), 0, 0, 0);
+
+  // Presentation Canvas Surface
+  const pTex = createProjectorScreenTexture();
+  const screenMat = new THREE.MeshStandardMaterial({
+    map: pTex,
+    emissive: 0xffffff,
+    emissiveMap: pTex,
+    emissiveIntensity: 0.85,
+    roughness: 0.2,
+  });
+  const screenMesh = new THREE.Mesh(new THREE.PlaneGeometry(screenW - 0.08, screenH - 0.08), screenMat);
+  put(screen, screenMesh, 0, 0, 0.012);
+
+  return { projector, screen, screenMesh };
+}

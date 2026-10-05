@@ -36,6 +36,13 @@ describe('Office Spatial Intent Parser', () => {
     expect(res?.isAll).toBe(true);
   });
 
+  it('detects SukaShawarma room gathering ("kumpul di ruang sukashawarma")', () => {
+    const res = parseOfficeSpatialIntent('kumpul di ruang sukashawarma', ['tara', 'adelia', 'clara', 'maya']);
+    expect(res).not.toBeNull();
+    expect(res?.action).toBe('gather_meeting_room');
+    expect(res?.targets).toEqual(['tara', 'adelia', 'clara', 'maya']);
+  });
+
   it('detects return to workstation ("kembali ke meja masing-masing")', () => {
     const res = parseOfficeSpatialIntent('rapat selesai, silakan kembali ke meja masing-masing', 'chief');
     expect(res).not.toBeNull();

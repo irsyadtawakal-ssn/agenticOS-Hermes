@@ -72,14 +72,14 @@ export function deskSeat(desk: DeskSlot): AnchorPoint {
   };
 }
 
-/** Meeting room chairs (chair position + facing). */
+/** SukaShawarma round table chairs (arranged radially around center x: 7.8, z: 5.2). */
 export const MEETING_CHAIRS: Array<{ x: number; z: number; rot: number }> = [
-  { x: 6.35, z: 4.0, rot: Math.PI / 2 },
-  { x: 6.35, z: 6.0, rot: Math.PI / 2 },
-  { x: 9.65, z: 4.0, rot: -Math.PI / 2 },
-  { x: 9.65, z: 6.0, rot: -Math.PI / 2 },
-  { x: 8.0, z: 2.55, rot: 0 },
-  { x: 8.0, z: 7.45, rot: Math.PI },
+  { x: 7.8, z: 3.45, rot: 0 },
+  { x: 9.32, z: 4.33, rot: -Math.PI / 3 },
+  { x: 9.32, z: 6.07, rot: (-2 * Math.PI) / 3 },
+  { x: 7.8, z: 6.95, rot: Math.PI },
+  { x: 6.28, z: 6.07, rot: (2 * Math.PI) / 3 },
+  { x: 6.28, z: 4.33, rot: Math.PI / 3 },
 ];
 
 export function meetingSeat(i: number, activity: AnchorActivity = 'meeting'): AnchorPoint {
@@ -211,10 +211,10 @@ export const IDLE_ANCHORS: AnchorPoint[] = [
   // Lobby sofa
   { x: -1.0, z: -9.15, rotationY: 0, activity: 'couch', zone: 'lobby', seated: true, approach: { x: -1.0, z: -8.2 } },
   { x: 0.0, z: -9.15, rotationY: 0, activity: 'couch', zone: 'lobby', seated: true, approach: { x: 0.0, z: -8.2 } },
-  // Meeting Room
+  // Meeting Room / Ruang SukaShawarma
   meetingSeat(4, 'meeting'),
   meetingSeat(5, 'meeting'),
-  { x: 8.0, z: 9.0, rotationY: 0, activity: 'whiteboard', zone: 'meeting_room' },
+  { x: 7.8, z: 9.0, rotationY: 0, activity: 'whiteboard', zone: 'meeting_room' },
   // Promenade / Corridor
   { x: 0.0, z: -1.0, rotationY: 0, activity: 'idle', zone: 'corridor' },
   { x: 1.5, z: -0.5, rotationY: Math.PI / 2, activity: 'idle', zone: 'corridor' },
@@ -261,8 +261,10 @@ export const STATIC_OBSTACLES: ObstacleBox[] = [
   { minX: 9.7, maxX: 10.9, minZ: -9.25, maxZ: -4.55 },
   box(8.2, -3.0, 1.8, 0.8),
 
-  // Meeting table
-  box(8.0, 5.0, 2.4, 4.0),
+  // SukaShawarma Round Table
+  box(7.8, 5.2, 2.7, 2.7),
+  // SukaShawarma Cabinet on East Wall
+  box(10.45, 5.2, 0.65, 2.4),
 
   // Lobby: reception sofa
   box(LOBBY.sofa.x, LOBBY.sofa.z, 2.0, 0.85),

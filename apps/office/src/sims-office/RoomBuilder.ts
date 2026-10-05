@@ -39,6 +39,10 @@ import {
   createPlant,
   createRug,
   createSofa,
+  createSukaCabinet,
+  createSukaProjectorSystem,
+  createSukaRoundTable,
+  createSukaWhiteboard,
   createTV,
   createWallClock,
   createWindow,
@@ -597,59 +601,51 @@ export class RoomBuilder {
   private buildMeetingRoom(): void {
     const group = new THREE.Group();
 
-    this.add(createRug(4.6, 6.2, '#334155', '#cbd5e1'), 8.0, 5.0, 0, 0, group);
+    // 1. SukaShawarma Room Rug (Rich warm terracotta & golden-amber palette)
+    this.add(createRug(5.2, 5.2, '#9a3412', '#f59e0b', 'stripes'), 7.8, 5.2, 0, 0, group);
 
-    // Conference Table
-    const table = rbox(2.4, 0.07, 4.0, mat(0x27272a, 0.2, 0.1), 0.05);
-    table.position.set(8.0, 0.75, 5.0);
-    group.add(table);
+    // 2. Meja Bundar (Round Table) - Centered at x: 7.8, z: 5.2
+    const roundTable = createSukaRoundTable(1.3);
+    this.add(roundTable, 7.8, 5.2, 0, 0, group);
 
-    // Table pedestal legs
-    const pedMat = mat(0x71717a, 0.2, 0.8);
-    for (const z of [4.0, 6.0]) {
-      const ped = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.2, 0.7), pedMat);
-      ped.position.set(8.0, 0.35, z);
-      ped.castShadow = true;
-      group.add(ped);
-    }
-    this.add(blobShadow(3.0, 4.8, 0.35), 8.0, 5.0, 0, 0, group);
-    // Notepads and a speakerphone
-    this.add(createPhone(), 8.0, 5.0, 0, 0.785, group);
-    for (const cp of MEETING_CHAIRS.slice(0, 4)) {
-      const pad = rbox(0.21, 0.01, 0.28, mat(0xfef9c3, 0.9), 0.003);
-      this.add(pad, cp.x + Math.sin(cp.rot) * 0.6, cp.z + Math.cos(cp.rot) * 0.6, cp.rot, 0.79, group);
-    }
-
-    // Conference Chairs around the table (Kenney chairDesk)
+    // 3. Conference Chairs around the round table (6 chairs, arranged radially)
     for (const cp of MEETING_CHAIRS) {
       this.add(
-        createKenney('chairDesk', { height: 0.95 }, () => createOfficeChair(0x52525b)),
+        createKenney('chairDesk', { height: 0.95 }, () => createOfficeChair(0x3f3f46)),
         cp.x, cp.z, cp.rot, 0, group
       );
     }
 
-    // Large Whiteboard against South Wall with Kanban Post-its
-    const wbFrame = rbox(3.2, 1.6, 0.06, mat(0xd4d4d8, 0.3, 0.5), 0.02);
-    wbFrame.position.set(8.0, 1.6, 9.85);
-    const wbBoard = new THREE.Mesh(new THREE.PlaneGeometry(3.0, 1.4), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.1 }));
-    wbBoard.position.set(8.0, 1.6, 9.81);
-    wbBoard.rotation.y = Math.PI;
-    group.add(wbFrame, wbBoard);
-    // sticky notes in three Kanban columns
-    const noteColors = [0xfde047, 0xf9a8d4, 0x86efac, 0x93c5fd];
-    for (let col = 0; col < 3; col++) {
-      for (let row = 0; row < 3 - (col === 2 ? 1 : 0); row++) {
-        const note = new THREE.Mesh(new THREE.PlaneGeometry(0.22, 0.22), mat(noteColors[(col + row) % 4], 0.8));
-        note.position.set(8.9 - col * 0.9, 1.95 - row * 0.32, 9.805);
-        note.rotation.y = Math.PI;
-        group.add(note);
-      }
-    }
+    // 4. Whiteboard SukaShawarma (on South wall at x: 7.8, z: 9.85)
+    const whiteboard = createSukaWhiteboard(3.4, 1.6);
+    this.add(whiteboard, 7.8, 9.85, Math.PI, 0.8, group);
 
-    // Meeting Room Plants are managed by DecorManager (Build/Buy)
+    // 5. Kabinet Dokumen & Arsip SukaShawarma (on East wall at x: 10.45, z: 5.2, facing West)
+    const cabinet = createSukaCabinet(2.4, 2.0, 0.55);
+    this.add(cabinet, 10.45, 5.2, -Math.PI / 2, 0, group);
+
+    // 6. Sistem Proyektor 3D (Ceiling Projector, Volumetric Light Beam, Motorized Screen on North Wall)
+    const { projector, screen, screenMesh } = createSukaProjectorSystem();
+    // Ceiling projector unit at x: 7.8, y: 2.35, z: 3.8
+    projector.position.set(7.8, 2.35, 3.8);
+    group.add(projector);
+
+    // Motorized screen mounted on North wall (z = 0.55, x: 7.8, y: 1.65)
+    screen.position.set(7.8, 1.65, 0.55);
+    group.add(screen);
+
+    // 7. 3D Illuminated Room Signboard: "WAR ROOM SUKASHAWARMA"
+    const roomSign = createLogoSign('WAR ROOM SUKASHAWARMA');
+    roomSign.position.set(7.8, 2.45, 0.54);
+    group.add(roomSign);
+
     this.scene.add(group);
 
-    this.interactiveObjects.push({ mesh: wbBoard, type: 'meeting', actionTitle: 'War Room Kanban Whiteboard' });
+    // Interactive Objects Registration
+    this.interactiveObjects.push({ mesh: roundTable, type: 'meeting', actionTitle: 'Meja Bundar SukaShawarma (Diskusi Strategi)' });
+    this.interactiveObjects.push({ mesh: whiteboard, type: 'meeting', actionTitle: 'Papan Tulis Operasional 21 Cabang' });
+    this.interactiveObjects.push({ mesh: cabinet, type: 'meeting', actionTitle: 'Kabinet Arsip & SOP Resto SukaShawarma' });
+    this.interactiveObjects.push({ mesh: screenMesh, type: 'meeting', actionTitle: 'Proyektor Dashboard Waktu Nyata 21 Cabang' });
   }
 
   private buildLighting(): void {
