@@ -2,87 +2,102 @@ import { useEffect, useState } from 'react';
 import { PROFILES } from '../hermes/labels.ts';
 import { getProfileMeta } from '../sims-office/SimsMotives.ts';
 import { simsAudio } from '../sims-office/SimsAudio.ts';
+import { formatUsd, sparkline, todayCost } from './model.ts';
 import { triggerBackup } from './api.ts';
 import { requestNotificationPermission, sendDesktopNotification } from './notifications.ts';
 import { shell, useShell } from './store.ts';
 import './sims-shell.css';
 
-type SettingsTab = 'general' | 'audio' | 'notifications' | 'display' | 'agents' | 'security' | 'system';
+export type HermesMenuKey =
+  | 'model_main'
+  | 'model_fallback'
+  | 'model_auxiliary'
+  | 'model_moa'
+  | 'chat'
+  | 'appearance'
+  | 'workspace'
+  | 'safety'
+  | 'browser'
+  | 'passwords'
+  | 'memory'
+  | 'voice'
+  | 'advanced'
+  | 'notifications'
+  | 'billing'
+  | 'providers'
+  | 'gateways'
+  | 'shortcuts'
+  | 'tools'
+  | 'sessions'
+  | 'about';
 
 export function SettingsDashboard() {
-  const [activeTab, setActiveTab] = useState<SettingsTab>('general');
+  const [selectedKey, setSelectedKey] = useState<HermesMenuKey>('model_main');
+  const [modelGroupOpen, setModelGroupOpen] = useState(true);
 
-  // General Settings State
-  const [officeName, setOfficeName] = useState(() => {
-    return localStorage.getItem('aos.settings.officeName') || 'Hermes Office';
-  });
-  const [operatorName, setOperatorName] = useState(() => {
-    return localStorage.getItem('aos.settings.operatorName') || 'Operator';
-  });
-  const [operatorRole, setOperatorRole] = useState(() => {
-    return localStorage.getItem('aos.settings.operatorRole') || 'Project Lead';
-  });
-  const [language, setLanguage] = useState(() => {
-    return localStorage.getItem('aos.settings.language') || 'id';
-  });
-  const [timezone, setTimezone] = useState(() => {
-    return localStorage.getItem('aos.settings.timezone') || 'Asia/Jakarta';
-  });
-  const [timeFormat, setTimeFormat] = useState(() => {
-    return localStorage.getItem('aos.settings.timeFormat') || '24h';
-  });
-  const [chatSendKey, setChatSendKey] = useState(() => {
-    return localStorage.getItem('aos.settings.chatSendKey') || 'enter';
-  });
-  const [speechLang, setSpeechLang] = useState(() => {
-    return localStorage.getItem('aos.settings.speechLang') || 'id-ID';
-  });
-  const [defaultDockTab, setDefaultDockTab] = useState(() => {
-    return localStorage.getItem('aos.settings.defaultDockTab') || 'cards';
-  });
-  const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
+  // Model settings
+  const [mainModel, setMainModel] = useState(() => localStorage.getItem('aos.settings.mainModel') || 'claude-3-5-sonnet-20241022');
+  const [modelProvider, setModelProvider] = useState(() => localStorage.getItem('aos.settings.modelProvider') || '9router');
+  const [temperature, setTemperature] = useState(() => Number(localStorage.getItem('aos.settings.temperature') || '0.7'));
+  const [maxTokens, setMaxTokens] = useState(() => Number(localStorage.getItem('aos.settings.maxTokens') || '4096'));
+  const [streamEnabled, setStreamEnabled] = useState(() => localStorage.getItem('aos.settings.stream') !== 'false');
 
-  // Audio State
+  // Fallback models
+  const [fallbackModel, setFallbackModel] = useState(() => localStorage.getItem('aos.settings.fallbackModel') || 'claude-3-5-haiku-20241022');
+  const [maxRetries, setMaxRetries] = useState(() => Number(localStorage.getItem('aos.settings.maxRetries') || '3'));
+
+  // Auxiliary models
+  const [auxModel, setAuxModel] = useState(() => localStorage.getItem('aos.settings.auxModel') || 'gpt-4o-mini');
+
+  // MoA settings
+  const [moaEnabled, setMoaEnabled] = useState(() => localStorage.getItem('aos.settings.moaEnabled') === 'true');
+  const [moaRounds, setMoaRounds] = useState(() => Number(localStorage.getItem('aos.settings.moaRounds') || '2'));
+
+  // Chat settings
+  const [chatSendKey, setChatSendKey] = useState(() => localStorage.getItem('aos.settings.chatSendKey') || 'enter');
+  const [chatSoundOnSend, setChatSoundOnSend] = useState(() => localStorage.getItem('aos.settings.chatSound') !== 'false');
+
+  // Appearance settings
+  const viewMode = useShell((s) => s.viewMode);
+  const [alwaysShowLabels, setAlwaysShowLabels] = useState(() => localStorage.getItem('aos.sims.alwaysShowLabels') === 'true');
+  const [shadowsEnabled, setShadowsEnabled] = useState(() => localStorage.getItem('aos.sims.shadows') !== 'false');
+  const [highFpsMode, setHighFpsMode] = useState(() => localStorage.getItem('aos.sims.highFps') !== 'false');
+
+  // Workspace settings
+  const [workspaceName, setWorkspaceName] = useState(() => localStorage.getItem('aos.settings.officeName') || 'Hermes Office');
+  const [operatorName, setOperatorName] = useState(() => localStorage.getItem('aos.settings.operatorName') || 'Operator');
+
+  // Safety settings
+  const [confirmShellCommands, setConfirmShellCommands] = useState(() => localStorage.getItem('aos.settings.confirmShell') !== 'false');
+  const [autoApproveSafe, setAutoApproveSafe] = useState(() => localStorage.getItem('aos.settings.autoApproveSafe') === 'true');
+
+  // Voice & Audio settings
   const [isMuted, setIsMuted] = useState(() => simsAudio.isMuted());
   const [volume, setVolume] = useState(() => Math.round(simsAudio.getVolume() * 100));
+  const [speechLang, setSpeechLang] = useState(() => localStorage.getItem('aos.settings.speechLang') || 'id-ID');
 
-  // Notification State
+  // Notifications settings
   const [notifPermission, setNotifPermission] = useState<NotificationPermission>(() => {
-    return typeof window !== 'undefined' && 'Notification' in window
-      ? Notification.permission
-      : 'default';
+    return typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'default';
   });
-  const [notifyOnDone, setNotifyOnDone] = useState(() => {
-    return localStorage.getItem('aos.settings.notifyDone') !== 'false';
-  });
-  const [notifyOnApproval, setNotifyOnApproval] = useState(() => {
-    return localStorage.getItem('aos.settings.notifyApproval') !== 'false';
-  });
-  const [audioChimeOnNotif, setAudioChimeOnNotif] = useState(() => {
-    return localStorage.getItem('aos.settings.notifChime') !== 'false';
-  });
+  const [notifyOnDone, setNotifyOnDone] = useState(() => localStorage.getItem('aos.settings.notifyDone') !== 'false');
+  const [notifyOnApproval, setNotifyOnApproval] = useState(() => localStorage.getItem('aos.settings.notifyApproval') !== 'false');
 
-  // Display State
-  const viewMode = useShell((s) => s.viewMode);
-  const [alwaysShowLabels, setAlwaysShowLabels] = useState(() => {
-    return localStorage.getItem('aos.sims.alwaysShowLabels') === 'true';
-  });
-  const [shadowsEnabled, setShadowsEnabled] = useState(() => {
-    return localStorage.getItem('aos.sims.shadows') !== 'false';
-  });
-  const [highFpsMode, setHighFpsMode] = useState(() => {
-    return localStorage.getItem('aos.sims.highFps') !== 'false';
-  });
+  // Billing / Costs
+  const costs = useShell((s) => s.costs);
+  const daily = useShell((s) => s.daily);
 
-  // System & Backup State
+  // System & Health
   const health = useShell((s) => s.health);
   const [backupLoading, setBackupLoading] = useState(false);
-  const [backupResult, setBackupResult] = useState<{
-    ok: boolean;
-    msg: string;
-  } | null>(null);
+  const [backupResult, setBackupResult] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
 
-  // Sync notif permission periodically or on focus
+  const showToast = (msg: string) => {
+    setToastMsg(msg);
+    setTimeout(() => setToastMsg(null), 3000);
+  };
+
   useEffect(() => {
     const checkPerm = () => {
       if (typeof window !== 'undefined' && 'Notification' in window) {
@@ -93,83 +108,59 @@ export function SettingsDashboard() {
     return () => window.removeEventListener('focus', checkPerm);
   }, []);
 
-  const handleSaveGeneral = () => {
+  const handleSaveItem = (key: string, val: string) => {
+    localStorage.setItem(key, val);
+    showToast('Pengaturan tersimpan!');
     simsAudio.playBubbleClick();
-    localStorage.setItem('aos.settings.officeName', officeName.trim() || 'Hermes Office');
-    localStorage.setItem('aos.settings.operatorName', operatorName.trim() || 'Operator');
-    localStorage.setItem('aos.settings.operatorRole', operatorRole);
-    localStorage.setItem('aos.settings.language', language);
-    localStorage.setItem('aos.settings.timezone', timezone);
-    localStorage.setItem('aos.settings.timeFormat', timeFormat);
-    localStorage.setItem('aos.settings.chatSendKey', chatSendKey);
-    localStorage.setItem('aos.settings.speechLang', speechLang);
-    localStorage.setItem('aos.settings.defaultDockTab', defaultDockTab);
-
     window.dispatchEvent(new Event('aos-settings-updated'));
-    setSaveSuccessMsg('Pengaturan umum berhasil disimpan!');
-    setTimeout(() => setSaveSuccessMsg(null), 3000);
   };
 
-  const handleResetGeneral = () => {
-    if (confirm('Kembalikan pengaturan umum ke nilai default?')) {
-      simsAudio.playBubbleClick();
-      setOfficeName('Hermes Office');
-      setOperatorName('Operator');
-      setOperatorRole('Project Lead');
-      setLanguage('id');
-      setTimezone('Asia/Jakarta');
-      setTimeFormat('24h');
-      setChatSendKey('enter');
-      setSpeechLang('id-ID');
-      setDefaultDockTab('cards');
-
-      localStorage.removeItem('aos.settings.officeName');
-      localStorage.removeItem('aos.settings.operatorName');
-      localStorage.removeItem('aos.settings.operatorRole');
-      localStorage.removeItem('aos.settings.language');
-      localStorage.removeItem('aos.settings.timezone');
-      localStorage.removeItem('aos.settings.timeFormat');
-      localStorage.removeItem('aos.settings.chatSendKey');
-      localStorage.removeItem('aos.settings.speechLang');
-      localStorage.removeItem('aos.settings.defaultDockTab');
-
-      window.dispatchEvent(new Event('aos-settings-updated'));
-      setSaveSuccessMsg('Pengaturan umum dikembalikan ke default.');
-      setTimeout(() => setSaveSuccessMsg(null), 3000);
-    }
-  };
-
-  const handleMuteToggle = () => {
-    const nextMuted = simsAudio.toggleMute();
-    setIsMuted(nextMuted);
-    if (!nextMuted) {
-      simsAudio.playClick();
-    }
-  };
-
-  const handleVolumeChange = (newVal: number) => {
-    setVolume(newVal);
-    simsAudio.setVolume(newVal / 100);
-  };
-
-  const handleRequestNotif = async () => {
+  const handleExportJson = () => {
     simsAudio.playBubbleClick();
-    const granted = await requestNotificationPermission();
-    if (typeof window !== 'undefined' && 'Notification' in window) {
-      setNotifPermission(Notification.permission);
+    const configData: Record<string, string | null> = {};
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k?.startsWith('aos.')) {
+        configData[k] = localStorage.getItem(k);
+      }
     }
-    if (granted) {
-      sendDesktopNotification('🔔 Notifikasi Diizinkan', {
-        body: 'Agentic OS kini dapat mengirimkan notifikasi tugas dan persetujuan langsung ke desktop Anda.',
-      });
-    }
+    const blob = new Blob([JSON.stringify(configData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `hermes-settings-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('Pengaturan berhasil diekspor!');
   };
 
-  const handleTestNotif = () => {
+  const handleImportJson = () => {
+    simsAudio.playBubbleClick();
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json,application/json';
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const data = JSON.parse(text) as Record<string, string>;
+        for (const [k, v] of Object.entries(data)) {
+          if (k.startsWith('aos.')) localStorage.setItem(k, v);
+        }
+        showToast('Pengaturan berhasil diimpor! Memuat ulang...');
+        setTimeout(() => window.location.reload(), 1000);
+      } catch {
+        alert('File JSON pengaturan tidak valid');
+      }
+    };
+    input.click();
+  };
+
+  const handleSyncReload = () => {
     simsAudio.playPlumbob();
-    sendDesktopNotification('🧪 Uji Notifikasi Agentic OS', {
-      body: 'Notifikasi desktop berfungsi dengan baik dan siap menerima update tugas!',
-    });
+    shell.refreshAll();
+    showToast('Sinkronisasi konfigurasi dari Hermes Core berhasil!');
   };
 
   const handleRunBackup = async () => {
@@ -180,7 +171,7 @@ export function SettingsDashboard() {
       const res = await triggerBackup();
       setBackupResult({
         ok: true,
-        msg: `Backup berhasil dibuat: ${res.path ?? 'core.db'} (${res.bytes ? (res.bytes / 1024).toFixed(1) + ' KB' : 'sukses'})`,
+        msg: `Backup sukses: ${res.path ?? 'core.db'} (${res.bytes ? (res.bytes / 1024).toFixed(1) + ' KB' : 'tersimpan'})`,
       });
       simsAudio.playTaskComplete();
     } catch (err) {
@@ -193,331 +184,672 @@ export function SettingsDashboard() {
     }
   };
 
-  const handleClearCache = () => {
-    if (confirm('Bersihkan preferensi dan sesi lokal? Halaman akan dimuat ulang.')) {
-      localStorage.clear();
-      window.location.reload();
-    }
-  };
-
   return (
     <div
       className="sims-settings-backdrop"
       onClick={() => shell.toggleSettings()}
       role="dialog"
       aria-modal="true"
-      aria-label="Dashboard Pengaturan"
+      aria-label="Hermes Settings"
     >
       <div className="sims-settings-modal" onClick={(e) => e.stopPropagation()}>
-        {/* Header */}
-        <div className="sims-settings-header">
-          <div className="flex items-center gap-3">
-            <span className="text-xl">⚙️</span>
+        {/* Left Sidebar (Hermes Structure) */}
+        <aside className="hermes-settings-sidebar">
+          <div className="hermes-sidebar-scroll">
+            {/* Model Accordion */}
             <div>
-              <h2 className="text-base font-bold text-white tracking-wide">
-                Dashboard Pengaturan
-              </h2>
-              <p className="text-[11px] text-sky-200/80">
-                Pusat Konfigurasi Umum & Preferensi Sistem Agentic OS Hermes
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            className="text-slate-300 hover:text-white px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-semibold cursor-pointer transition"
-            onClick={() => shell.toggleSettings()}
-            title="Tutup Pengaturan (Esc)"
-          >
-            ✕ Tutup (Esc)
-          </button>
-        </div>
+              <button
+                type="button"
+                className={`hermes-nav-item ${
+                  ['model_main', 'model_fallback', 'model_auxiliary', 'model_moa'].includes(selectedKey)
+                    ? 'active'
+                    : ''
+                }`}
+                onClick={() => {
+                  simsAudio.playClick();
+                  setModelGroupOpen(!modelGroupOpen);
+                }}
+              >
+                <div className="flex items-center gap-2.5">
+                  <span className="text-sm">📦</span>
+                  <span>Model</span>
+                </div>
+                <span className="text-[11px] text-slate-400">
+                  {modelGroupOpen ? '⌄' : '›'}
+                </span>
+              </button>
 
-        {/* Tab Switcher */}
-        <div className="sims-settings-tab-list" role="tablist">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === 'general'}
-            className={`sims-settings-tab-btn ${activeTab === 'general' ? 'active' : ''}`}
-            onClick={() => {
-              simsAudio.playClick();
-              setActiveTab('general');
-            }}
-          >
-            <span>🏠</span>
-            <span>Pengaturan Umum</span>
-          </button>
-
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === 'audio'}
-            className={`sims-settings-tab-btn ${activeTab === 'audio' ? 'active' : ''}`}
-            onClick={() => {
-              simsAudio.playClick();
-              setActiveTab('audio');
-            }}
-          >
-            <span>🔊</span>
-            <span>Audio & Suara</span>
-          </button>
-
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === 'notifications'}
-            className={`sims-settings-tab-btn ${activeTab === 'notifications' ? 'active' : ''}`}
-            onClick={() => {
-              simsAudio.playClick();
-              setActiveTab('notifications');
-            }}
-          >
-            <span>🔔</span>
-            <span>Notifikasi</span>
-          </button>
-
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === 'display'}
-            className={`sims-settings-tab-btn ${activeTab === 'display' ? 'active' : ''}`}
-            onClick={() => {
-              simsAudio.playClick();
-              setActiveTab('display');
-            }}
-          >
-            <span>🖥️</span>
-            <span>Tampilan & 3D</span>
-          </button>
-
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === 'agents'}
-            className={`sims-settings-tab-btn ${activeTab === 'agents' ? 'active' : ''}`}
-            onClick={() => {
-              simsAudio.playClick();
-              setActiveTab('agents');
-            }}
-          >
-            <span>🤖</span>
-            <span>Agen & AI</span>
-          </button>
-
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === 'security'}
-            className={`sims-settings-tab-btn ${activeTab === 'security' ? 'active' : ''}`}
-            onClick={() => {
-              simsAudio.playClick();
-              setActiveTab('security');
-            }}
-          >
-            <span>🛡️</span>
-            <span>Keamanan</span>
-          </button>
-
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === 'system'}
-            className={`sims-settings-tab-btn ${activeTab === 'system' ? 'active' : ''}`}
-            onClick={() => {
-              simsAudio.playClick();
-              setActiveTab('system');
-            }}
-          >
-            <span>💾</span>
-            <span>Sistem & Cadangan</span>
-          </button>
-        </div>
-
-        {/* Modal Body */}
-        <div className="sims-settings-body">
-          {/* TAB 0: PENGATURAN UMUM */}
-          {activeTab === 'general' && (
-            <>
-              {saveSuccessMsg && (
-                <div className="p-3 bg-emerald-950/60 border border-emerald-500/40 rounded-xl text-emerald-200 text-xs font-semibold flex items-center justify-between">
-                  <span>✓ {saveSuccessMsg}</span>
+              {modelGroupOpen && (
+                <div className="flex flex-col gap-1 mt-1">
                   <button
                     type="button"
-                    onClick={() => setSaveSuccessMsg(null)}
-                    className="text-emerald-400 hover:text-white text-xs"
+                    className={`hermes-nav-subitem ${selectedKey === 'model_main' ? 'active' : ''}`}
+                    onClick={() => {
+                      simsAudio.playClick();
+                      setSelectedKey('model_main');
+                    }}
                   >
-                    ✕
+                    <span>⬡</span>
+                    <span>Main model</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    className={`hermes-nav-subitem ${selectedKey === 'model_fallback' ? 'active' : ''}`}
+                    onClick={() => {
+                      simsAudio.playClick();
+                      setSelectedKey('model_fallback');
+                    }}
+                  >
+                    <span>⬡</span>
+                    <span>Fallback models</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    className={`hermes-nav-subitem ${selectedKey === 'model_auxiliary' ? 'active' : ''}`}
+                    onClick={() => {
+                      simsAudio.playClick();
+                      setSelectedKey('model_auxiliary');
+                    }}
+                  >
+                    <span>⚙️</span>
+                    <span>Auxiliary models</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    className={`hermes-nav-subitem ${selectedKey === 'model_moa' ? 'active' : ''}`}
+                    onClick={() => {
+                      simsAudio.playClick();
+                      setSelectedKey('model_moa');
+                    }}
+                  >
+                    <span>👥</span>
+                    <span>Mixture of Agents</span>
                   </button>
                 </div>
               )}
+            </div>
 
-              {/* Identitas Organisasi & Kantor */}
-              <div className="sims-settings-section-card">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-sky-300">
-                    🏢 Identitas Kantor & Profil Pengguna
-                  </h3>
-                  <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-sky-500/20 text-sky-300 font-semibold border border-sky-400/30">
-                    {operatorRole} · {officeName}
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1">
-                      Nama Kantor / Workspace
-                    </label>
-                    <input
-                      type="text"
-                      value={officeName}
-                      onChange={(e) => setOfficeName(e.target.value)}
-                      placeholder="Contoh: Hermes HQ, Studio AI..."
-                      className="sims-chat-textarea w-full h-8 px-3 py-1 text-xs"
-                    />
-                    <span className="text-[10px] text-slate-400 mt-1 block">
-                      Nama ini ditampilkan pada baris informasi utama dan header workspace.
-                    </span>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1">
-                      Nama Panggilan Operator (Anda)
-                    </label>
-                    <input
-                      type="text"
-                      value={operatorName}
-                      onChange={(e) => setOperatorName(e.target.value)}
-                      placeholder="Nama Anda..."
-                      className="sims-chat-textarea w-full h-8 px-3 py-1 text-xs"
-                    />
-                    <span className="text-[10px] text-slate-400 mt-1 block">
-                      Nama panggilan yang dikenali oleh agen asisten dalam percakapan.
-                    </span>
-                  </div>
-                </div>
-
-                <div className="pt-1">
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Peran / Jabatan Anda
-                  </label>
-                  <select
-                    value={operatorRole}
-                    onChange={(e) => setOperatorRole(e.target.value)}
-                    className="sims-chat-session-select w-full h-8 text-xs"
-                  >
-                    <option value="Project Lead">👑 Project Lead / Owner</option>
-                    <option value="Lead Architect">🛠️ Lead Architect / Tech Lead</option>
-                    <option value="Security Admin">🛡️ Security Admin / Officer</option>
-                    <option value="Operator">💻 System Operator</option>
-                    <option value="Reviewer">🔍 Quality & Code Reviewer</option>
-                  </select>
-                </div>
+            {/* Standard Nav Items */}
+            <button
+              type="button"
+              className={`hermes-nav-item ${selectedKey === 'chat' ? 'active' : ''}`}
+              onClick={() => {
+                simsAudio.playClick();
+                setSelectedKey('chat');
+              }}
+            >
+              <div className="flex items-center gap-2.5">
+                <span className="text-sm">💬</span>
+                <span>Chat</span>
               </div>
+              <span className="text-[11px] text-slate-500">›</span>
+            </button>
 
-              {/* Bahasa, Zona Waktu & Format */}
-              <div className="sims-settings-section-card">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-sky-300">
-                  🌐 Bahasa, Wilayah & Format Waktu
-                </h3>
+            <button
+              type="button"
+              className={`hermes-nav-item ${selectedKey === 'appearance' ? 'active' : ''}`}
+              onClick={() => {
+                simsAudio.playClick();
+                setSelectedKey('appearance');
+              }}
+            >
+              <div className="flex items-center gap-2.5">
+                <span className="text-sm">🎨</span>
+                <span>Appearance</span>
+              </div>
+              <span className="text-[11px] text-slate-500">›</span>
+            </button>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1">
-                      Bahasa Antarmuka
-                    </label>
-                    <select
-                      value={language}
-                      onChange={(e) => setLanguage(e.target.value)}
-                      className="sims-chat-session-select w-full h-8 text-xs"
-                    >
-                      <option value="id">Bahasa Indonesia (ID)</option>
-                      <option value="en">English (US)</option>
-                    </select>
-                  </div>
+            <button
+              type="button"
+              className={`hermes-nav-item ${selectedKey === 'workspace' ? 'active' : ''}`}
+              onClick={() => {
+                simsAudio.playClick();
+                setSelectedKey('workspace');
+              }}
+            >
+              <div className="flex items-center gap-2.5">
+                <span className="text-sm">🖥️</span>
+                <span>Workspace</span>
+              </div>
+              <span className="text-[11px] text-slate-500">›</span>
+            </button>
 
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1">
-                      Zona Waktu Utama
-                    </label>
-                    <select
-                      value={timezone}
-                      onChange={(e) => setTimezone(e.target.value)}
-                      className="sims-chat-session-select w-full h-8 text-xs"
-                    >
-                      <option value="Asia/Jakarta">Asia/Jakarta (WIB · UTC+7)</option>
-                      <option value="Asia/Makassar">Asia/Makassar (WITA · UTC+8)</option>
-                      <option value="Asia/Jayapura">Asia/Jayapura (WIT · UTC+9)</option>
-                      <option value="UTC">UTC / GMT</option>
-                    </select>
-                  </div>
+            <button
+              type="button"
+              className={`hermes-nav-item ${selectedKey === 'safety' ? 'active' : ''}`}
+              onClick={() => {
+                simsAudio.playClick();
+                setSelectedKey('safety');
+              }}
+            >
+              <div className="flex items-center gap-2.5">
+                <span className="text-sm">🔒</span>
+                <span>Safety</span>
+              </div>
+              <span className="text-[11px] text-slate-500">›</span>
+            </button>
 
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1">
-                      Format Penunjuk Jam
-                    </label>
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setTimeFormat('24h')}
-                        className={`flex-1 py-1.5 rounded-lg border text-xs font-semibold cursor-pointer transition ${
-                          timeFormat === '24h'
-                            ? 'bg-sky-500/25 border-sky-400 text-sky-200'
-                            : 'bg-slate-900 border-white/10 text-slate-400 hover:text-white'
-                        }`}
+            <button
+              type="button"
+              className={`hermes-nav-item ${selectedKey === 'browser' ? 'active' : ''}`}
+              onClick={() => {
+                simsAudio.playClick();
+                setSelectedKey('browser');
+              }}
+            >
+              <div className="flex items-center gap-2.5">
+                <span className="text-sm">🌐</span>
+                <span>Browser</span>
+              </div>
+              <span className="text-[11px] text-slate-500">›</span>
+            </button>
+
+            <button
+              type="button"
+              className={`hermes-nav-item ${selectedKey === 'passwords' ? 'active' : ''}`}
+              onClick={() => {
+                simsAudio.playClick();
+                setSelectedKey('passwords');
+              }}
+            >
+              <div className="flex items-center gap-2.5">
+                <span className="text-sm">🛡️</span>
+                <span>Passwords & Logins</span>
+              </div>
+              <span className="text-[11px] text-slate-500">›</span>
+            </button>
+
+            <button
+              type="button"
+              className={`hermes-nav-item ${selectedKey === 'memory' ? 'active' : ''}`}
+              onClick={() => {
+                simsAudio.playClick();
+                setSelectedKey('memory');
+              }}
+            >
+              <div className="flex items-center gap-2.5">
+                <span className="text-sm">🧠</span>
+                <span>Memory & Context</span>
+              </div>
+              <span className="text-[11px] text-slate-500">›</span>
+            </button>
+
+            <button
+              type="button"
+              className={`hermes-nav-item ${selectedKey === 'voice' ? 'active' : ''}`}
+              onClick={() => {
+                simsAudio.playClick();
+                setSelectedKey('voice');
+              }}
+            >
+              <div className="flex items-center gap-2.5">
+                <span className="text-sm">🎤</span>
+                <span>Voice</span>
+              </div>
+              <span className="text-[11px] text-slate-500">›</span>
+            </button>
+
+            <button
+              type="button"
+              className={`hermes-nav-item ${selectedKey === 'advanced' ? 'active' : ''}`}
+              onClick={() => {
+                simsAudio.playClick();
+                setSelectedKey('advanced');
+              }}
+            >
+              <div className="flex items-center gap-2.5">
+                <span className="text-sm">🔧</span>
+                <span>Advanced</span>
+              </div>
+              <span className="text-[11px] text-slate-500">›</span>
+            </button>
+
+            <button
+              type="button"
+              className={`hermes-nav-item ${selectedKey === 'notifications' ? 'active' : ''}`}
+              onClick={() => {
+                simsAudio.playClick();
+                setSelectedKey('notifications');
+              }}
+            >
+              <div className="flex items-center gap-2.5">
+                <span className="text-sm">🔔</span>
+                <span>Notifications</span>
+              </div>
+              <span className="text-[11px] text-slate-500">›</span>
+            </button>
+
+            <button
+              type="button"
+              className={`hermes-nav-item ${selectedKey === 'billing' ? 'active' : ''}`}
+              onClick={() => {
+                simsAudio.playClick();
+                setSelectedKey('billing');
+              }}
+            >
+              <div className="flex items-center gap-2.5">
+                <span className="text-sm">📊</span>
+                <span>Billing</span>
+              </div>
+              <span className="text-[11px] text-slate-500">›</span>
+            </button>
+
+            <div className="hermes-sidebar-divider" />
+
+            <button
+              type="button"
+              className={`hermes-nav-item ${selectedKey === 'providers' ? 'active' : ''}`}
+              onClick={() => {
+                simsAudio.playClick();
+                setSelectedKey('providers');
+              }}
+            >
+              <div className="flex items-center gap-2.5">
+                <span className="text-sm">⚡</span>
+                <span>Providers</span>
+              </div>
+              <span className="text-[11px] text-slate-500">›</span>
+            </button>
+
+            <button
+              type="button"
+              className={`hermes-nav-item ${selectedKey === 'gateways' ? 'active' : ''}`}
+              onClick={() => {
+                simsAudio.playClick();
+                setSelectedKey('gateways');
+              }}
+            >
+              <div className="flex items-center gap-2.5">
+                <span className="text-sm">🌐</span>
+                <span>Gateways</span>
+              </div>
+              <span className="text-[11px] text-slate-500">›</span>
+            </button>
+
+            <button
+              type="button"
+              className={`hermes-nav-item ${selectedKey === 'shortcuts' ? 'active' : ''}`}
+              onClick={() => {
+                simsAudio.playClick();
+                setSelectedKey('shortcuts');
+              }}
+            >
+              <div className="flex items-center gap-2.5">
+                <span className="text-sm">⌨️</span>
+                <span>Keyboard Shortcuts</span>
+              </div>
+              <span className="text-[11px] text-slate-500">›</span>
+            </button>
+
+            <button
+              type="button"
+              className={`hermes-nav-item ${selectedKey === 'tools' ? 'active' : ''}`}
+              onClick={() => {
+                simsAudio.playClick();
+                setSelectedKey('tools');
+              }}
+            >
+              <div className="flex items-center gap-2.5">
+                <span className="text-sm">🔑</span>
+                <span>Tools & Keys</span>
+              </div>
+              <span className="text-[11px] text-slate-500">›</span>
+            </button>
+
+            <button
+              type="button"
+              className={`hermes-nav-item ${selectedKey === 'sessions' ? 'active' : ''}`}
+              onClick={() => {
+                simsAudio.playClick();
+                setSelectedKey('sessions');
+              }}
+            >
+              <div className="flex items-center gap-2.5">
+                <span className="text-sm">🗄️</span>
+                <span>Sessions</span>
+              </div>
+              <span className="text-[11px] text-slate-500">›</span>
+            </button>
+
+            <div className="hermes-sidebar-divider" />
+
+            <button
+              type="button"
+              className={`hermes-nav-item ${selectedKey === 'about' ? 'active' : ''}`}
+              onClick={() => {
+                simsAudio.playClick();
+                setSelectedKey('about');
+              }}
+            >
+              <div className="flex items-center gap-2.5">
+                <span className="text-sm">ℹ️</span>
+                <span>About</span>
+              </div>
+              <span className="text-[11px] text-slate-500">›</span>
+            </button>
+          </div>
+
+          {/* Bottom Toolbar Icons (Export, Import, Refresh) */}
+          <div className="hermes-sidebar-footer">
+            <button
+              type="button"
+              onClick={handleExportJson}
+              className="hermes-footer-btn"
+              title="Export Settings (Download JSON)"
+            >
+              📥
+            </button>
+            <button
+              type="button"
+              onClick={handleImportJson}
+              className="hermes-footer-btn"
+              title="Import Settings (Upload JSON)"
+            >
+              📤
+            </button>
+            <button
+              type="button"
+              onClick={handleSyncReload}
+              className="hermes-footer-btn"
+              title="Sync & Reload Settings from Hermes Core"
+            >
+              🔄
+            </button>
+          </div>
+        </aside>
+
+        {/* Right Content Pane */}
+        <main className="hermes-settings-main">
+          {/* Header */}
+          <header className="hermes-settings-header">
+            <div>
+              <h2 className="text-sm font-bold text-white capitalize flex items-center gap-2">
+                <span>
+                  {selectedKey === 'model_main'
+                    ? '📦 Model · Main Model'
+                    : selectedKey === 'model_fallback'
+                      ? '📦 Model · Fallback Models'
+                      : selectedKey === 'model_auxiliary'
+                        ? '⚙️ Model · Auxiliary Models'
+                        : selectedKey === 'model_moa'
+                          ? '👥 Model · Mixture of Agents'
+                          : selectedKey}
+                </span>
+              </h2>
+              <p className="text-[11px] text-slate-400">
+                Konfigurasi parameter dan perilaku Hermes Agentic OS
+              </p>
+            </div>
+            <button
+              type="button"
+              className="text-slate-400 hover:text-white px-2.5 py-1 rounded bg-white/5 hover:bg-white/10 text-xs font-semibold cursor-pointer transition"
+              onClick={() => shell.toggleSettings()}
+              title="Tutup (Esc)"
+            >
+              ✕ Tutup (Esc)
+            </button>
+          </header>
+
+          {/* Toast Notification */}
+          {toastMsg && (
+            <div className="mx-6 mt-3 p-2 bg-emerald-950/80 border border-emerald-500/40 rounded-lg text-emerald-200 text-xs flex items-center justify-between">
+              <span>✓ {toastMsg}</span>
+            </div>
+          )}
+
+          {/* Body Content */}
+          <div className="hermes-settings-body">
+            {/* 1. MAIN MODEL */}
+            {selectedKey === 'model_main' && (
+              <>
+                <div className="sims-settings-section-card">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-sky-300">
+                    Primary Model Configuration
+                  </h3>
+
+                  <div className="space-y-3 pt-1">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">
+                        Model Provider
+                      </label>
+                      <select
+                        value={modelProvider}
+                        onChange={(e) => {
+                          setModelProvider(e.target.value);
+                          handleSaveItem('aos.settings.modelProvider', e.target.value);
+                        }}
+                        className="sims-chat-session-select w-full h-8 text-xs"
                       >
-                        24 Jam
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setTimeFormat('12h')}
-                        className={`flex-1 py-1.5 rounded-lg border text-xs font-semibold cursor-pointer transition ${
-                          timeFormat === '12h'
-                            ? 'bg-sky-500/25 border-sky-400 text-sky-200'
-                            : 'bg-slate-900 border-white/10 text-slate-400 hover:text-white'
-                        }`}
-                      >
-                        12 Jam (AM/PM)
-                      </button>
+                        <option value="9router">9Router (Local Proxy & Gateway)</option>
+                        <option value="anthropic">Anthropic Claude API</option>
+                        <option value="openai">OpenAI API</option>
+                        <option value="ollama">Ollama Local LLM</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">
+                        Model Identifier
+                      </label>
+                      <input
+                        type="text"
+                        value={mainModel}
+                        onChange={(e) => setMainModel(e.target.value)}
+                        onBlur={() => handleSaveItem('aos.settings.mainModel', mainModel)}
+                        className="sims-chat-textarea w-full h-8 px-3 py-1 text-xs font-mono"
+                        placeholder="claude-3-5-sonnet-20241022"
+                      />
+                    </div>
+
+                    <div>
+                      <div className="flex justify-between items-center mb-1">
+                        <label className="text-xs font-semibold text-slate-300">Temperature</label>
+                        <span className="text-xs font-mono text-sky-300">{temperature.toFixed(2)}</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={0}
+                        max={1}
+                        step={0.05}
+                        value={temperature}
+                        onChange={(e) => {
+                          const v = Number(e.target.value);
+                          setTemperature(v);
+                          localStorage.setItem('aos.settings.temperature', String(v));
+                        }}
+                        className="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-sky-400"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-300 mb-1">
+                          Max Output Tokens
+                        </label>
+                        <input
+                          type="number"
+                          value={maxTokens}
+                          onChange={(e) => {
+                            const v = Number(e.target.value);
+                            setMaxTokens(v);
+                            localStorage.setItem('aos.settings.maxTokens', String(v));
+                          }}
+                          className="sims-chat-textarea w-full h-8 px-3 py-1 text-xs font-mono"
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-between pt-4">
+                        <span className="text-xs text-slate-300 font-semibold">Enable Streaming</span>
+                        <label className="sims-toggle-switch">
+                          <input
+                            type="checkbox"
+                            checked={streamEnabled}
+                            onChange={(e) => {
+                              setStreamEnabled(e.target.checked);
+                              handleSaveItem('aos.settings.stream', String(e.target.checked));
+                            }}
+                          />
+                          <span className="sims-toggle-slider" />
+                        </label>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
+              </>
+            )}
 
-              {/* Perilaku Obrolan & Masukan */}
+            {/* 2. FALLBACK MODELS */}
+            {selectedKey === 'model_fallback' && (
               <div className="sims-settings-section-card">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-sky-300">
-                  💬 Perilaku Obrolan & Dikte Suara
+                  Rate-limit & Failover Routing
                 </h3>
+                <div className="space-y-3 pt-1">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">
+                      Secondary Fallback Model
+                    </label>
+                    <input
+                      type="text"
+                      value={fallbackModel}
+                      onChange={(e) => setFallbackModel(e.target.value)}
+                      onBlur={() => handleSaveItem('aos.settings.fallbackModel', fallbackModel)}
+                      className="sims-chat-textarea w-full h-8 px-3 py-1 text-xs font-mono"
+                      placeholder="claude-3-5-haiku-20241022"
+                    />
+                  </div>
 
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">
+                      Max Retry Attempts Before Failover
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={10}
+                      value={maxRetries}
+                      onChange={(e) => {
+                        setMaxRetries(Number(e.target.value));
+                        handleSaveItem('aos.settings.maxRetries', e.target.value);
+                      }}
+                      className="sims-chat-textarea w-full h-8 px-3 py-1 text-xs font-mono"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 3. AUXILIARY MODELS */}
+            {selectedKey === 'model_auxiliary' && (
+              <div className="sims-settings-section-card">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-sky-300">
+                  Auxiliary Task Model (Thought Bubbles & Summaries)
+                </h3>
+                <div className="pt-1">
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Fast / Auxiliary Model
+                  </label>
+                  <input
+                    type="text"
+                    value={auxModel}
+                    onChange={(e) => setAuxModel(e.target.value)}
+                    onBlur={() => handleSaveItem('aos.settings.auxModel', auxModel)}
+                    className="sims-chat-textarea w-full h-8 px-3 py-1 text-xs font-mono"
+                    placeholder="gpt-4o-mini"
+                  />
+                  <span className="text-[11px] text-slate-400 mt-1 block">
+                    Digunakan untuk tugas ringan, pembuatan ringkasan kartu kanban, dan pesan status agen.
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* 4. MIXTURE OF AGENTS */}
+            {selectedKey === 'model_moa' && (
+              <div className="sims-settings-section-card">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-sky-300">
+                  Mixture of Agents (MoA) Architecture
+                </h3>
                 <div className="sims-settings-row">
                   <div>
-                    <strong className="text-sm text-white block">Kombinasi Tombol Kirim Pesan</strong>
+                    <strong className="text-sm text-white block">Enable Multi-Agent Synthesis</strong>
                     <span className="text-xs text-slate-400">
-                      Pilih tombol yang memicu pengiriman pesan di textarea obrolan.
+                      Meminta opini dari beberapa agen secara paralel lalu menggabungkannya via synthesizer.
+                    </span>
+                  </div>
+                  <label className="sims-toggle-switch">
+                    <input
+                      type="checkbox"
+                      checked={moaEnabled}
+                      onChange={(e) => {
+                        setMoaEnabled(e.target.checked);
+                        handleSaveItem('aos.settings.moaEnabled', String(e.target.checked));
+                      }}
+                    />
+                    <span className="sims-toggle-slider" />
+                  </label>
+                </div>
+
+                {moaEnabled && (
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">
+                      Layer / Iteration Rounds
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={4}
+                      value={moaRounds}
+                      onChange={(e) => {
+                        setMoaRounds(Number(e.target.value));
+                        handleSaveItem('aos.settings.moaRounds', e.target.value);
+                      }}
+                      className="sims-chat-textarea w-24 h-8 px-3 py-1 text-xs font-mono"
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 5. CHAT */}
+            {selectedKey === 'chat' && (
+              <div className="sims-settings-section-card">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-sky-300">
+                  Chat Interaction & Formatting
+                </h3>
+                <div className="sims-settings-row">
+                  <div>
+                    <strong className="text-sm text-white block">Tombol Kirim Pesan</strong>
+                    <span className="text-xs text-slate-400">
+                      Pilih tombol kirim untuk textarea obrolan.
                     </span>
                   </div>
                   <div className="flex gap-2">
                     <button
                       type="button"
-                      onClick={() => setChatSendKey('enter')}
-                      className={`px-3 py-1.5 rounded-lg border text-xs font-semibold cursor-pointer transition ${
-                        chatSendKey === 'enter'
-                          ? 'bg-sky-500/25 border-sky-400 text-sky-200'
-                          : 'bg-slate-900 border-white/10 text-slate-400'
+                      onClick={() => {
+                        setChatSendKey('enter');
+                        handleSaveItem('aos.settings.chatSendKey', 'enter');
+                      }}
+                      className={`px-3 py-1.5 rounded-lg border text-xs font-semibold cursor-pointer ${
+                        chatSendKey === 'enter' ? 'bg-sky-500/25 border-sky-400 text-sky-200' : 'bg-slate-900 border-white/10 text-slate-400'
                       }`}
-                      title="Enter untuk kirim, Shift+Enter untuk baris baru"
                     >
                       Enter (Biasa)
                     </button>
                     <button
                       type="button"
-                      onClick={() => setChatSendKey('ctrl')}
-                      className={`px-3 py-1.5 rounded-lg border text-xs font-semibold cursor-pointer transition ${
-                        chatSendKey === 'ctrl'
-                          ? 'bg-sky-500/25 border-sky-400 text-sky-200'
-                          : 'bg-slate-900 border-white/10 text-slate-400'
+                      onClick={() => {
+                        setChatSendKey('ctrl');
+                        handleSaveItem('aos.settings.chatSendKey', 'ctrl');
+                      }}
+                      className={`px-3 py-1.5 rounded-lg border text-xs font-semibold cursor-pointer ${
+                        chatSendKey === 'ctrl' ? 'bg-sky-500/25 border-sky-400 text-sky-200' : 'bg-slate-900 border-white/10 text-slate-400'
                       }`}
-                      title="Ctrl+Enter untuk kirim, Enter untuk baris baru"
                     >
                       Ctrl + Enter
                     </button>
@@ -526,82 +858,270 @@ export function SettingsDashboard() {
 
                 <div className="sims-settings-row">
                   <div>
-                    <strong className="text-sm text-white block">Bahasa Dikte Suara (Speech Recognition)</strong>
+                    <strong className="text-sm text-white block">Sound on Send</strong>
                     <span className="text-xs text-slate-400">
-                      Model bahasa yang dideteksi oleh mikrofon saat melakukan input suara.
-                    </span>
-                  </div>
-                  <select
-                    value={speechLang}
-                    onChange={(e) => setSpeechLang(e.target.value)}
-                    className="sims-chat-session-select text-xs h-8 px-2"
-                  >
-                    <option value="id-ID">🇮🇩 Bahasa Indonesia (id-ID)</option>
-                    <option value="en-US">🇺🇸 English (en-US)</option>
-                  </select>
-                </div>
-
-                <div className="sims-settings-row">
-                  <div>
-                    <strong className="text-sm text-white block">Tab Panel Samping Default saat Buka</strong>
-                    <span className="text-xs text-slate-400">
-                      Pilih panel samping mana yang otomatis terbuka saat pertama membuka kantor.
-                    </span>
-                  </div>
-                  <select
-                    value={defaultDockTab}
-                    onChange={(e) => setDefaultDockTab(e.target.value)}
-                    className="sims-chat-session-select text-xs h-8 px-2"
-                  >
-                    <option value="cards">📋 Kartu Kanban (Cards)</option>
-                    <option value="chat">💬 Percakapan (Chat)</option>
-                    <option value="activity">⚡ Log Aktivitas (Activity)</option>
-                    <option value="agent">👤 Status Agen (Inspector)</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Tombol Simpan & Reset */}
-              <div className="flex items-center justify-between pt-2">
-                <button
-                  type="button"
-                  onClick={handleResetGeneral}
-                  className="px-3.5 py-2 text-xs font-semibold text-rose-300 hover:text-white bg-rose-500/15 hover:bg-rose-500/30 border border-rose-400/30 rounded-xl transition cursor-pointer"
-                >
-                  🔄 Kembalikan ke Standar Default
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleSaveGeneral}
-                  className="px-5 py-2 text-xs font-bold text-white bg-sky-600 hover:bg-sky-500 rounded-xl shadow-lg cursor-pointer transition flex items-center gap-1.5"
-                >
-                  <span>💾</span>
-                  <span>Simpan Pengaturan Umum</span>
-                </button>
-              </div>
-            </>
-          )}
-
-          {/* TAB 1: AUDIO */}
-          {activeTab === 'audio' && (
-            <>
-              <div className="sims-settings-section-card">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-sky-300">
-                  Kontrol Suara & Efek Web Audio
-                </h3>
-                <div className="sims-settings-row">
-                  <div>
-                    <strong className="text-sm text-white block">Efek Suara The Sims</strong>
-                    <span className="text-xs text-slate-400">
-                      Aktifkan atau matikan seluruh efek suara UI dan simulasi agen.
+                      Mainkan efek audio click saat pesan dikirimkan.
                     </span>
                   </div>
                   <label className="sims-toggle-switch">
                     <input
                       type="checkbox"
+                      checked={chatSoundOnSend}
+                      onChange={(e) => {
+                        setChatSoundOnSend(e.target.checked);
+                        handleSaveItem('aos.settings.chatSound', String(e.target.checked));
+                      }}
+                    />
+                    <span className="sims-toggle-slider" />
+                  </label>
+                </div>
+              </div>
+            )}
+
+            {/* 6. APPEARANCE */}
+            {selectedKey === 'appearance' && (
+              <div className="sims-settings-section-card">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-sky-300">
+                  Visuals & Workspace Theme
+                </h3>
+                <div className="grid grid-cols-2 gap-3 mb-2">
+                  <div
+                    onClick={() => shell.setViewMode('sims')}
+                    className={`p-3 rounded-xl border-2 cursor-pointer transition ${
+                      viewMode === 'sims' ? 'border-sky-400 bg-sky-500/20' : 'border-white/10 bg-slate-900'
+                    }`}
+                  >
+                    <span className="font-bold block text-sm">🏡 The Sims 2 3D Office</span>
+                    <span className="text-[11px] text-slate-400">Three.js 3D isometric view</span>
+                  </div>
+                  <div
+                    onClick={() => shell.setViewMode('claude')}
+                    className={`p-3 rounded-xl border-2 cursor-pointer transition ${
+                      viewMode === 'claude' ? 'border-sky-400 bg-sky-500/20' : 'border-white/10 bg-slate-900'
+                    }`}
+                  >
+                    <span className="font-bold block text-sm">👾 Claude Classic Office</span>
+                    <span className="text-[11px] text-slate-400">2D retro pixel view</span>
+                  </div>
+                </div>
+
+                <div className="sims-settings-row">
+                  <div>
+                    <strong className="text-sm text-white block">Always Show Agent Nametags</strong>
+                    <span className="text-xs text-slate-400">Label nama permanen di atas kepala agen</span>
+                  </div>
+                  <label className="sims-toggle-switch">
+                    <input
+                      type="checkbox"
+                      checked={alwaysShowLabels}
+                      onChange={(e) => {
+                        setAlwaysShowLabels(e.target.checked);
+                        handleSaveItem('aos.sims.alwaysShowLabels', String(e.target.checked));
+                      }}
+                    />
+                    <span className="sims-toggle-slider" />
+                  </label>
+                </div>
+
+                <div className="sims-settings-row">
+                  <div>
+                    <strong className="text-sm text-white block">3D Dynamic Shadows</strong>
+                    <span className="text-xs text-slate-400">Render bayangan dinamis di lantai</span>
+                  </div>
+                  <label className="sims-toggle-switch">
+                    <input
+                      type="checkbox"
+                      checked={shadowsEnabled}
+                      onChange={(e) => {
+                        setShadowsEnabled(e.target.checked);
+                        handleSaveItem('aos.sims.shadows', String(e.target.checked));
+                      }}
+                    />
+                    <span className="sims-toggle-slider" />
+                  </label>
+                </div>
+              </div>
+            )}
+
+            {/* 7. WORKSPACE */}
+            {selectedKey === 'workspace' && (
+              <div className="sims-settings-section-card">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-sky-300">
+                  Workspace & Directory Configuration
+                </h3>
+                <div className="space-y-3 pt-1">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">
+                      Workspace Name
+                    </label>
+                    <input
+                      type="text"
+                      value={workspaceName}
+                      onChange={(e) => setWorkspaceName(e.target.value)}
+                      onBlur={() => handleSaveItem('aos.settings.officeName', workspaceName)}
+                      className="sims-chat-textarea w-full h-8 px-3 py-1 text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">
+                      Operator / Owner Name
+                    </label>
+                    <input
+                      type="text"
+                      value={operatorName}
+                      onChange={(e) => setOperatorName(e.target.value)}
+                      onBlur={() => handleSaveItem('aos.settings.operatorName', operatorName)}
+                      className="sims-chat-textarea w-full h-8 px-3 py-1 text-xs"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 8. SAFETY */}
+            {selectedKey === 'safety' && (
+              <div className="sims-settings-section-card">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-sky-300">
+                  Execution Guardrails & Approvals
+                </h3>
+                <div className="sims-settings-row">
+                  <div>
+                    <strong className="text-sm text-white block">Konfirmasi Perintah Terminal</strong>
+                    <span className="text-xs text-slate-400">
+                      Perintah terminal memerlukan approval manual sebelum dieksekusi oleh agen.
+                    </span>
+                  </div>
+                  <label className="sims-toggle-switch">
+                    <input
+                      type="checkbox"
+                      checked={confirmShellCommands}
+                      onChange={(e) => {
+                        setConfirmShellCommands(e.target.checked);
+                        handleSaveItem('aos.settings.confirmShell', String(e.target.checked));
+                      }}
+                    />
+                    <span className="sims-toggle-slider" />
+                  </label>
+                </div>
+
+                <div className="sims-settings-row">
+                  <div>
+                    <strong className="text-sm text-white block">Auto-allow Read-only Tools</strong>
+                    <span className="text-xs text-slate-400">
+                      Operasi baca file dan penelusuran diizinkan tanpa meminta izin manual.
+                    </span>
+                  </div>
+                  <label className="sims-toggle-switch">
+                    <input
+                      type="checkbox"
+                      checked={autoApproveSafe}
+                      onChange={(e) => {
+                        setAutoApproveSafe(e.target.checked);
+                        handleSaveItem('aos.settings.autoApproveSafe', String(e.target.checked));
+                      }}
+                    />
+                    <span className="sims-toggle-slider" />
+                  </label>
+                </div>
+              </div>
+            )}
+
+            {/* 9. BROWSER */}
+            {selectedKey === 'browser' && (
+              <div className="sims-settings-section-card">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-sky-300">
+                  Web Browsing & Search Integration
+                </h3>
+                <div className="text-xs text-slate-300 space-y-2">
+                  <div className="flex justify-between py-1 border-b border-white/5">
+                    <span className="text-slate-400">Browser Engine:</span>
+                    <span className="font-mono text-sky-300">Headless Chromium via Playwright / Web Fetch</span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-white/5">
+                    <span className="text-slate-400">Web Search Engine:</span>
+                    <span className="font-mono text-emerald-300">Active (via Core Agent Tool)</span>
+                  </div>
+                  <div className="flex justify-between py-1">
+                    <span className="text-slate-400">Timeout per Request:</span>
+                    <span className="font-mono text-slate-200">15000 ms</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 10. PASSWORDS & LOGINS */}
+            {selectedKey === 'passwords' && (
+              <div className="sims-settings-section-card">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-sky-300">
+                  Authentication & Core Tokens
+                </h3>
+                <div className="space-y-2 text-xs">
+                  <div className="flex items-center justify-between p-2.5 bg-slate-900/60 rounded-lg border border-white/5">
+                    <div>
+                      <strong className="text-white block font-mono">AOS_UI_TOKEN</strong>
+                      <span className="text-[11px] text-slate-400">Cookie autentikasi web interface</span>
+                    </div>
+                    <span className="text-[11px] text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                      ✓ Validated
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between p-2.5 bg-slate-900/60 rounded-lg border border-white/5">
+                    <div>
+                      <strong className="text-white block font-mono">AOS_BRIDGE_TOKEN</strong>
+                      <span className="text-[11px] text-slate-400">Token pengiriman event background</span>
+                    </div>
+                    <span className="text-[11px] text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                      ✓ Connected
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between p-2.5 bg-slate-900/60 rounded-lg border border-white/5">
+                    <div>
+                      <strong className="text-white block font-mono">AOS_SERVE_TOKEN</strong>
+                      <span className="text-[11px] text-slate-400">WebSocket live relay token</span>
+                    </div>
+                    <span className="text-[11px] text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                      ✓ Ready
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 11. MEMORY & CONTEXT */}
+            {selectedKey === 'memory' && (
+              <div className="sims-settings-section-card">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-sky-300">
+                  Agent Memory & Context Window
+                </h3>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Setiap profil agen memiliki memori persisten di <code>HERMES_HOME/profiles/[name]/memories</code> dan kepribadian inti yang diatur melalui berkas <code>SOUL.md</code>.
+                </p>
+                <div className="p-3 bg-slate-900/80 rounded-lg border border-white/5 text-xs font-mono space-y-1">
+                  <div>Memori Aktif: <span className="text-sky-300">SQLite + Markdown Scratchpads</span></div>
+                  <div>Roster Terpasang: <span className="text-emerald-300">{PROFILES.join(', ')}</span></div>
+                </div>
+              </div>
+            )}
+
+            {/* 12. VOICE */}
+            {selectedKey === 'voice' && (
+              <div className="sims-settings-section-card">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-sky-300">
+                  Audio Effects & Speech-to-Text
+                </h3>
+                <div className="sims-settings-row">
+                  <div>
+                    <strong className="text-sm text-white block">Master Suara & Efek</strong>
+                    <span className="text-xs text-slate-400">Efek klik, putar kamera, dan notifikasi</span>
+                  </div>
+                  <label className="sims-toggle-switch">
+                    <input
+                      type="checkbox"
                       checked={!isMuted}
-                      onChange={handleMuteToggle}
+                      onChange={() => {
+                        const m = simsAudio.toggleMute();
+                        setIsMuted(m);
+                      }}
                     />
                     <span className="sims-toggle-slider" />
                   </label>
@@ -610,134 +1130,112 @@ export function SettingsDashboard() {
                 <div className="sims-settings-row">
                   <div className="flex-1 mr-4">
                     <div className="flex justify-between items-center mb-1">
-                      <strong className="text-sm text-white">Volume Master</strong>
+                      <strong className="text-sm text-white">Tingkat Volume</strong>
                       <span className="text-xs font-mono text-sky-300 font-bold">{volume}%</span>
                     </div>
-                    <span className="text-xs text-slate-400 block mb-2">
-                      Mengatur tingkat kekerasan suara efek interaksi dan nada notifikasi.
-                    </span>
                     <input
                       type="range"
                       min={0}
                       max={100}
                       value={volume}
                       disabled={isMuted}
-                      onChange={(e) => handleVolumeChange(Number(e.target.value))}
+                      onChange={(e) => {
+                        const v = Number(e.target.value);
+                        setVolume(v);
+                        simsAudio.setVolume(v / 100);
+                      }}
                       className="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-sky-400"
                     />
                   </div>
                 </div>
-              </div>
 
-              <div className="sims-settings-section-card">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-sky-300">
-                  Uji Efek Suara Simulasi
-                </h3>
-                <p className="text-xs text-slate-400">
-                  Klik tombol di bawah untuk mendengarkan sampel suara yang disintesis via Web Audio API:
-                </p>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
-                  <button
-                    type="button"
-                    disabled={isMuted}
-                    onClick={() => simsAudio.playPlumbob()}
-                    className="px-3 py-2 bg-sky-500/15 hover:bg-sky-500/30 border border-sky-400/30 text-sky-200 rounded-lg text-xs font-semibold cursor-pointer transition disabled:opacity-40"
+                <div className="sims-settings-row">
+                  <div>
+                    <strong className="text-sm text-white block">Bahasa Dikte Suara (Mic)</strong>
+                    <span className="text-xs text-slate-400">Model pengenalan suara browser</span>
+                  </div>
+                  <select
+                    value={speechLang}
+                    onChange={(e) => {
+                      setSpeechLang(e.target.value);
+                      handleSaveItem('aos.settings.speechLang', e.target.value);
+                    }}
+                    className="sims-chat-session-select text-xs h-8 px-2"
                   >
-                    🎵 Plumbob Chime
-                  </button>
-                  <button
-                    type="button"
-                    disabled={isMuted}
-                    onClick={() => simsAudio.playBubbleClick()}
-                    className="px-3 py-2 bg-sky-500/15 hover:bg-sky-500/30 border border-sky-400/30 text-sky-200 rounded-lg text-xs font-semibold cursor-pointer transition disabled:opacity-40"
-                  >
-                    💬 Bubble Click
-                  </button>
-                  <button
-                    type="button"
-                    disabled={isMuted}
-                    onClick={() => simsAudio.playBroadcast()}
-                    className="px-3 py-2 bg-sky-500/15 hover:bg-sky-500/30 border border-sky-400/30 text-sky-200 rounded-lg text-xs font-semibold cursor-pointer transition disabled:opacity-40"
-                  >
-                    📢 Broadcast Ping
-                  </button>
-                  <button
-                    type="button"
-                    disabled={isMuted}
-                    onClick={() => simsAudio.playCoffee()}
-                    className="px-3 py-2 bg-sky-500/15 hover:bg-sky-500/30 border border-sky-400/30 text-sky-200 rounded-lg text-xs font-semibold cursor-pointer transition disabled:opacity-40"
-                  >
-                    ☕ Mesin Kopi
-                  </button>
+                    <option value="id-ID">🇮🇩 Bahasa Indonesia (id-ID)</option>
+                    <option value="en-US">🇺🇸 English (en-US)</option>
+                  </select>
                 </div>
               </div>
-            </>
-          )}
+            )}
 
-          {/* TAB 2: NOTIFIKASI */}
-          {activeTab === 'notifications' && (
-            <>
+            {/* 13. ADVANCED */}
+            {selectedKey === 'advanced' && (
               <div className="sims-settings-section-card">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-sky-300">
-                  Izin Notifikasi Desktop OS
+                  System Architecture & Runtime Ports
                 </h3>
-                <div className="flex items-center justify-between">
+                <div className="space-y-2 text-xs">
+                  <div className="flex justify-between py-1 border-b border-white/5">
+                    <span className="text-slate-400">AOS Core Port:</span>
+                    <span className="font-mono text-sky-300">7400</span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-white/5">
+                    <span className="text-slate-400">Hermes Serve Relay Port:</span>
+                    <span className="font-mono text-sky-300">9129</span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-white/5">
+                    <span className="text-slate-400">9Router AI Proxy Port:</span>
+                    <span className="font-mono text-sky-300">20128</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 14. NOTIFICATIONS */}
+            {selectedKey === 'notifications' && (
+              <div className="sims-settings-section-card">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-sky-300">
+                  Desktop OS Notifications
+                </h3>
+                <div className="flex items-center justify-between pb-2 border-b border-white/5">
                   <div>
                     <div className="flex items-center gap-2 mb-1">
-                      <strong className="text-sm text-white">Status Izin Browser:</strong>
-                      <span
-                        className={`text-xs px-2.5 py-0.5 rounded-full font-bold uppercase ${
-                          notifPermission === 'granted'
-                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                            : notifPermission === 'denied'
-                              ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                              : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                        }`}
-                      >
-                        {notifPermission === 'granted'
-                          ? 'Diizinkan (Active)'
-                          : notifPermission === 'denied'
-                            ? 'Diblokir (Blocked)'
-                            : 'Belum Diatur (Default)'}
-                      </span>
+                      <strong className="text-sm text-white">Browser Permission:</strong>
+                      <span className="text-xs font-bold text-sky-300 uppercase">{notifPermission}</span>
                     </div>
-                    <span className="text-xs text-slate-400">
-                      Notifikasi muncul di sudut layar Windows bahkan saat tab kantor sedang diminimize.
-                    </span>
+                    <span className="text-xs text-slate-400">Notifikasi muncul di desktop Windows</span>
                   </div>
-                  <div className="flex gap-2">
-                    {notifPermission !== 'granted' && (
-                      <button
-                        type="button"
-                        onClick={handleRequestNotif}
-                        className="px-3 py-1.5 bg-sky-600 hover:bg-sky-500 text-white rounded-lg text-xs font-semibold cursor-pointer shadow transition"
-                      >
-                        Minta Izin
-                      </button>
-                    )}
-                    {notifPermission === 'granted' && (
-                      <button
-                        type="button"
-                        onClick={handleTestNotif}
-                        className="px-3 py-1.5 bg-emerald-600/30 hover:bg-emerald-600/50 border border-emerald-400/40 text-emerald-200 rounded-lg text-xs font-semibold cursor-pointer transition"
-                      >
-                        Kirim Tes Notifikasi
-                      </button>
-                    )}
-                  </div>
+                  {notifPermission !== 'granted' ? (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const g = await requestNotificationPermission();
+                        if (typeof window !== 'undefined' && 'Notification' in window) setNotifPermission(Notification.permission);
+                        if (g) showToast('Izin notifikasi diberikan!');
+                      }}
+                      className="px-3 py-1.5 bg-sky-600 hover:bg-sky-500 text-white rounded-lg text-xs font-semibold"
+                    >
+                      Minta Izin
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        sendDesktopNotification('🧪 Uji Notifikasi Hermes', { body: 'Notifikasi desktop berfungsi dengan baik!' });
+                        showToast('Notifikasi tes terkirim!');
+                      }}
+                      className="px-3 py-1.5 bg-emerald-600/30 border border-emerald-400/40 text-emerald-200 rounded-lg text-xs font-semibold"
+                    >
+                      Kirim Tes Notifikasi
+                    </button>
+                  )}
                 </div>
-              </div>
 
-              <div className="sims-settings-section-card">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-sky-300">
-                  Preferensi Pemicu Notifikasi
-                </h3>
                 <div className="sims-settings-row">
                   <div>
                     <strong className="text-sm text-white block">Tugas Selesai (Kanban Done)</strong>
-                    <span className="text-xs text-slate-400">
-                      Kirim notifikasi saat agen berhasil menyelesaikan tugas di papan Kanban.
-                    </span>
+                    <span className="text-xs text-slate-400">Notifikasi saat kartu kanban selesai</span>
                   </div>
                   <label className="sims-toggle-switch">
                     <input
@@ -745,7 +1243,7 @@ export function SettingsDashboard() {
                       checked={notifyOnDone}
                       onChange={(e) => {
                         setNotifyOnDone(e.target.checked);
-                        localStorage.setItem('aos.settings.notifyDone', String(e.target.checked));
+                        handleSaveItem('aos.settings.notifyDone', String(e.target.checked));
                       }}
                     />
                     <span className="sims-toggle-slider" />
@@ -755,9 +1253,7 @@ export function SettingsDashboard() {
                 <div className="sims-settings-row">
                   <div>
                     <strong className="text-sm text-white block">Permintaan Izin Operasi (Approval)</strong>
-                    <span className="text-xs text-slate-400">
-                      Kirim notifikasi mendesak saat agen meminta izin menjalankan perintah sensitif.
-                    </span>
+                    <span className="text-xs text-slate-400">Notifikasi saat agen meminta izin eksekusi</span>
                   </div>
                   <label className="sims-toggle-switch">
                     <input
@@ -765,357 +1261,219 @@ export function SettingsDashboard() {
                       checked={notifyOnApproval}
                       onChange={(e) => {
                         setNotifyOnApproval(e.target.checked);
-                        localStorage.setItem('aos.settings.notifyApproval', String(e.target.checked));
-                      }}
-                    />
-                    <span className="sims-toggle-slider" />
-                  </label>
-                </div>
-
-                <div className="sims-settings-row">
-                  <div>
-                    <strong className="text-sm text-white block">Nada Suara Notifikasi</strong>
-                    <span className="text-xs text-slate-400">
-                      Bunyikan suara lonceng halus saat notifikasi desktop dikirim.
-                    </span>
-                  </div>
-                  <label className="sims-toggle-switch">
-                    <input
-                      type="checkbox"
-                      checked={audioChimeOnNotif}
-                      onChange={(e) => {
-                        setAudioChimeOnNotif(e.target.checked);
-                        localStorage.setItem('aos.settings.notifChime', String(e.target.checked));
+                        handleSaveItem('aos.settings.notifyApproval', String(e.target.checked));
                       }}
                     />
                     <span className="sims-toggle-slider" />
                   </label>
                 </div>
               </div>
-            </>
-          )}
+            )}
 
-          {/* TAB 3: TAMPILAN & 3D */}
-          {activeTab === 'display' && (
-            <>
+            {/* 15. BILLING */}
+            {selectedKey === 'billing' && (
               <div className="sims-settings-section-card">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-sky-300">
-                  Mode Kantor Aktif
+                  Usage & Cost Breakdown
                 </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div
-                    onClick={() => shell.setViewMode('sims')}
-                    className={`p-3.5 rounded-xl border-2 cursor-pointer transition flex flex-col justify-between ${
-                      viewMode === 'sims'
-                        ? 'border-sky-400 bg-sky-500/20 shadow-[0_0_15px_rgba(56,189,248,0.25)]'
-                        : 'border-white/10 hover:border-sky-400/40 bg-slate-900/60'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="text-xl">🏡</span>
-                      <strong className="text-white text-sm">The Sims 2 3D Office</strong>
-                    </div>
-                    <p className="text-xs text-slate-300 mb-3">
-                      Lingkungan 3D Three.js lengkap dengan pencahayaan siang/malam, karakter bergerak, thought bubbles, dan kontrol kamera 360°.
-                    </p>
-                    <div className="flex items-center justify-between text-[11px] font-bold text-sky-300">
-                      <span>Status: {viewMode === 'sims' ? '✓ Aktif' : 'Pilih'}</span>
-                    </div>
-                  </div>
-
-                  <div
-                    onClick={() => shell.setViewMode('claude')}
-                    className={`p-3.5 rounded-xl border-2 cursor-pointer transition flex flex-col justify-between ${
-                      viewMode === 'claude'
-                        ? 'border-sky-400 bg-sky-500/20 shadow-[0_0_15px_rgba(56,189,248,0.25)]'
-                        : 'border-white/10 hover:border-sky-400/40 bg-slate-900/60'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="text-xl">👾</span>
-                      <strong className="text-white text-sm">Claude Classic Pixel Office</strong>
-                    </div>
-                    <p className="text-xs text-slate-300 mb-3">
-                      Tampilan 2D pixel art retro bernostalgia dengan denah ruang kerja minimalis yang ringan dan cepat.
-                    </p>
-                    <div className="flex items-center justify-between text-[11px] font-bold text-sky-300">
-                      <span>Status: {viewMode === 'claude' ? '✓ Aktif' : 'Pilih'}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="sims-settings-section-card">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-sky-300">
-                  Pengaturan Grafik 3D
-                </h3>
-                <div className="sims-settings-row">
+                <div className="p-3 bg-slate-900/60 rounded-xl border border-white/5 flex items-center justify-between">
                   <div>
-                    <strong className="text-sm text-white block">Selalu Tampilkan Label Agen</strong>
-                    <span className="text-xs text-slate-400">
-                      Menampilkan nama agen di atas kepala secara permanen tanpa harus mengarahkan kursor.
+                    <span className="text-xs text-slate-400 block">Biaya Hari Ini:</span>
+                    <strong className="text-lg text-emerald-300 font-mono">
+                      {formatUsd(todayCost(daily))}
+                    </strong>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-xs text-slate-400 block">Tren 7 Hari Terakhir:</span>
+                    <span className="text-sky-300 text-sm font-mono tracking-widest">
+                      {sparkline(daily.map((d) => d.cost_usd))}
                     </span>
                   </div>
-                  <label className="sims-toggle-switch">
-                    <input
-                      type="checkbox"
-                      checked={alwaysShowLabels}
-                      onChange={(e) => {
-                        setAlwaysShowLabels(e.target.checked);
-                        localStorage.setItem('aos.sims.alwaysShowLabels', String(e.target.checked));
-                      }}
-                    />
-                    <span className="sims-toggle-slider" />
-                  </label>
                 </div>
 
-                <div className="sims-settings-row">
-                  <div>
-                    <strong className="text-sm text-white block">Bayangan Tiga Dimensi (Shadows)</strong>
-                    <span className="text-xs text-slate-400">
-                      Kalkulasi bayangan realistis karakter dan furnitur di lantai kantor.
-                    </span>
-                  </div>
-                  <label className="sims-toggle-switch">
-                    <input
-                      type="checkbox"
-                      checked={shadowsEnabled}
-                      onChange={(e) => {
-                        setShadowsEnabled(e.target.checked);
-                        localStorage.setItem('aos.sims.shadows', String(e.target.checked));
-                      }}
-                    />
-                    <span className="sims-toggle-slider" />
-                  </label>
-                </div>
-
-                <div className="sims-settings-row">
-                  <div>
-                    <strong className="text-sm text-white block">Mode Performa Tinggi (60 FPS)</strong>
-                    <span className="text-xs text-slate-400">
-                      Matikan untuk menghemat baterai laptop (mode hemat daya 30 FPS).
-                    </span>
-                  </div>
-                  <label className="sims-toggle-switch">
-                    <input
-                      type="checkbox"
-                      checked={highFpsMode}
-                      onChange={(e) => {
-                        setHighFpsMode(e.target.checked);
-                        localStorage.setItem('aos.sims.highFps', String(e.target.checked));
-                      }}
-                    />
-                    <span className="sims-toggle-slider" />
-                  </label>
-                </div>
-              </div>
-            </>
-          )}
-
-          {/* TAB 4: AGEN & AI */}
-          {activeTab === 'agents' && (
-            <>
-              <div className="sims-settings-section-card">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-sky-300">
-                  Daftar Agen Hermes ({PROFILES.length} Personel)
-                </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
-                  {PROFILES.map((p) => {
-                    const meta = getProfileMeta(p);
-                    return (
-                      <div
-                        key={p}
-                        className="p-3 bg-slate-900/60 border border-white/10 rounded-xl flex items-start gap-2.5"
-                      >
-                        <span
-                          className="w-3.5 h-3.5 rounded-full inline-block mt-0.5 shrink-0 shadow-[0_0_8px]"
-                          style={{
-                            backgroundColor: meta?.plumbobColor ?? '#38bdf8',
-                            boxShadow: `0 0 8px ${meta?.plumbobColor ?? '#38bdf8'}`,
-                          }}
-                        />
-                        <div className="min-w-0">
-                          <strong className="text-xs text-white capitalize block font-bold">
-                            {p}
-                          </strong>
-                          <span className="text-[11px] text-sky-300 block">
-                            {meta?.title ?? 'Agent'}
-                          </span>
-                          <span className="text-[10px] text-slate-400 block mt-1 line-clamp-2">
-                            {meta?.role ?? '-'}
-                          </span>
+                {costs && costs.byProfile.length > 0 && (
+                  <div className="mt-2">
+                    <h4 className="text-xs font-semibold text-slate-300 mb-1.5">Penggunaan per Agen:</h4>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      {costs.byProfile.map((p) => (
+                        <div key={p.profile} className="p-2 bg-slate-900/40 rounded border border-white/5 flex justify-between">
+                          <span className="capitalize">{p.profile}</span>
+                          <span className="font-mono text-emerald-400">{formatUsd(p.cost_usd)}</span>
                         </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
+            )}
 
+            {/* 16. PROVIDERS */}
+            {selectedKey === 'providers' && (
               <div className="sims-settings-section-card">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-sky-300">
-                  Konfigurasi 9Router & Proxy AI
+                  Configured AI Providers
                 </h3>
-                <div className="text-xs space-y-2 text-slate-300">
-                  <div className="flex justify-between py-1 border-b border-white/5">
-                    <span className="text-slate-400">Endpoint 9Router:</span>
-                    <code className="text-sky-300 font-mono">http://127.0.0.1:20128/v1</code>
-                  </div>
-                  <div className="flex justify-between py-1 border-b border-white/5">
-                    <span className="text-slate-400">Model Default:</span>
-                    <span className="text-white font-mono">claude-3-5-sonnet-20241022</span>
-                  </div>
-                  <div className="flex justify-between py-1">
-                    <span className="text-slate-400">Protokol Komunikasi:</span>
-                    <span className="text-emerald-300 font-semibold">WebSocket Relay + SSE</span>
-                  </div>
-                </div>
-              </div>
-            </>
-          )}
-
-          {/* TAB 5: KEAMANAN */}
-          {activeTab === 'security' && (
-            <>
-              <div className="sims-settings-section-card">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-sky-300">
-                  Status Token & Autentikasi Sistem
-                </h3>
-                <div className="space-y-3 text-xs">
-                  <div className="flex items-center justify-between p-2.5 bg-slate-900/60 rounded-lg border border-white/5">
+                <div className="space-y-2 text-xs">
+                  <div className="p-3 bg-slate-900/60 rounded-lg border border-white/5 flex items-center justify-between">
                     <div>
-                      <strong className="text-white block">AOS_UI_TOKEN</strong>
-                      <span className="text-slate-400 text-[11px]">
-                        Cookie autentikasi untuk antarmuka web The Sims Office
-                      </span>
+                      <strong className="text-white block">9Router Local AI Proxy</strong>
+                      <span className="text-[11px] text-slate-400 font-mono">http://127.0.0.1:20128/v1</span>
                     </div>
-                    <span className="text-[11px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
-                      ✓ Terpasang & Aktif
-                    </span>
+                    <span className="text-emerald-400 font-bold">● Active</span>
                   </div>
-
-                  <div className="flex items-center justify-between p-2.5 bg-slate-900/60 rounded-lg border border-white/5">
+                  <div className="p-3 bg-slate-900/60 rounded-lg border border-white/5 flex items-center justify-between">
                     <div>
-                      <strong className="text-white block">AOS_BRIDGE_TOKEN</strong>
-                      <span className="text-slate-400 text-[11px]">
-                        Token pengiriman event dari background Hermes ke Core
-                      </span>
+                      <strong className="text-white block">Anthropic Claude</strong>
+                      <span className="text-[11px] text-slate-400">Direct API Integration via env key</span>
                     </div>
-                    <span className="text-[11px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
-                      ✓ Terproteksi
-                    </span>
-                  </div>
-
-                  <div className="flex items-center justify-between p-2.5 bg-slate-900/60 rounded-lg border border-white/5">
-                    <div>
-                      <strong className="text-white block">AOS_SERVE_TOKEN</strong>
-                      <span className="text-slate-400 text-[11px]">
-                        Token relay interaktif WebSocket obrolan live
-                      </span>
-                    </div>
-                    <span className="text-[11px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
-                      ✓ Siap Relay
-                    </span>
+                    <span className="text-sky-300 font-semibold">Configured</span>
                   </div>
                 </div>
               </div>
+            )}
 
+            {/* 17. GATEWAYS */}
+            {selectedKey === 'gateways' && (
               <div className="sims-settings-section-card">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-sky-300">
-                  Kebijakan Guardrail & Izin Operasi
+                  External Messaging Gateways
                 </h3>
-                <p className="text-xs text-slate-300 leading-relaxed">
-                  Operasi penulisan di luar folder workspace, eksekusi perintah terminal shell berisiko tinggi, dan modifikasi konfigurasi core selalu memerlukan konfirmasi manual melalui panel <strong>Approval</strong> sebelum dieksekusi oleh agen Hermes.
-                </p>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="p-2.5 bg-slate-900/50 rounded-lg border border-white/5 flex items-center justify-between">
+                    <span>📱 Telegram Bot</span>
+                    <span className="text-slate-500 text-[11px]">Standby</span>
+                  </div>
+                  <div className="p-2.5 bg-slate-900/50 rounded-lg border border-white/5 flex items-center justify-between">
+                    <span>💬 WhatsApp Bridge</span>
+                    <span className="text-slate-500 text-[11px]">Standby</span>
+                  </div>
+                  <div className="p-2.5 bg-slate-900/50 rounded-lg border border-white/5 flex items-center justify-between">
+                    <span>🎮 Discord Bot</span>
+                    <span className="text-slate-500 text-[11px]">Standby</span>
+                  </div>
+                  <div className="p-2.5 bg-slate-900/50 rounded-lg border border-white/5 flex items-center justify-between">
+                    <span>💼 Slack App</span>
+                    <span className="text-slate-500 text-[11px]">Standby</span>
+                  </div>
+                </div>
               </div>
-            </>
-          )}
+            )}
 
-          {/* TAB 6: SISTEM & BACKUP */}
-          {activeTab === 'system' && (
-            <>
+            {/* 18. KEYBOARD SHORTCUTS */}
+            {selectedKey === 'shortcuts' && (
               <div className="sims-settings-section-card">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-sky-300">
-                  Kesehatan Komponen (Health Probes)
+                  Available Keyboard Hotkeys
                 </h3>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {health.map((h) => (
-                    <div
-                      key={h.id}
-                      className="p-2.5 bg-slate-900/60 rounded-lg border border-white/5 flex items-center justify-between"
-                    >
-                      <div>
-                        <strong className="text-xs text-white block">{h.label}</strong>
-                        <span className="text-[10px] text-slate-400">{h.detail}</span>
-                      </div>
-                      <span
-                        className={`w-2.5 h-2.5 rounded-full shrink-0 ${
-                          h.status === 'ok'
-                            ? 'bg-emerald-400 shadow-[0_0_8px_#10b981]'
-                            : h.status === 'down'
-                              ? 'bg-rose-400 shadow-[0_0_8px_#f43f5e]'
-                              : 'bg-slate-500'
-                        }`}
-                      />
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="p-2 bg-slate-900/50 rounded flex justify-between items-center">
+                    <span className="text-slate-300">Fokus Agen (1–6)</span>
+                    <kbd className="px-2 py-0.5 bg-slate-800 rounded border border-white/10 font-mono">1 – 6</kbd>
+                  </div>
+                  <div className="p-2 bg-slate-900/50 rounded flex justify-between items-center">
+                    <span className="text-slate-300">Buka Chat All</span>
+                    <kbd className="px-2 py-0.5 bg-slate-800 rounded border border-white/10 font-mono">Shift + C</kbd>
+                  </div>
+                  <div className="p-2 bg-slate-900/50 rounded flex justify-between items-center">
+                    <span className="text-slate-300">Buka Chat Agen</span>
+                    <kbd className="px-2 py-0.5 bg-slate-800 rounded border border-white/10 font-mono">C / Ctrl + K</kbd>
+                  </div>
+                  <div className="p-2 bg-slate-900/50 rounded flex justify-between items-center">
+                    <span className="text-slate-300">Toggle Papan Kanban</span>
+                    <kbd className="px-2 py-0.5 bg-slate-800 rounded border border-white/10 font-mono">B</kbd>
+                  </div>
+                  <div className="p-2 bg-slate-900/50 rounded flex justify-between items-center">
+                    <span className="text-slate-300">Toggle Approval Inbox</span>
+                    <kbd className="px-2 py-0.5 bg-slate-800 rounded border border-white/10 font-mono">A</kbd>
+                  </div>
+                  <div className="p-2 bg-slate-900/50 rounded flex justify-between items-center">
+                    <span className="text-slate-300">Dashboard Pengaturan</span>
+                    <kbd className="px-2 py-0.5 bg-slate-800 rounded border border-white/10 font-mono">S</kbd>
+                  </div>
+                  <div className="p-2 bg-slate-900/50 rounded flex justify-between items-center">
+                    <span className="text-slate-300">Tutup Panel / Modal</span>
+                    <kbd className="px-2 py-0.5 bg-slate-800 rounded border border-white/10 font-mono">Esc</kbd>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 19. TOOLS & KEYS */}
+            {selectedKey === 'tools' && (
+              <div className="sims-settings-section-card">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-sky-300">
+                  Registered Agent Tools & Capabilities
+                </h3>
+                <div className="space-y-1.5 text-xs">
+                  {['terminal (CLI Execution)', 'read_file (File Reading)', 'write_file (File Creation)', 'web_search (Web Intelligence)', 'kanban_move (Task Board Automation)'].map((t) => (
+                    <div key={t} className="p-2 bg-slate-900/50 rounded border border-white/5 flex items-center justify-between font-mono">
+                      <span>{t}</span>
+                      <span className="text-emerald-400 font-bold text-[10px]">REGISTERED</span>
                     </div>
                   ))}
                 </div>
               </div>
+            )}
 
+            {/* 20. SESSIONS */}
+            {selectedKey === 'sessions' && (
               <div className="sims-settings-section-card">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-sky-300">
-                  Cadangan Database & Pemeliharaan
+                  Chat Sessions & Persistence
                 </h3>
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                  <div>
-                    <strong className="text-sm text-white block">Cadangkan Data (Backup Core DB)</strong>
-                    <span className="text-xs text-slate-400">
-                      Menyimpan snapshot basis data SQLite core, kartu Kanban, dan event log.
-                    </span>
-                  </div>
+                <p className="text-xs text-slate-300">
+                  Riwayat percakapan disimpan secara lokal di basis data SQLite sesi Hermes. Sesi lama dapat dibuka kembali melalui pemilih sesi di panel obrolan.
+                </p>
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (confirm('Hapus seluruh sesi obrolan lokal?')) {
+                        localStorage.clear();
+                        window.location.reload();
+                      }
+                    }}
+                    className="px-3 py-1.5 bg-rose-500/20 border border-rose-400/30 text-rose-200 rounded-lg text-xs font-semibold"
+                  >
+                    Bersihkan Cache Sesi
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* 21. ABOUT */}
+            {selectedKey === 'about' && (
+              <div className="sims-settings-section-card">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-sky-300">
+                  Hermes Agentic OS
+                </h3>
+                <div className="text-xs text-slate-300 space-y-1.5">
+                  <div>Versi: <strong className="text-sky-300">v0.1.0-alpha</strong></div>
+                  <div>Engine: <strong className="text-white">Hermes AI Multi-Agent Operating System</strong></div>
+                  <div>Roster: <strong className="text-white">Chief, Dev, UX, Sec, Doc, Ops (6 Personel)</strong></div>
+                  <div>Zona Waktu: <strong className="text-white">Asia/Jakarta (WIB)</strong></div>
+                </div>
+
+                <div className="pt-3 border-t border-white/10">
+                  <h4 className="text-xs font-semibold text-slate-300 mb-2">Cadangan Database Core</h4>
                   <button
                     type="button"
                     disabled={backupLoading}
                     onClick={handleRunBackup}
-                    className="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-lg text-xs font-bold cursor-pointer transition shadow disabled:opacity-50 shrink-0"
+                    className="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-lg text-xs font-bold cursor-pointer transition shadow disabled:opacity-50"
                   >
-                    {backupLoading ? '⏳ Sedang Mencadangkan…' : '💾 Buat Backup Sekarang'}
+                    {backupLoading ? '⏳ Sedang Mencadangkan…' : '💾 Buat Backup Database Sekarang'}
                   </button>
-                </div>
-                {backupResult && (
-                  <div
-                    className={`p-3 rounded-lg text-xs mt-1 border ${
-                      backupResult.ok
-                        ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-200'
-                        : 'bg-rose-950/40 border-rose-500/30 text-rose-200'
-                    }`}
-                  >
-                    {backupResult.msg}
-                  </div>
-                )}
-              </div>
-
-              <div className="sims-settings-section-card">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-sky-300">
-                  Cache & Informasi Runtime
-                </h3>
-                <div className="flex items-center justify-between">
-                  <div className="text-xs text-slate-400">
-                    <div>Platform: <strong className="text-white">Windows (PowerShell)</strong></div>
-                    <div>Zona Waktu: <strong className="text-white">Asia/Jakarta (WIB)</strong></div>
-                    <div>Versi: <strong className="text-sky-300">Agentic OS v0.1.0</strong></div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleClearCache}
-                    className="px-3 py-1.5 bg-rose-500/20 hover:bg-rose-500/30 border border-rose-400/30 text-rose-200 rounded-lg text-xs font-semibold cursor-pointer transition"
-                  >
-                    Hapus Cache Preferensi
-                  </button>
+                  {backupResult && (
+                    <div className={`mt-2 p-2.5 rounded text-xs border ${backupResult.ok ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-200' : 'bg-rose-950/40 border-rose-500/30 text-rose-200'}`}>
+                      {backupResult.msg}
+                    </div>
+                  )}
                 </div>
               </div>
-            </>
-          )}
-        </div>
+            )}
+          </div>
+        </main>
       </div>
     </div>
   );
