@@ -598,11 +598,15 @@ export function SettingsDashboard() {
                         ? '⚙️ Model · Auxiliary Models'
                         : selectedKey === 'model_moa'
                           ? '👥 Model · Mixture of Agents'
-                          : selectedKey}
+                          : selectedKey === 'agents'
+                            ? '👥 Agents & Fleet'
+                            : selectedKey}
                 </span>
               </h2>
-              <p className="text-[11px] text-slate-400">
-                Konfigurasi parameter dan perilaku Hermes Agentic OS
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                {selectedKey === 'agents'
+                  ? 'Kelola armada AI, perizinan tier, kepribadian Sims, dan penempatan meja kantor'
+                  : 'Konfigurasi parameter dan perilaku Hermes Agentic OS'}
               </p>
             </div>
             <button
@@ -1020,84 +1024,101 @@ export function SettingsDashboard() {
             {/* 7b. AGENTS & FLEET */}
             {selectedKey === 'agents' && (
               <div className="space-y-4">
-                <div className="sims-settings-section-card">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="text-xs font-bold uppercase tracking-wider text-sky-300">
-                        Armada Agent & Manajemen Roster
-                      </h3>
-                      <p className="text-xs text-slate-400 mt-0.5">
-                        Kelola seluruh agent AI yang aktif di Agentic OS, atur tier hak akses, dan kepribadian Sims 3D.
-                      </p>
+                {/* Modern Toolbar */}
+                <div className="flex items-center justify-between p-4 rounded-xl bg-slate-900/60 border border-white/8 backdrop-blur-sm">
+                  <div>
+                    <div className="flex items-center gap-2.5">
+                      <span className="font-bold text-sm text-white">Armada Agent Hermes</span>
+                      <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full bg-sky-500/15 text-sky-300 border border-sky-500/30">
+                        {activeProfiles.length} Personel
+                      </span>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        simsAudio.playClick();
-                        setWizardOpen(true);
-                      }}
-                      className="px-4 py-2 rounded-xl bg-gradient-to-r from-sky-500 to-indigo-500 hover:from-sky-400 hover:to-indigo-400 text-slate-950 font-bold text-xs shadow-lg shadow-sky-500/25 transition-all flex items-center gap-2"
-                    >
-                      <span>✨</span>
-                      <span>Tambah Agent Baru</span>
-                    </button>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Daftar seluruh agen AI yang terdaftar di konfigurasi sistem & kantor 3D Sims.
+                    </p>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      simsAudio.playClick();
+                      setWizardOpen(true);
+                    }}
+                    className="px-3.5 py-1.5 rounded-lg bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs shadow-md shadow-sky-500/20 transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
+                  >
+                    <span className="text-base leading-none font-bold">+</span>
+                    <span>Tambah Agent Baru</span>
+                  </button>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {/* Cards Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                   {activeProfiles.map((p) => {
                     const meta = getProfileMeta(p);
-                    const tierBadgeClass =
+                    const plumbob = meta.customPlumbobColor || (meta.tier === 'os-brain' ? '#22c55e' : meta.tier === 'os-worker' ? '#eab308' : '#a855f7');
+                    const tierBadge =
                       meta.tier === 'os-brain'
-                        ? 'bg-sky-500/20 text-sky-300 border-sky-500/30'
+                        ? { label: 'BRAIN', bg: 'bg-sky-500/10 text-sky-400 border-sky-500/30' }
                         : meta.tier === 'os-worker'
-                        ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
-                        : 'bg-purple-500/20 text-purple-300 border-purple-500/30';
+                          ? { label: 'WORKER', bg: 'bg-amber-500/10 text-amber-400 border-amber-500/30' }
+                          : { label: 'PRIVATE', bg: 'bg-purple-500/10 text-purple-400 border-purple-500/30' };
 
                     return (
                       <div
                         key={p}
-                        className="p-4 rounded-xl bg-slate-900/80 border border-white/10 hover:border-sky-500/30 transition-all flex flex-col justify-between space-y-3"
+                        className="group p-4 rounded-xl bg-slate-900/60 hover:bg-slate-900/90 border border-white/8 hover:border-sky-500/30 transition-all duration-200 flex flex-col justify-between space-y-3 relative overflow-hidden"
                       >
+                        {/* Top: Avatar + Name + Title + Tier */}
                         <div className="flex items-start gap-3">
                           <div
-                            className="w-10 h-10 rounded-xl flex items-center justify-center text-lg border border-white/15 relative shrink-0 shadow-md"
-                            style={{ backgroundColor: `${meta.customPlumbobColor || '#22c55e'}22` }}
+                            className="w-11 h-11 rounded-xl flex items-center justify-center text-xl shrink-0 relative border border-white/10 shadow-inner"
+                            style={{ background: `radial-gradient(circle at 35% 35%, ${plumbob}25, #080f1d 80%)` }}
                           >
                             <span>{meta.aspirationIcon || '👤'}</span>
                             <span
-                              className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full border border-slate-900 shadow-sm"
-                              style={{ backgroundColor: meta.customPlumbobColor || '#22c55e' }}
+                              className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full border-2 border-slate-900 shadow-sm"
+                              style={{ backgroundColor: plumbob }}
+                              title={`Plumbob: ${plumbob}`}
                             />
                           </div>
+
                           <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2">
-                              <span className="font-bold text-white text-xs capitalize truncate">{p}</span>
-                              <span className={`text-[10px] px-1.5 py-0.2 rounded border font-mono ${tierBadgeClass}`}>
-                                {meta.tier}
+                            <div className="flex items-center justify-between gap-1.5">
+                              <span className="font-bold text-white text-sm tracking-wide capitalize truncate group-hover:text-sky-300 transition-colors">
+                                {p}
+                              </span>
+                              <span className={`text-[9px] uppercase tracking-wider font-mono font-bold px-2 py-0.5 rounded-full border ${tierBadge.bg}`}>
+                                {tierBadge.label}
                               </span>
                             </div>
-                            <div className="text-[11px] text-sky-300 truncate">{meta.title}</div>
-                            <div className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1.5">
+                            <div className="text-xs text-slate-300 font-medium truncate mt-0.5">
+                              {meta.title}
+                            </div>
+                            <div className="text-[11px] text-slate-400 flex items-center gap-1.5 mt-0.5 font-sans">
                               <span>{meta.zodiacIcon} {meta.zodiac}</span>
-                              <span>•</span>
+                              <span className="text-slate-600">•</span>
                               <span>{meta.aspirationLabel}</span>
                             </div>
                           </div>
                         </div>
 
-                        <p className="text-[11px] text-slate-300 leading-relaxed line-clamp-2 italic">
-                          "{meta.soulBio}"
+                        {/* Middle: Bio */}
+                        <p className="text-xs text-slate-300/80 leading-relaxed line-clamp-2">
+                          {meta.soulBio}
                         </p>
 
-                        <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[11px]">
-                          <div className="flex gap-1 overflow-hidden">
+                        {/* Bottom: Traits + Chat Button */}
+                        <div className="pt-2.5 border-t border-white/6 flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1 overflow-hidden">
                             {meta.traits.slice(0, 2).map((t) => (
-                              <span key={t} className="text-[9px] px-1.5 py-0.5 rounded bg-white/5 text-slate-300 border border-white/5">
+                              <span
+                                key={t}
+                                className="text-[10px] px-2 py-0.5 rounded-md bg-white/5 text-slate-400 border border-white/5 truncate max-w-[105px]"
+                              >
                                 #{t}
                               </span>
                             ))}
                           </div>
+
                           <button
                             type="button"
                             onClick={() => {
@@ -1105,10 +1126,10 @@ export function SettingsDashboard() {
                               shell.select(p);
                               shell.toggleSettings();
                             }}
-                            className="text-sky-400 hover:text-sky-300 hover:underline flex items-center gap-1 font-medium"
+                            className="px-2.5 py-1 rounded-lg bg-sky-500/10 hover:bg-sky-500/25 text-sky-300 hover:text-white border border-sky-500/25 text-[11px] font-semibold flex items-center gap-1 transition-all shrink-0 cursor-pointer"
                           >
+                            <span>💬</span>
                             <span>Uji Chat</span>
-                            <span>→</span>
                           </button>
                         </div>
                       </div>

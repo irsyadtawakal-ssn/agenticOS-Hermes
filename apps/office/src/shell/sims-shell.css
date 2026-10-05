@@ -846,13 +846,13 @@ body,
 
 .sims-settings-modal {
   width: 100%;
-  max-width: 980px;
-  height: 85vh;
-  max-height: 780px;
-  background: #0f172a;
-  border: 1px solid rgba(88, 180, 248, 0.35);
-  border-radius: 14px;
-  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.8), 0 0 25px rgba(56, 189, 248, 0.2);
+  max-width: 1040px;
+  height: 86vh;
+  max-height: 800px;
+  background: #090e17;
+  border: 1px solid rgba(56, 189, 248, 0.28);
+  border-radius: 16px;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.85), 0 0 35px rgba(56, 189, 248, 0.15);
   color: #f1f5f9;
   display: flex;
   flex-direction: row;
@@ -862,10 +862,10 @@ body,
 
 /* Hermes Left Sidebar */
 .hermes-settings-sidebar {
-  width: 250px;
-  min-width: 250px;
-  background: #0a0f1d;
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  width: 240px;
+  min-width: 240px;
+  background: #070c16;
+  border-right: 1px solid rgba(255, 255, 255, 0.07);
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -875,11 +875,30 @@ body,
 .hermes-sidebar-scroll {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 10px 8px;
   display: flex;
   flex-direction: column;
   gap: 1.5px;
   scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+}
+
+.hermes-sidebar-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+
+.hermes-sidebar-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.hermes-sidebar-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 9999px;
+}
+
+.hermes-sidebar-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
 }
 
 .hermes-nav-item {
@@ -976,17 +995,48 @@ body,
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: #0f172a;
+  background: #090e1a;
   overflow: hidden;
+  min-width: 0;
 }
 
 .hermes-settings-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 20px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  background: #111d33;
+  padding: 14px 24px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  background: #0d1527;
+  flex-shrink: 0;
+}
+
+.hermes-settings-body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 22px 24px 48px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(56, 189, 248, 0.2) transparent;
+}
+
+.hermes-settings-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.hermes-settings-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.hermes-settings-body::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 9999px;
+}
+
+.hermes-settings-body::-webkit-scrollbar-thumb:hover {
+  background: rgba(56, 189, 248, 0.4);
 }
 
 .sims-settings-header {
