@@ -7,10 +7,40 @@ import { requestNotificationPermission, sendDesktopNotification } from './notifi
 import { shell, useShell } from './store.ts';
 import './sims-shell.css';
 
-type SettingsTab = 'audio' | 'notifications' | 'display' | 'agents' | 'security' | 'system';
+type SettingsTab = 'general' | 'audio' | 'notifications' | 'display' | 'agents' | 'security' | 'system';
 
 export function SettingsDashboard() {
-  const [activeTab, setActiveTab] = useState<SettingsTab>('audio');
+  const [activeTab, setActiveTab] = useState<SettingsTab>('general');
+
+  // General Settings State
+  const [officeName, setOfficeName] = useState(() => {
+    return localStorage.getItem('aos.settings.officeName') || 'Hermes Office';
+  });
+  const [operatorName, setOperatorName] = useState(() => {
+    return localStorage.getItem('aos.settings.operatorName') || 'Operator';
+  });
+  const [operatorRole, setOperatorRole] = useState(() => {
+    return localStorage.getItem('aos.settings.operatorRole') || 'Project Lead';
+  });
+  const [language, setLanguage] = useState(() => {
+    return localStorage.getItem('aos.settings.language') || 'id';
+  });
+  const [timezone, setTimezone] = useState(() => {
+    return localStorage.getItem('aos.settings.timezone') || 'Asia/Jakarta';
+  });
+  const [timeFormat, setTimeFormat] = useState(() => {
+    return localStorage.getItem('aos.settings.timeFormat') || '24h';
+  });
+  const [chatSendKey, setChatSendKey] = useState(() => {
+    return localStorage.getItem('aos.settings.chatSendKey') || 'enter';
+  });
+  const [speechLang, setSpeechLang] = useState(() => {
+    return localStorage.getItem('aos.settings.speechLang') || 'id-ID';
+  });
+  const [defaultDockTab, setDefaultDockTab] = useState(() => {
+    return localStorage.getItem('aos.settings.defaultDockTab') || 'cards';
+  });
+  const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
 
   // Audio State
   const [isMuted, setIsMuted] = useState(() => simsAudio.isMuted());
@@ -62,6 +92,52 @@ export function SettingsDashboard() {
     window.addEventListener('focus', checkPerm);
     return () => window.removeEventListener('focus', checkPerm);
   }, []);
+
+  const handleSaveGeneral = () => {
+    simsAudio.playBubbleClick();
+    localStorage.setItem('aos.settings.officeName', officeName.trim() || 'Hermes Office');
+    localStorage.setItem('aos.settings.operatorName', operatorName.trim() || 'Operator');
+    localStorage.setItem('aos.settings.operatorRole', operatorRole);
+    localStorage.setItem('aos.settings.language', language);
+    localStorage.setItem('aos.settings.timezone', timezone);
+    localStorage.setItem('aos.settings.timeFormat', timeFormat);
+    localStorage.setItem('aos.settings.chatSendKey', chatSendKey);
+    localStorage.setItem('aos.settings.speechLang', speechLang);
+    localStorage.setItem('aos.settings.defaultDockTab', defaultDockTab);
+
+    window.dispatchEvent(new Event('aos-settings-updated'));
+    setSaveSuccessMsg('Pengaturan umum berhasil disimpan!');
+    setTimeout(() => setSaveSuccessMsg(null), 3000);
+  };
+
+  const handleResetGeneral = () => {
+    if (confirm('Kembalikan pengaturan umum ke nilai default?')) {
+      simsAudio.playBubbleClick();
+      setOfficeName('Hermes Office');
+      setOperatorName('Operator');
+      setOperatorRole('Project Lead');
+      setLanguage('id');
+      setTimezone('Asia/Jakarta');
+      setTimeFormat('24h');
+      setChatSendKey('enter');
+      setSpeechLang('id-ID');
+      setDefaultDockTab('cards');
+
+      localStorage.removeItem('aos.settings.officeName');
+      localStorage.removeItem('aos.settings.operatorName');
+      localStorage.removeItem('aos.settings.operatorRole');
+      localStorage.removeItem('aos.settings.language');
+      localStorage.removeItem('aos.settings.timezone');
+      localStorage.removeItem('aos.settings.timeFormat');
+      localStorage.removeItem('aos.settings.chatSendKey');
+      localStorage.removeItem('aos.settings.speechLang');
+      localStorage.removeItem('aos.settings.defaultDockTab');
+
+      window.dispatchEvent(new Event('aos-settings-updated'));
+      setSaveSuccessMsg('Pengaturan umum dikembalikan ke default.');
+      setTimeout(() => setSaveSuccessMsg(null), 3000);
+    }
+  };
 
   const handleMuteToggle = () => {
     const nextMuted = simsAudio.toggleMute();
@@ -142,7 +218,7 @@ export function SettingsDashboard() {
                 Dashboard Pengaturan
               </h2>
               <p className="text-[11px] text-sky-200/80">
-                Pusat Konfigurasi & Preferensi Sistem Agentic OS Hermes
+                Pusat Konfigurasi Umum & Preferensi Sistem Agentic OS Hermes
               </p>
             </div>
           </div>
@@ -158,6 +234,20 @@ export function SettingsDashboard() {
 
         {/* Tab Switcher */}
         <div className="sims-settings-tab-list" role="tablist">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'general'}
+            className={`sims-settings-tab-btn ${activeTab === 'general' ? 'active' : ''}`}
+            onClick={() => {
+              simsAudio.playClick();
+              setActiveTab('general');
+            }}
+          >
+            <span>🏠</span>
+            <span>Pengaturan Umum</span>
+          </button>
+
           <button
             type="button"
             role="tab"
@@ -245,6 +335,254 @@ export function SettingsDashboard() {
 
         {/* Modal Body */}
         <div className="sims-settings-body">
+          {/* TAB 0: PENGATURAN UMUM */}
+          {activeTab === 'general' && (
+            <>
+              {saveSuccessMsg && (
+                <div className="p-3 bg-emerald-950/60 border border-emerald-500/40 rounded-xl text-emerald-200 text-xs font-semibold flex items-center justify-between">
+                  <span>✓ {saveSuccessMsg}</span>
+                  <button
+                    type="button"
+                    onClick={() => setSaveSuccessMsg(null)}
+                    className="text-emerald-400 hover:text-white text-xs"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+
+              {/* Identitas Organisasi & Kantor */}
+              <div className="sims-settings-section-card">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-sky-300">
+                    🏢 Identitas Kantor & Profil Pengguna
+                  </h3>
+                  <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-sky-500/20 text-sky-300 font-semibold border border-sky-400/30">
+                    {operatorRole} · {officeName}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">
+                      Nama Kantor / Workspace
+                    </label>
+                    <input
+                      type="text"
+                      value={officeName}
+                      onChange={(e) => setOfficeName(e.target.value)}
+                      placeholder="Contoh: Hermes HQ, Studio AI..."
+                      className="sims-chat-textarea w-full h-8 px-3 py-1 text-xs"
+                    />
+                    <span className="text-[10px] text-slate-400 mt-1 block">
+                      Nama ini ditampilkan pada baris informasi utama dan header workspace.
+                    </span>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">
+                      Nama Panggilan Operator (Anda)
+                    </label>
+                    <input
+                      type="text"
+                      value={operatorName}
+                      onChange={(e) => setOperatorName(e.target.value)}
+                      placeholder="Nama Anda..."
+                      className="sims-chat-textarea w-full h-8 px-3 py-1 text-xs"
+                    />
+                    <span className="text-[10px] text-slate-400 mt-1 block">
+                      Nama panggilan yang dikenali oleh agen asisten dalam percakapan.
+                    </span>
+                  </div>
+                </div>
+
+                <div className="pt-1">
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Peran / Jabatan Anda
+                  </label>
+                  <select
+                    value={operatorRole}
+                    onChange={(e) => setOperatorRole(e.target.value)}
+                    className="sims-chat-session-select w-full h-8 text-xs"
+                  >
+                    <option value="Project Lead">👑 Project Lead / Owner</option>
+                    <option value="Lead Architect">🛠️ Lead Architect / Tech Lead</option>
+                    <option value="Security Admin">🛡️ Security Admin / Officer</option>
+                    <option value="Operator">💻 System Operator</option>
+                    <option value="Reviewer">🔍 Quality & Code Reviewer</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Bahasa, Zona Waktu & Format */}
+              <div className="sims-settings-section-card">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-sky-300">
+                  🌐 Bahasa, Wilayah & Format Waktu
+                </h3>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">
+                      Bahasa Antarmuka
+                    </label>
+                    <select
+                      value={language}
+                      onChange={(e) => setLanguage(e.target.value)}
+                      className="sims-chat-session-select w-full h-8 text-xs"
+                    >
+                      <option value="id">Bahasa Indonesia (ID)</option>
+                      <option value="en">English (US)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">
+                      Zona Waktu Utama
+                    </label>
+                    <select
+                      value={timezone}
+                      onChange={(e) => setTimezone(e.target.value)}
+                      className="sims-chat-session-select w-full h-8 text-xs"
+                    >
+                      <option value="Asia/Jakarta">Asia/Jakarta (WIB · UTC+7)</option>
+                      <option value="Asia/Makassar">Asia/Makassar (WITA · UTC+8)</option>
+                      <option value="Asia/Jayapura">Asia/Jayapura (WIT · UTC+9)</option>
+                      <option value="UTC">UTC / GMT</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">
+                      Format Penunjuk Jam
+                    </label>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setTimeFormat('24h')}
+                        className={`flex-1 py-1.5 rounded-lg border text-xs font-semibold cursor-pointer transition ${
+                          timeFormat === '24h'
+                            ? 'bg-sky-500/25 border-sky-400 text-sky-200'
+                            : 'bg-slate-900 border-white/10 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        24 Jam
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setTimeFormat('12h')}
+                        className={`flex-1 py-1.5 rounded-lg border text-xs font-semibold cursor-pointer transition ${
+                          timeFormat === '12h'
+                            ? 'bg-sky-500/25 border-sky-400 text-sky-200'
+                            : 'bg-slate-900 border-white/10 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        12 Jam (AM/PM)
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Perilaku Obrolan & Masukan */}
+              <div className="sims-settings-section-card">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-sky-300">
+                  💬 Perilaku Obrolan & Dikte Suara
+                </h3>
+
+                <div className="sims-settings-row">
+                  <div>
+                    <strong className="text-sm text-white block">Kombinasi Tombol Kirim Pesan</strong>
+                    <span className="text-xs text-slate-400">
+                      Pilih tombol yang memicu pengiriman pesan di textarea obrolan.
+                    </span>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setChatSendKey('enter')}
+                      className={`px-3 py-1.5 rounded-lg border text-xs font-semibold cursor-pointer transition ${
+                        chatSendKey === 'enter'
+                          ? 'bg-sky-500/25 border-sky-400 text-sky-200'
+                          : 'bg-slate-900 border-white/10 text-slate-400'
+                      }`}
+                      title="Enter untuk kirim, Shift+Enter untuk baris baru"
+                    >
+                      Enter (Biasa)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setChatSendKey('ctrl')}
+                      className={`px-3 py-1.5 rounded-lg border text-xs font-semibold cursor-pointer transition ${
+                        chatSendKey === 'ctrl'
+                          ? 'bg-sky-500/25 border-sky-400 text-sky-200'
+                          : 'bg-slate-900 border-white/10 text-slate-400'
+                      }`}
+                      title="Ctrl+Enter untuk kirim, Enter untuk baris baru"
+                    >
+                      Ctrl + Enter
+                    </button>
+                  </div>
+                </div>
+
+                <div className="sims-settings-row">
+                  <div>
+                    <strong className="text-sm text-white block">Bahasa Dikte Suara (Speech Recognition)</strong>
+                    <span className="text-xs text-slate-400">
+                      Model bahasa yang dideteksi oleh mikrofon saat melakukan input suara.
+                    </span>
+                  </div>
+                  <select
+                    value={speechLang}
+                    onChange={(e) => setSpeechLang(e.target.value)}
+                    className="sims-chat-session-select text-xs h-8 px-2"
+                  >
+                    <option value="id-ID">🇮🇩 Bahasa Indonesia (id-ID)</option>
+                    <option value="en-US">🇺🇸 English (en-US)</option>
+                  </select>
+                </div>
+
+                <div className="sims-settings-row">
+                  <div>
+                    <strong className="text-sm text-white block">Tab Panel Samping Default saat Buka</strong>
+                    <span className="text-xs text-slate-400">
+                      Pilih panel samping mana yang otomatis terbuka saat pertama membuka kantor.
+                    </span>
+                  </div>
+                  <select
+                    value={defaultDockTab}
+                    onChange={(e) => setDefaultDockTab(e.target.value)}
+                    className="sims-chat-session-select text-xs h-8 px-2"
+                  >
+                    <option value="cards">📋 Kartu Kanban (Cards)</option>
+                    <option value="chat">💬 Percakapan (Chat)</option>
+                    <option value="activity">⚡ Log Aktivitas (Activity)</option>
+                    <option value="agent">👤 Status Agen (Inspector)</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Tombol Simpan & Reset */}
+              <div className="flex items-center justify-between pt-2">
+                <button
+                  type="button"
+                  onClick={handleResetGeneral}
+                  className="px-3.5 py-2 text-xs font-semibold text-rose-300 hover:text-white bg-rose-500/15 hover:bg-rose-500/30 border border-rose-400/30 rounded-xl transition cursor-pointer"
+                >
+                  🔄 Kembalikan ke Standar Default
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleSaveGeneral}
+                  className="px-5 py-2 text-xs font-bold text-white bg-sky-600 hover:bg-sky-500 rounded-xl shadow-lg cursor-pointer transition flex items-center gap-1.5"
+                >
+                  <span>💾</span>
+                  <span>Simpan Pengaturan Umum</span>
+                </button>
+              </div>
+            </>
+          )}
+
           {/* TAB 1: AUDIO */}
           {activeTab === 'audio' && (
             <>
@@ -731,7 +1069,7 @@ export function SettingsDashboard() {
                   <div>
                     <strong className="text-sm text-white block">Cadangkan Data (Backup Core DB)</strong>
                     <span className="text-xs text-slate-400">
-                      Menyimpan snapshot basis data SQLite SQLite core, kartu Kanban, dan event log.
+                      Menyimpan snapshot basis data SQLite core, kartu Kanban, dan event log.
                     </span>
                   </div>
                   <button

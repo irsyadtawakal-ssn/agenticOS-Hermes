@@ -94,4 +94,28 @@ describe('Settings Dashboard & Preferences', () => {
       expect(shell.getState().approvalsOpen).toBe(false);
     });
   });
+
+  describe('Pengaturan Umum (General Settings) persistence', () => {
+    it('stores and retrieves office identity settings', () => {
+      mockLocalStorage.setItem('aos.settings.officeName', 'HQ Nusantara');
+      mockLocalStorage.setItem('aos.settings.operatorName', 'Irsyad');
+      mockLocalStorage.setItem('aos.settings.operatorRole', 'Lead Architect');
+
+      expect(mockLocalStorage.getItem('aos.settings.officeName')).toBe('HQ Nusantara');
+      expect(mockLocalStorage.getItem('aos.settings.operatorName')).toBe('Irsyad');
+      expect(mockLocalStorage.getItem('aos.settings.operatorRole')).toBe('Lead Architect');
+    });
+
+    it('stores and retrieves language, timezone and chat input behavior', () => {
+      mockLocalStorage.setItem('aos.settings.language', 'id');
+      mockLocalStorage.setItem('aos.settings.timezone', 'Asia/Jakarta');
+      mockLocalStorage.setItem('aos.settings.chatSendKey', 'ctrl');
+      mockLocalStorage.setItem('aos.settings.speechLang', 'id-ID');
+
+      expect(mockLocalStorage.getItem('aos.settings.language')).toBe('id');
+      expect(mockLocalStorage.getItem('aos.settings.timezone')).toBe('Asia/Jakarta');
+      expect(mockLocalStorage.getItem('aos.settings.chatSendKey')).toBe('ctrl');
+      expect(mockLocalStorage.getItem('aos.settings.speechLang')).toBe('id-ID');
+    });
+  });
 });

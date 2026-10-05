@@ -77,7 +77,11 @@ export default function AosShell() {
     try {
       const sp = new URLSearchParams(window.location.search);
       if (sp.get('kanban')) shell.toggleDrawer();
-      const tp = sp.get('tab');
+      const tp =
+        sp.get('tab') ||
+        (typeof localStorage !== 'undefined'
+          ? localStorage.getItem('aos.settings.defaultDockTab')
+          : null);
       if (tp === 'chat' || tp === 'cards' || tp === 'activity' || tp === 'agent') {
         shell.setTab(tp);
       }

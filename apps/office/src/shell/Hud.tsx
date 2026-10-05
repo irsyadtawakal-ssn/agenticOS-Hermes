@@ -103,9 +103,9 @@ export function Hud() {
             ? 'border-sky-400 text-sky-200 bg-sky-500/25 shadow-[0_0_8px_rgba(56,189,248,0.4)]'
             : 'border-white/10 hover:border-sky-400/40 hover:bg-sky-500/10 text-slate-300'
         }`}
-        title="Buka Dashboard Pengaturan (Shortcut: S)"
+        title="Buka Dashboard Pengaturan Umum (Shortcut: S)"
       >
-        ⚙️ Pengaturan (S)
+        ⚙️ Pengaturan Umum (S)
       </button>
 
       <ul className="flex items-center gap-8 shrink-0 ml-4" aria-label="Kesehatan sistem">

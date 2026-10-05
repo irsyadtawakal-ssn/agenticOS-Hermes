@@ -226,7 +226,7 @@ export function ChatPanel({ profile }: { profile: string }) {
 
     try {
       const recognition = new SpeechRec();
-      recognition.lang = 'id-ID';
+      recognition.lang = (typeof localStorage !== 'undefined' && localStorage.getItem('aos.settings.speechLang')) || 'id-ID';
       recognition.continuous = false;
       recognition.interimResults = false;
 
@@ -325,9 +325,17 @@ export function ChatPanel({ profile }: { profile: string }) {
   }
 
   function onKey(e: KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      submit();
+    const sendKey = (typeof localStorage !== 'undefined' && localStorage.getItem('aos.settings.chatSendKey')) || 'enter';
+    if (sendKey === 'ctrl') {
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        submit();
+      }
+    } else {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        submit();
+      }
     }
   }
 
