@@ -82,3 +82,5 @@ export const getHealth = () => call<HealthComponent[]>('/v1/health/components');
 export const getEvents = (profile: string, limit = 50) =>
   call<Array<Record<string, unknown>>>(`/v1/events?profile=${encodeURIComponent(profile)}&limit=${limit}`);
 export const getAgents = () => call<AgentState[]>('/v1/agents');
+export const triggerBackup = () =>
+  call<{ path?: string; bytes?: number; timestamp?: number; files?: string[] }>('/v1/backup', post({}));

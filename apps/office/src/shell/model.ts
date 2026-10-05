@@ -81,7 +81,8 @@ export type KeyAction =
   | { type: 'kanban' }
   | { type: 'close' }
   | { type: 'chat' }
-  | { type: 'chat_all' };
+  | { type: 'chat_all' }
+  | { type: 'settings' };
 
 interface KeyLike {
   key: string;
@@ -105,6 +106,7 @@ export function keyAction(e: KeyLike): KeyAction | null {
   if (e.key.length === 1 && index >= 0 && index < PROFILES.length) return { type: 'focus', profile: PROFILES[index] };
   if (e.key.toLowerCase() === 'a') return { type: 'approvals' };
   if (e.key.toLowerCase() === 'b') return { type: 'kanban' };
+  if (e.key.toLowerCase() === 's') return { type: 'settings' };
   if (e.shiftKey && e.key.toLowerCase() === 'c') return { type: 'chat_all' };
   if (e.key.toLowerCase() === 'c') return { type: 'chat' };
   return null;

@@ -9,6 +9,7 @@ import { KanbanDrawer } from './KanbanDrawer.tsx';
 import { keyAction } from './model.ts';
 import { shell, useShell } from './store.ts';
 import { requestNotificationPermission } from './notifications.ts';
+import { SettingsDashboard } from './SettingsDashboard.tsx';
 
 const SimsOfficeView = lazy(() => import('../sims-office/SimsOfficeView.tsx').then((m) => ({ default: m.SimsOfficeView })));
 const ClaudeOfficeView = lazy(() => import('../claude-office/ClaudeOfficeView.tsx').then(module => ({ default: module.ClaudeOfficeView })));
@@ -17,7 +18,8 @@ export default function AosShell() {
   const selected = useShell((s) => s.selected);
   const drawerOpen = useShell((s) => s.drawerOpen);
   const toast = useShell((s) => s.toast);
-  const [viewMode, setViewMode] = useState<'sims' | 'claude'>('sims');
+  const viewMode = useShell((s) => s.viewMode);
+  const settingsOpen = useShell((s) => s.settingsOpen);
 
   useEffect(() => {
     shell.refreshAll();
@@ -65,6 +67,9 @@ export default function AosShell() {
           const el = document.querySelector('.sims-chat-textarea') as HTMLTextAreaElement | null;
           el?.focus();
         }, 60);
+      } else if (action.type === 'settings') {
+        simsAudio.playBubbleClick();
+        shell.toggleSettings();
       }
       e.preventDefault();
     };
@@ -103,11 +108,11 @@ export default function AosShell() {
         <div className="isolate h-full">
           <Suspense fallback={<div role="status" className="p-24">Memuat The Sims 2 Office…</div>}>
             {viewMode === 'sims' ? (
-              <SimsOfficeView onSwitchClassic={() => setViewMode('claude')} />
+              <SimsOfficeView onSwitchClassic={() => shell.setViewMode('claude')} />
             ) : (
               <div className="relative w-full h-full">
                 <button
-                  onClick={() => setViewMode('sims')}
+                  onClick={() => shell.setViewMode('sims')}
                   className="absolute top-3 left-3 z-30 px-3 py-1.5 bg-sky-600 hover:bg-sky-500 text-white rounded-full text-xs font-semibold shadow-lg cursor-pointer"
                 >
                   ← The Sims 2 Office
@@ -146,6 +151,7 @@ export default function AosShell() {
           {toast}
         </div>
       )}
+      {settingsOpen && <SettingsDashboard />}
     </div>
   );
 }

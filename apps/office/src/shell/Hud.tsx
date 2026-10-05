@@ -17,6 +17,7 @@ export function Hud() {
   const health = useShell((s) => s.health);
   const approvalsOpen = useShell((s) => s.approvalsOpen);
   const costsOpen = useShell((s) => s.costsOpen);
+  const settingsOpen = useShell((s) => s.settingsOpen);
   const drawerOpen = useShell((s) => s.drawerOpen);
   const selected = useShell((s) => s.selected);
   const waiting = approvals.length > 0;
@@ -90,6 +91,23 @@ export function Hud() {
         📋 Papan Kanban (B)
       </button>
 
+      <button
+        type="button"
+        onClick={() => {
+          simsAudio.playBubbleClick();
+          shell.toggleSettings();
+        }}
+        aria-pressed={settingsOpen}
+        className={`px-8 py-2 rounded-full border cursor-pointer transition font-semibold ${
+          settingsOpen
+            ? 'border-sky-400 text-sky-200 bg-sky-500/25 shadow-[0_0_8px_rgba(56,189,248,0.4)]'
+            : 'border-white/10 hover:border-sky-400/40 hover:bg-sky-500/10 text-slate-300'
+        }`}
+        title="Buka Dashboard Pengaturan (Shortcut: S)"
+      >
+        ⚙️ Pengaturan (S)
+      </button>
+
       <ul className="flex items-center gap-8 shrink-0 ml-4" aria-label="Kesehatan sistem">
         {health.map((c) => (
           <li key={c.id} className="flex items-center gap-4 text-[11px]" title={`${c.label}: ${c.detail}`}>
@@ -105,7 +123,7 @@ export function Hud() {
       </ul>
 
       <span className="ml-auto pl-16 text-slate-400 text-[11px]">
-        1–9 agent · Shift+C chat all · C chat · B kanban · A approval · Esc tutup
+        1–9 agent · Shift+C chat all · C chat · B kanban · A approval · S setting · Esc tutup
       </span>
 
       {approvalsOpen && <ApprovalsPanel />}

@@ -10,13 +10,22 @@
 
 class SimsAudioManager {
   private ctx: AudioContext | null = null;
+  private masterGain: GainNode | null = null;
   private muted: boolean = false;
+  private volume: number = 0.8;
 
   constructor() {
     try {
       const saved = localStorage.getItem('aos.sims.muted');
       if (saved !== null) {
         this.muted = saved === 'true';
+      }
+      const savedVol = localStorage.getItem('aos.sims.volume');
+      if (savedVol !== null) {
+        const v = parseFloat(savedVol);
+        if (!isNaN(v) && v >= 0 && v <= 1) {
+          this.volume = v;
+        }
       }
     } catch {
       // defaults to unmuted
@@ -30,6 +39,9 @@ class SimsAudioManager {
       const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       if (AudioCtx) {
         this.ctx = new AudioCtx();
+        this.masterGain = this.ctx.createGain();
+        this.masterGain.gain.setValueAtTime(this.volume, this.ctx.currentTime);
+        this.masterGain.connect(this.ctx.destination);
       }
     }
     if (this.ctx && this.ctx.state === 'suspended') {
@@ -56,6 +68,26 @@ class SimsAudioManager {
     return this.muted;
   }
 
+  public getVolume(): number {
+    return this.volume;
+  }
+
+  public setVolume(vol: number): void {
+    this.volume = Math.max(0, Math.min(1, vol));
+    try {
+      localStorage.setItem('aos.sims.volume', String(this.volume));
+    } catch {
+      // ignore
+    }
+    if (this.masterGain && this.ctx) {
+      this.masterGain.gain.setValueAtTime(this.volume, this.ctx.currentTime);
+    }
+  }
+
+  private getOutNode(ctx: AudioContext): AudioNode {
+    return this.masterGain ?? ctx.destination;
+  }
+
   /** Subtle UI click */
   public playClick(): void {
     const ctx = this.initCtx();
@@ -72,7 +104,7 @@ class SimsAudioManager {
     gain.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
 
     osc.connect(gain);
-    gain.connect(ctx.destination);
+    gain.connect(this.getOutNode(ctx));
 
     osc.start(now);
     osc.stop(now + 0.07);
@@ -94,7 +126,7 @@ class SimsAudioManager {
     gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
 
     osc.connect(gain);
-    gain.connect(ctx.destination);
+    gain.connect(this.getOutNode(ctx));
 
     osc.start(now);
     osc.stop(now + 0.13);
@@ -119,7 +151,7 @@ class SimsAudioManager {
       gain.gain.exponentialRampToValueAtTime(0.001, t + 0.07);
 
       osc.connect(gain);
-      gain.connect(ctx.destination);
+      gain.connect(this.getOutNode(ctx));
 
       osc.start(t);
       osc.stop(t + 0.08);
@@ -145,7 +177,7 @@ class SimsAudioManager {
       gain.gain.exponentialRampToValueAtTime(0.001, t + 0.45);
 
       osc.connect(gain);
-      gain.connect(ctx.destination);
+      gain.connect(this.getOutNode(ctx));
 
       osc.start(t);
       osc.stop(t + 0.5);
@@ -171,7 +203,7 @@ class SimsAudioManager {
       gain.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
 
       osc.connect(gain);
-      gain.connect(ctx.destination);
+      gain.connect(this.getOutNode(ctx));
 
       osc.start(t);
       osc.stop(t + 0.35);
@@ -197,7 +229,7 @@ class SimsAudioManager {
       gain.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
 
       osc.connect(gain);
-      gain.connect(ctx.destination);
+      gain.connect(this.getOutNode(ctx));
 
       osc.start(t);
       osc.stop(t + 0.38);
@@ -221,7 +253,7 @@ class SimsAudioManager {
     gain.gain.exponentialRampToValueAtTime(0.001, now + 0.065);
 
     osc.connect(gain);
-    gain.connect(ctx.destination);
+    gain.connect(this.getOutNode(ctx));
 
     osc.start(now);
     osc.stop(now + 0.07);
@@ -249,7 +281,7 @@ class SimsAudioManager {
       gain.gain.exponentialRampToValueAtTime(0.001, t + 0.028);
 
       osc.connect(gain);
-      gain.connect(ctx.destination);
+      gain.connect(this.getOutNode(ctx));
 
       osc.start(t);
       osc.stop(t + 0.03);
@@ -275,7 +307,7 @@ class SimsAudioManager {
       gain.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
 
       osc.connect(gain);
-      gain.connect(ctx.destination);
+      gain.connect(this.getOutNode(ctx));
 
       osc.start(t);
       osc.stop(t + 0.3);
@@ -301,7 +333,7 @@ class SimsAudioManager {
       gain.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
 
       osc.connect(gain);
-      gain.connect(ctx.destination);
+      gain.connect(this.getOutNode(ctx));
 
       osc.start(t);
       osc.stop(t + 0.27);

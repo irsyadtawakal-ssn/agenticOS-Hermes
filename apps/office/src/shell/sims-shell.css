@@ -827,3 +827,162 @@ body,
   border-radius: 12px;
   padding: 16px;
 }
+
+/* ==========================================================================
+   SETTINGS DASHBOARD MODAL
+   ========================================================================== */
+
+.sims-settings-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(8, 15, 28, 0.85);
+  backdrop-filter: blur(8px);
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.sims-settings-modal {
+  width: 100%;
+  max-width: 820px;
+  max-height: 85vh;
+  background: linear-gradient(180deg, #10253f 0%, #0a1829 60%, #06101d 100%);
+  border: 2px solid #58b4f8;
+  border-radius: 16px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.75), 0 0 30px rgba(56, 189, 248, 0.25);
+  color: #f1f5f9;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+
+.sims-settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  background: linear-gradient(180deg, #1d5b91 0%, #123d6a 45%, #0a2544 100%);
+  border-bottom: 2px solid rgba(88, 180, 248, 0.4);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+.sims-settings-tab-list {
+  display: flex;
+  gap: 6px;
+  padding: 10px 16px;
+  background: rgba(10, 24, 41, 0.95);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.sims-settings-tab-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 10px;
+  color: #94a3b8;
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.sims-settings-tab-btn:hover {
+  color: #e2e8f0;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.sims-settings-tab-btn.active {
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.15);
+  border-color: rgba(56, 189, 248, 0.45);
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.2);
+}
+
+.sims-settings-body {
+  padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  scrollbar-width: thin;
+}
+
+.sims-settings-section-card {
+  background: rgba(15, 30, 52, 0.7);
+  border: 1px solid rgba(88, 180, 248, 0.2);
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sims-settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.sims-settings-row:last-child {
+  border-bottom: none;
+}
+
+.sims-toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+  flex-shrink: 0;
+}
+
+.sims-toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.sims-toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  inset: 0;
+  background: #334155;
+  transition: 0.2s;
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.sims-toggle-slider:before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 2px;
+  bottom: 2px;
+  background: white;
+  transition: 0.2s;
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+.sims-toggle-switch input:checked + .sims-toggle-slider {
+  background: #0284c7;
+  border-color: #38bdf8;
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.5);
+}
+
+.sims-toggle-switch input:checked + .sims-toggle-slider:before {
+  transform: translateX(20px);
+}

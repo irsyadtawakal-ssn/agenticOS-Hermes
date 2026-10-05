@@ -53,6 +53,8 @@ describe('model', () => {
     expect(keyAction(k('5'))).toEqual({ type: 'focus', profile: 'dev' });
     expect(keyAction(k('a'))).toEqual({ type: 'approvals' });
     expect(keyAction(k('B'))).toEqual({ type: 'kanban' });
+    expect(keyAction(k('s'))).toEqual({ type: 'settings' });
+    expect(keyAction(k('S'))).toEqual({ type: 'settings' });
     expect(keyAction(k('c'))).toEqual({ type: 'chat' });
     expect(keyAction(k('C'))).toEqual({ type: 'chat' });
     expect(keyAction(k('Escape'))).toEqual({ type: 'close' });

@@ -11,6 +11,8 @@ export interface ShellState {
   drawerOpen: boolean;
   approvalsOpen: boolean;
   costsOpen: boolean;
+  settingsOpen: boolean;
+  viewMode: 'sims' | 'claude';
   approvals: api.Approval[];
   tasks: api.KanbanTask[];
   daily: api.DailyCost[];
@@ -27,6 +29,11 @@ let state: ShellState = {
   drawerOpen: false,
   approvalsOpen: false,
   costsOpen: false,
+  settingsOpen: false,
+  viewMode:
+    typeof localStorage !== 'undefined' && localStorage.getItem('aos.office.viewMode') === 'claude'
+      ? 'claude'
+      : 'sims',
   approvals: [],
   tasks: [],
   daily: [],
@@ -117,9 +124,16 @@ export const shell = {
   },
   setTab: (dockTab: DockTab) => set({ dockTab }),
   toggleDrawer: () => set({ drawerOpen: !state.drawerOpen }),
-  toggleApprovals: () => set({ approvalsOpen: !state.approvalsOpen, costsOpen: false }),
-  toggleCosts: () => set({ costsOpen: !state.costsOpen, approvalsOpen: false }),
-  closeAll: () => set({ selected: null, drawerOpen: false, approvalsOpen: false, costsOpen: false }),
+  toggleApprovals: () => set({ approvalsOpen: !state.approvalsOpen, costsOpen: false, settingsOpen: false }),
+  toggleCosts: () => set({ costsOpen: !state.costsOpen, approvalsOpen: false, settingsOpen: false }),
+  toggleSettings: () => set({ settingsOpen: !state.settingsOpen, approvalsOpen: false, costsOpen: false }),
+  setViewMode: (viewMode: 'sims' | 'claude') => {
+    try {
+      localStorage.setItem('aos.office.viewMode', viewMode);
+    } catch {}
+    set({ viewMode });
+  },
+  closeAll: () => set({ selected: null, drawerOpen: false, approvalsOpen: false, costsOpen: false, settingsOpen: false }),
   showToast: (toast: string | null) => set({ toast }),
   refreshKanban,
   refreshApprovals,
