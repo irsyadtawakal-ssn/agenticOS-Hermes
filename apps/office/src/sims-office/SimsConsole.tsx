@@ -148,8 +148,13 @@ export function SimsConsole({
           </div>
 
           <div className="sims-sim-identity">
-            <h2 className="sims-sim-name">{report.meta.name.toUpperCase()}</h2>
+            <h2 className="sims-sim-name">{report.meta.name === 'chief' ? 'ARTHUR' : report.meta.name.toUpperCase()}</h2>
             <div className="sims-sim-title">{report.meta.title}</div>
+            {report.meta.department && (
+              <div className="text-[10px] text-cyan-300 font-semibold truncate mt-0.5" title={report.meta.department}>
+                🏢 {report.meta.department}
+              </div>
+            )}
             <div className="sims-sim-status-pill">
               <span
                 className="sims-sim-status-dot"
@@ -268,6 +273,13 @@ export function SimsConsole({
                     </div>
                   </div>
                 </div>
+
+                {report.meta.department && (
+                  <div className="flex items-center justify-between px-3 py-1.5 bg-slate-900/80 rounded-lg border border-cyan-500/30 text-xs mt-2">
+                    <span className="text-slate-400 font-bold text-[10px] uppercase">Divisi Organisasi</span>
+                    <span className="text-cyan-300 font-bold">{report.meta.department}</span>
+                  </div>
+                )}
 
                 <div className="sims-traits-row">
                   {report.meta.traits.map((t) => (
@@ -515,18 +527,25 @@ export function SimsConsole({
           else if (rawStatus === 'working' || rawStatus === 'thinking' || rawStatus === 'executing') dotColor = '#06b6d4';
           else if (rawStatus === 'error' || rawStatus === 'blocked') dotColor = '#ef4444';
 
+          const isChief = p === 'chief';
+          const isShawarma = ['tara', 'maya', 'clara', 'adelia'].includes(p);
+          const label = isChief ? 'Arthur' : p;
+
           return (
             <button
               key={p}
               className={`sims-sim-pod-btn ${isSel ? 'selected' : ''}`}
               onClick={() => handleSelectSim(p)}
-              title={`Pilih ${p}`}
+              title={`Pilih ${label} (${isChief ? 'Chief of Staff' : isShawarma ? 'Divisi SukaShawarma' : p})`}
             >
-              <div className="sims-sim-pod-avatar">
-                {p.slice(0, 2).toUpperCase()}
+              <div
+                className="sims-sim-pod-avatar"
+                style={isShawarma ? { borderColor: 'rgba(6, 182, 212, 0.6)' } : undefined}
+              >
+                {isChief ? 'AR' : p.slice(0, 2).toUpperCase()}
                 <span className="sims-sim-pod-dot" style={{ backgroundColor: dotColor }} />
               </div>
-              <span className="sims-sim-pod-label">{p}</span>
+              <span className="sims-sim-pod-label">{label}</span>
             </button>
           );
         })}

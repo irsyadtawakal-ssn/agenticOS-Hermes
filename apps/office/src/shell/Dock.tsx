@@ -109,14 +109,25 @@ export function Dock({ profile }: { profile: string }) {
             >
               <option value="owner">👑 {operatorName.toUpperCase()} (OWNER)</option>
               <option value="all">📢 CHAT ALL (SEMUA AGENT)</option>
-              {PROFILES.map((p) => (
-                <option key={p} value={p}>
-                  {p.toUpperCase()}
-                </option>
-              ))}
+              {PROFILES.map((p) => {
+                const pMeta = getProfileMeta(p);
+                const tag = pMeta.department?.includes('SukaShawarma') ? '🌯 ' : '';
+                const display = p === 'chief' ? 'ARTHUR (CHIEF)' : p.toUpperCase();
+                return (
+                  <option key={p} value={p}>
+                    {tag}{display}
+                  </option>
+                );
+              })}
             </select>
             <div className="sims-dock-status-pill">
               <span>{meta.title}</span>
+              {meta.department && (
+                <>
+                  <span>·</span>
+                  <span className="text-cyan-300 font-semibold">{meta.department}</span>
+                </>
+              )}
               <span>·</span>
               <span className="capitalize">{profile === 'owner' ? 'Komandan Eksekutif' : isAll ? `${PROFILES.length} agen terhubung` : agent?.state ?? 'offline'}</span>
             </div>
@@ -251,12 +262,20 @@ export function Dock({ profile }: { profile: string }) {
 
           {tab === 'agent' && (
             <div className="flex flex-col gap-10 text-xs">
-              <div className="p-12 bg-sky-950/40 border border-sky-400/30 rounded-xl flex items-center gap-10">
-                <span className="text-3xl">{meta.aspirationIcon}</span>
-                <div>
-                  <div className="text-[10px] uppercase font-bold text-sky-400">Aspirasi Sim</div>
-                  <div className="text-sm font-bold text-white">{meta.aspirationLabel}</div>
+              <div className="p-12 bg-sky-950/40 border border-sky-400/30 rounded-xl flex items-center justify-between gap-6">
+                <div className="flex items-center gap-10">
+                  <span className="text-3xl">{meta.aspirationIcon}</span>
+                  <div>
+                    <div className="text-[10px] uppercase font-bold text-sky-400">Aspirasi Sim</div>
+                    <div className="text-sm font-bold text-white">{meta.aspirationLabel}</div>
+                  </div>
                 </div>
+                {meta.department && (
+                  <div className="text-right flex-shrink-0">
+                    <div className="text-[10px] uppercase font-bold text-amber-400">Divisi / Strata</div>
+                    <div className="text-xs font-bold text-cyan-300">{meta.department}</div>
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-8 bg-slate-900/60 p-12 rounded-xl border border-white/5">
